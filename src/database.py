@@ -1,5 +1,6 @@
 import sqlite3
 import os
+import logging
 
 DATABASE_NAME = "finance_app.db"
 # Ajustamos la ruta: subir un nivel (..) desde la ubicación de este script (src/) y entrar a data/
@@ -145,8 +146,63 @@ def get_category_by_id(category_id: int):
     else:
         return None # O podrías lanzar una excepción
 
-# --- Funciones para Transacciones (Placeholder) ---
-# TODO: Añadir funciones para registrar, ver, editar, eliminar transacciones
+# --- Funciones para Transacciones ---
+
+def add_transaction(type: str, description: str, amount: float, category_id: int = None):
+    """Añade una transacción general (Ingreso o Gasto)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO Transactions (type, description, amount, category_id)
+            VALUES (?, ?, ?, ?)
+        """, (type, description, amount, category_id))
+        conn.commit()
+        print(f"✅ Transacción '{type}' añadida: {description} ({amount})")
+
+        # Si es Gasto y tiene categoría, actualizar balance
+        # (Nota: Los ingresos generales no afectan balances de categorías directamente)
+        if type == 'Expense' and category_id is not None:
+            cursor.execute("""
+                UPDATE Categories
+                SET current_balance = current_balance - ?
+                WHERE id = ?
+            """, (amount, category_id))
+            conn.commit()
+            print(f"💰 Balance actualizado para categoría ID {category_id} (-{amount})")
+
+    except sqlite3.Error as e:
+        print(f"❌ Error al añadir transacción: {e}")
+        conn.rollback() # Deshacer si hay error
+    finally:
+        conn.close()
+
+def add_allocation_transaction(category_id: int, amount: float, description: str):
+    """Añade una transacción de 'Allocation' Y actualiza el balance de la categoría."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        # Insert the allocation transaction (Reverted: removed timestamp column)
+        cursor.execute("""
+            INSERT INTO Transactions (type, description, amount, category_id)
+            VALUES (?, ?, ?, ?)
+        """, ('Allocation', description, amount, category_id))
+        logging.info(f"📝 Transacción 'Allocation' registrada para Cat ID {category_id}: {description} ({amount})")
+
+        # Update the category balance - SETTING the value, not adding
+        cursor.execute("""
+            UPDATE Categories SET current_balance = ? WHERE id = ?
+        """, (amount, category_id))
+        logging.info(f"💰 Balance establecido para Cat ID {category_id}: {amount}")
+
+        conn.commit() # Confirmar ambos cambios
+        logging.info(f"✅ Asignación completada para Cat ID {category_id}.")
+
+    except sqlite3.Error as e:
+        logging.error(f"❌ Error al añadir asignación para Cat ID {category_id}: {e}")
+        conn.rollback() # Deshacer ambos cambios si algo falla
+    finally:
+        conn.close()
 
 # --- Funciones de Lógica Financiera ---
 def distribute_income(total_income: float) -> bool:

@@ -3,9 +3,14 @@ Config.set('graphics', 'width', '1200')
 Config.set('graphics', 'height', '800')
 
 from kivymd.app import MDApp
+from kivymd.uix.boxlayout import MDBoxLayout # Import needed for FinanceRootWidget
+from kivymd.uix.label import MDLabel
+from kivymd.uix.button import MDRaisedButton, MDIconButton
+from kivymd.uix.textfield import MDTextField
+
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
-from kivy.uix.popup import Popup
+from kivy.uix.popup import Popup # Added for Error Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
@@ -15,6 +20,7 @@ from kivy.properties import ObjectProperty, StringProperty, NumericProperty
 from kivy.clock import Clock
 from kivy.lang import Builder
 import matplotlib.pyplot as plt
+import numpy as np
 import os
 from src.database import create_tables, get_all_categories, add_category, delete_category, update_category, get_category_by_id, add_allocation_transaction
 import logging
@@ -64,83 +70,26 @@ class KivyLogHandler(logging.Handler):
 
 # --- UI Widgets (Popups, etc.) ---
 class EditCategoryPopup(Popup):
-    category_id_input = ObjectProperty(None)
-    category_name_input = ObjectProperty(None)
-    category_percentage_input = ObjectProperty(None)
-    app_instance = ObjectProperty(None) # Reference to the main app
-
-    def __init__(self, category_id, app_instance, **kwargs):
-        super().__init__(**kwargs)
-        self.app_instance = app_instance
-        category = get_category_by_id(category_id)
-        if category:
-            self.ids.category_id_input.text = str(category['id'])
-            self.ids.category_name_input.text = category['name']
-            self.ids.category_percentage_input.text = str(category['percentage'])
-        else:
-            logging.error(f"EditPopup: Categoría con ID {category_id} no encontrada.")
-            # Optionally disable inputs or show an error message in the popup
-            self.ids.category_name_input.disabled = True
-            self.ids.category_percentage_input.disabled = True
-            self.ids.save_button.disabled = True # Assuming the save button has id 'save_button'
-
-
-    def save_changes(self):
-        category_id = int(self.ids.category_id_input.text)
-        name = self.ids.category_name_input.text
-        percentage_text = self.ids.category_percentage_input.text
-
-        if not name:
-            logging.warning("El nombre de la categoría no puede estar vacío.")
-            # Optionally show feedback in the popup
-            return
-        if not percentage_text:
-            logging.warning("El porcentaje de la categoría no puede estar vacío.")
-            # Optionally show feedback in the popup
-            return
-
-        try:
-            percentage = float(percentage_text)
-            if not (0 <= percentage <= 100):
-                 raise ValueError("El porcentaje debe estar entre 0 y 100.")
-        except ValueError as e:
-            logging.error(f"Porcentaje inválido: {percentage_text}. Error: {e}")
-            # Optionally show feedback in the popup
-            return
-
-        try:
-            if update_category(category_id, name, percentage):
-                logging.info(f"Categoría '{name}' actualizada correctamente.")
-                self.app_instance.load_categories() # Use the passed app instance
-                self.app_instance.update_graph()
-                self.dismiss()
-            else:
-                 logging.error(f"No se pudo actualizar la categoría '{name}'.")
-                 # Optionally show feedback in the popup
-        except sqlite3.IntegrityError:
-             logging.error(f"Error: Ya existe una categoría con el nombre '{name}'.")
-             # Optionally show feedback in the popup
-        except Exception as e:
-            logging.error(f"Error inesperado al actualizar categoría: {e}")
-            # Optionally show feedback in the popup
-
+    """Popup for editing categories."""
+    category_id = NumericProperty(None)  # Properly define the property
+    pass # Rest defined in KV
 
 # --- Kivy Dynamic Class for Category Rows --- #
-# Defined in kv file as <CategoryRow@BoxLayout>:
-# We need to access its category_id property later
-class CategoryRow(BoxLayout):
-    category_id = NumericProperty(None) # Add property to hold the ID
+class CategoryRow(MDBoxLayout):
+    """Widget that represents a category row in the list."""
+    category_id = NumericProperty(None)
+    category_name = StringProperty("")
+    category_percentage = StringProperty("")
+    category_balance = StringProperty("")
 
 # --- Define Placeholder Classes for KV Popups --- #
-class AddCategoryPopup(Popup): # Connects to <AddCategoryPopup@Popup> in KV
-    pass
+class AddCategoryPopup(Popup):
+    pass # Defined in KV
 
-class EditCategoryPopup(Popup): # Connects to <EditCategoryPopup@Popup> in KV
-    pass
+class EditCategoryPopup(Popup):
+    pass # Defined in KV, but Python class helps linkage
 
 # --- Define Root Widget Class Explicitly --- #
-from kivymd.uix.boxlayout import MDBoxLayout # Import MDBoxLayout
-
 class FinanceRootWidget(MDBoxLayout): # Inherit from MDBoxLayout
     pass # No logic needed here, defined in KV
 
@@ -188,6 +137,7 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
         # This ensures the root widget and its ids dictionary are fully available.
         from kivy.clock import Clock
         Clock.schedule_once(self.initialize_ui, 0)
+        Clock.schedule_once(self.update_graph, 0)  # Initial graph update
 
     def initialize_ui(self, dt): # dt argument is required by schedule_once
         """Initializes UI elements that depend on the root widget being ready."""
@@ -297,27 +247,52 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
         except Exception as e:
             logging.error(f"Unexpected error during category loading: {e}", exc_info=True)
 
-    # Update graph needs implementation based on what you want to show
-    def update_graph(self):
-        """Updates the Matplotlib graph with current data (Placeholder)."""
-        logging.info("(Placeholder) Updating graph...")
-        if not self.ax or not self.graph_widget:
-            logging.warning("Graph axes or widget not ready for update.")
-            return
-        # Example: Clear and plot new data (e.g., category balances)
-        # self.ax.clear()
-        # categories = get_all_categories()
-        # names = [cat['name'] for cat in categories]
-        # balances = [cat['current_balance'] if cat['current_balance'] is not None else 0 for cat in categories]
-        # self.ax.bar(names, balances)
-        # self.ax.set_title("Category Balances")
-        # self.ax.set_facecolor('#303030') # Re-apply styles if clear removes them
-        # self.fig.patch.set_facecolor('#303030')
-        # self.ax.tick_params(axis='x', colors='white', rotation=45)
-        # self.ax.tick_params(axis='y', colors='white')
-        # self.ax.title.set_color('white')
-        # self.graph_widget.draw_idle() # Redraw the canvas
-        pass # Keep as placeholder for now
+    def update_graph(self, dt=None):
+        """Updates the pie chart with current category data."""
+        logging.info("Actualizando gráfico de categorías...")
+        try:
+            # Get the graph layout widget
+            graph_layout = self.root.ids.graph_layout
+            if not graph_layout:
+                logging.error("No se encontró el widget graph_layout")
+                return
+
+            # Clear previous graph
+            graph_layout.clear_widgets()
+
+            # Get categories data
+            categories = get_all_categories()
+            if not categories:
+                logging.info("No hay categorías para mostrar en el gráfico")
+                return
+
+            # Prepare data for the pie chart
+            labels = [cat['name'] for cat in categories]
+            sizes = [cat['percentage'] for cat in categories]
+            balances = [cat['current_balance'] if cat['current_balance'] is not None else 0 for cat in categories]
+
+            # Create figure with dark theme
+            plt.style.use('dark_background')
+            fig, ax = plt.subplots(figsize=(6, 5))
+            fig.patch.set_facecolor('#121212')  # Dark background
+
+            # Porcentajes Pie Chart
+            wedges, texts, autotexts = ax.pie(sizes, labels=labels, autopct='%1.1f%%',
+                                            startangle=90, colors=plt.cm.Greens(np.linspace(0.4, 0.8, len(sizes))))
+            ax.set_title('Distribución de Porcentajes', color='white', pad=20)
+
+            # Style the text
+            plt.setp(autotexts, size=10, weight="bold", color="white")
+            plt.setp(texts, size=10, color="white")
+
+            # Add the graph to the layout
+            canvas = FigureCanvasKivyAgg(figure=fig)
+            graph_layout.add_widget(canvas)
+            plt.close(fig)  # Close the figure to free memory
+
+        except Exception as e:
+            logging.error(f"Error al actualizar el gráfico: {e}", exc_info=True)
+            self.show_error_popup(f"Error al actualizar el gráfico: {str(e)}")
 
     def ui_distribute_income_kivy(self):
         """Distributes the entered income across categories based on percentages."""
@@ -402,7 +377,7 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
             log_widget.text += "[color=00ff00]Distribución procesada.[/color]\n"
             logging.info("Income distribution process finished.")
             Clock.schedule_once(self.load_categories, 0) # Schedule refresh for next frame
-            # self.update_graph() # Update graph if it exists
+            Clock.schedule_once(self.update_graph, 0) # Update graph if it exists
 
         except ValueError:
             log_widget.text += f"[color=ff0000]Error: Entrada de ingreso inválida ('{income_input_widget.text}'). Introduce un número válido.[/color]\n"
@@ -421,6 +396,7 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
                 logging.info(f"Categoría ID {category_id} borrada exitosamente.")
                 # Refrescar la lista para quitar la categoría borrada
                 Clock.schedule_once(self.load_categories, 0)
+                Clock.schedule_once(self.update_graph, 0) # Update graph
             else:
                 # Esto podría pasar si el ID no existe, aunque delete_category ya loggea
                 logging.warning(f"No se pudo borrar la categoría ID {category_id}, puede que ya no exista.")
@@ -441,9 +417,9 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
                     self.edit_popup = EditCategoryPopup()
 
                 # Llenar los campos del popup con los datos actuales
-                self.edit_popup.ids.edit_category_id.text = str(category['id']) # Guardamos el ID oculto
-                self.edit_popup.ids.edit_category_name.text = category['name']
-                self.edit_popup.ids.edit_category_percentage.text = str(category['percentage'])
+                self.edit_popup.category_id = category['id']  # Usar la propiedad definida
+                self.edit_popup.ids.edit_category_name_input.text = category['name']
+                self.edit_popup.ids.edit_category_percentage_input.text = str(category['percentage'])
 
                 self.edit_popup.open()
             else:
@@ -507,9 +483,8 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
         except Exception as e:
             logging.error(f"Error al obtener categorías para validar porcentaje: {e}")
             self.show_error_popup("Error al verificar el porcentaje total.")
-            # Might still dismiss popup here, or let the user retry?
-            popup.dismiss()
-            return
+            # Decide if you want to stop the whole process or continue with others
+            # return # Example: Stop if one fails
 
         # --- Add to Database --- #
         try:
@@ -520,7 +495,7 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
                      log_widget.text += f"[color=00ff00]Categoría '{name}' ({percentage}%) añadida.[/color]\n"
                 popup.dismiss() # Cerrar popup si éxito
                 Clock.schedule_once(self.load_categories, 0) # Refrescar lista
-                # self.update_graph() # Update graph if it exists
+                Clock.schedule_once(self.update_graph, 0) # Update graph
             else:
                 # add_category should log specifics, show generic error here
                 self.show_error_popup(f"No se pudo añadir la categoría '{name}'. ¿Quizás ya existe?")
@@ -585,7 +560,7 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
                     log_widget.text += f"[color=00ff00]Categoría '{new_name}' ({new_percentage}%) actualizada.[/color]\n"
                 popup.dismiss() # Cerrar popup si éxito
                 Clock.schedule_once(self.load_categories, 0) # Refrescar lista
-                # self.update_graph() # Update graph if it exists
+                Clock.schedule_once(self.update_graph, 0) # Update graph
             else:
                 # update_category should log specifics, show generic error here
                 logging.error(f"Fallo al actualizar la categoría ID {category_id} desde la UI (update_category devolvió False)")
@@ -625,29 +600,7 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
             logging.critical(f"CRÍTICO: Fallo al crear/mostrar popup de error: {e}", exc_info=True)
             print(f"ERROR CRÍTICO AL MOSTRAR POPUP: {error_message}\nError creación popup: {e}")
 
-    # --- Update Graph --- #
-    def update_graph(self):
-        """Updates the Matplotlib graph with current data (Placeholder)."""
-        logging.info("(Placeholder) Updating graph...")
-        if not self.ax or not self.graph_widget:
-            logging.warning("Graph axes or widget not ready for update.")
-            return
-        # Example: Clear and plot new data (e.g., category balances)
-        # self.ax.clear()
-        # categories = get_all_categories()
-        # names = [cat['name'] for cat in categories]
-        # balances = [cat['current_balance'] if cat['current_balance'] is not None else 0 for cat in categories]
-        # self.ax.bar(names, balances)
-        # self.ax.set_title("Category Balances")
-        # self.ax.set_facecolor('#303030') # Re-apply styles if clear removes them
-        # self.fig.patch.set_facecolor('#303030')
-        # self.ax.tick_params(axis='x', colors='white', rotation=45)
-        # self.ax.tick_params(axis='y', colors='white')
-        # self.ax.title.set_color('white')
-        # self.graph_widget.draw_idle() # Redraw the canvas
-        pass # Keep as placeholder for now
-
-# --- Entry Point --- #
+    # --- Entry Point --- #
 if __name__ == '__main__':
     # Create tables if they don't exist
     create_tables()
