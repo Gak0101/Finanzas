@@ -1,0 +1,4 @@
+pandas
+customtkinter>=5.2.0
+Pillow>=11.1.0 # Added for icons
+matplotlib>=3.0.0 # Added for plotting graphs
