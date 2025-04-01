@@ -1,521 +1,669 @@
-import kivy
-from kivy.app import App
-from kivy.uix.boxlayout import BoxLayout 
-from kivy.uix.widget import Widget
-from kivy.uix.label import Label
-from kivy.uix.popup import Popup
-from kivy.uix.textinput import TextInput 
+from kivy.config import Config
+Config.set('graphics', 'width', '1200')
+Config.set('graphics', 'height', '800')
+
+from kivymd.app import MDApp
+from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
+from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.label import Label
+from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
-from kivy.properties import NumericProperty
-# Necesitamos Builder para cargar el .kv explícitamente
-from kivy.lang import Builder
-import os # Para construir la ruta al .kv
-# Importamos el widget del gráfico
 from kivy_garden.matplotlib.backend_kivyagg import FigureCanvasKivyAgg
-import matplotlib.pyplot as plt
+from kivy.properties import ObjectProperty, StringProperty, NumericProperty
 from kivy.clock import Clock
+from kivy.lang import Builder
+import matplotlib.pyplot as plt
+import os
+from src.database import create_tables, get_all_categories, add_category, delete_category, update_category, get_category_by_id, add_allocation_transaction
 import logging
+import sqlite3 # To handle IntegrityError if adding duplicates
 
-# Ajustamos la importación ahora que database.py está en src/
-from src.database import * # O lista explícitamente las funciones que usas
-import sqlite3 # Para manejar IntegrityError si añadimos duplicados
+# --- Logging Configuration ---
+# Global KivyLogHandler instance
+kivy_log_handler_instance = None
 
-kivy.require('2.3.0') # Especifica la versión mínima de Kivy
+class KivyLogHandler(logging.Handler):
+    """A logging handler that sends logs to a Kivy Label."""
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.log_widget = None # Will be set later from the app
 
-# Cargamos el archivo .kv explícitamente ahora que está en otra carpeta
-kv_file_path = os.path.join(os.path.dirname(__file__), 'src', 'ui', 'finance.kv')
-Builder.load_file(kv_file_path)
+    def set_widget(self, widget):
+        """Assigns the Kivy Label widget to display logs."""
+        self.log_widget = widget
 
-# --- Widgets Personalizados ---
-# Es buena práctica definir los widgets personalizados usados en .kv también en Python
-# Clase para el widget raíz definido en KV
-class FinanceRootWidget(BoxLayout):
-    pass
+    def emit(self, record):
+        """Formats and sends the log record to the Kivy widget."""
+        if not self.log_widget:
+            # Queue the message if the widget isn't ready yet? Or just drop?
+            # For now, let's just drop if the widget isn't set.
+            # print(f"Log widget not set, dropping message: {self.format(record)}") # Debug print
+            return
 
+        log_entry = self.format(record)
+        # Basic color coding based on level
+        level_color_map = {
+            logging.INFO: "00ff00",    # Green
+            logging.WARNING: "ffff00", # Yellow
+            logging.ERROR: "ff0000",   # Red
+            logging.CRITICAL: "ff0000",# Red
+            logging.DEBUG: "00ffff",   # Cyan
+        }
+        color = level_color_map.get(record.levelno, "ffffff") # Default white
+
+        # Append new log with color markup
+        self.log_widget.text += f"[color={color}]{log_entry}[/color]\\n"
+        # Auto-scroll to the bottom
+        if hasattr(self.log_widget.parent, 'scroll_y'):
+            scroll_view = self.log_widget.parent # Assuming Label is direct child of ScrollView
+            # Scroll only if needed (optional, might save minor performance)
+            # if scroll_view.scroll_y > 0:
+            scroll_view.scroll_y = 0
+
+# --- UI Widgets (Popups, etc.) ---
+class EditCategoryPopup(Popup):
+    category_id_input = ObjectProperty(None)
+    category_name_input = ObjectProperty(None)
+    category_percentage_input = ObjectProperty(None)
+    app_instance = ObjectProperty(None) # Reference to the main app
+
+    def __init__(self, category_id, app_instance, **kwargs):
+        super().__init__(**kwargs)
+        self.app_instance = app_instance
+        category = get_category_by_id(category_id)
+        if category:
+            self.ids.category_id_input.text = str(category['id'])
+            self.ids.category_name_input.text = category['name']
+            self.ids.category_percentage_input.text = str(category['percentage'])
+        else:
+            logging.error(f"EditPopup: Categoría con ID {category_id} no encontrada.")
+            # Optionally disable inputs or show an error message in the popup
+            self.ids.category_name_input.disabled = True
+            self.ids.category_percentage_input.disabled = True
+            self.ids.save_button.disabled = True # Assuming the save button has id 'save_button'
+
+
+    def save_changes(self):
+        category_id = int(self.ids.category_id_input.text)
+        name = self.ids.category_name_input.text
+        percentage_text = self.ids.category_percentage_input.text
+
+        if not name:
+            logging.warning("El nombre de la categoría no puede estar vacío.")
+            # Optionally show feedback in the popup
+            return
+        if not percentage_text:
+            logging.warning("El porcentaje de la categoría no puede estar vacío.")
+            # Optionally show feedback in the popup
+            return
+
+        try:
+            percentage = float(percentage_text)
+            if not (0 <= percentage <= 100):
+                 raise ValueError("El porcentaje debe estar entre 0 y 100.")
+        except ValueError as e:
+            logging.error(f"Porcentaje inválido: {percentage_text}. Error: {e}")
+            # Optionally show feedback in the popup
+            return
+
+        try:
+            if update_category(category_id, name, percentage):
+                logging.info(f"Categoría '{name}' actualizada correctamente.")
+                self.app_instance.load_categories() # Use the passed app instance
+                self.app_instance.update_graph()
+                self.dismiss()
+            else:
+                 logging.error(f"No se pudo actualizar la categoría '{name}'.")
+                 # Optionally show feedback in the popup
+        except sqlite3.IntegrityError:
+             logging.error(f"Error: Ya existe una categoría con el nombre '{name}'.")
+             # Optionally show feedback in the popup
+        except Exception as e:
+            logging.error(f"Error inesperado al actualizar categoría: {e}")
+            # Optionally show feedback in the popup
+
+
+# --- Kivy Dynamic Class for Category Rows --- #
+# Defined in kv file as <CategoryRow@BoxLayout>:
+# We need to access its category_id property later
 class CategoryRow(BoxLayout):
-    category_id = NumericProperty(0) 
+    category_id = NumericProperty(None) # Add property to hold the ID
+
+# --- Define Placeholder Classes for KV Popups --- #
+class AddCategoryPopup(Popup): # Connects to <AddCategoryPopup@Popup> in KV
     pass
 
-# --- Clase Principal de la App ---
-class FinanceApp(App):
-    """Clase principal de la aplicación Kivy."""
-    # Creamos la figura de Matplotlib aquí, una sola vez.
-    fig = plt.figure()
-    graph_widget = None # Para guardar la referencia al widget del gráfico creado dinámicamente
-    logger = logging.getLogger('FinanceApp') # Usamos un logger específico para la app
-    logger.setLevel(logging.INFO) # Captura desde nivel INFO hacia arriba
+class EditCategoryPopup(Popup): # Connects to <EditCategoryPopup@Popup> in KV
+    pass
 
-    # Handler personalizado para Kivy
-    class KivyLogHandler(logging.Handler):
-        def __init__(self, app, log_widget_id, scroll_view_id, **kwargs):
-            super().__init__(**kwargs)
-            self.app = app  # Guardamos referencia a la app
-            self.log_widget_id = log_widget_id
-            self.scroll_view_id = scroll_view_id
-            # Mapeo de niveles de log a colores hexadecimales Kivy
-            self.level_colors = {
-                logging.DEBUG: '#FFFFFF',    # Blanco para Debug (si lo usas)
-                logging.INFO: '#33FF33',     # Verde neón para Info
-                logging.WARNING: '#FFBF00', # Amarillo ámbar para Warning
-                logging.ERROR: '#FF3333',   # Rojo carmesí para Error
-                logging.CRITICAL: '#FF0000' # Rojo brillante para Critical
-            }
-            # Formateador para incluir timestamp
-            self.setFormatter(logging.Formatter('%(asctime)s', datefmt='%H:%M:%S'))
+# --- Define Root Widget Class Explicitly --- #
+from kivymd.uix.boxlayout import MDBoxLayout # Import MDBoxLayout
 
-        def emit(self, record):
-            # Solo intentamos actualizar si los IDs están presentes
-            if hasattr(self.app.root, 'ids') and self.log_widget_id in self.app.root.ids and self.scroll_view_id in self.app.root.ids:
-                log_output_label = self.app.root.ids[self.log_widget_id]
-                scroll_view = self.app.root.ids[self.scroll_view_id]
-                # Ahora obtenemos el mensaje formateado del logger
-                log_entry = self.format(record)
-                message = record.getMessage()
-                # Obtenemos el color basado en el nivel del log
-                log_level_color = self.level_colors.get(record.levelno, '#FFFFFF') # Blanco por defecto
-                # Construimos el mensaje con markup de Kivy
-                formatted_message = f"[color={log_level_color}]{log_entry} - {message}[/color]\n"
-                log_output_label.text += formatted_message
-                # Auto-scroll al final
-                scroll_view.scroll_y = 0
+class FinanceRootWidget(MDBoxLayout): # Inherit from MDBoxLayout
+    pass # No logic needed here, defined in KV
 
-    def build(self): 
-        """Construye y devuelve el widget raíz de la aplicación."""
-        # Creamos una instancia de nuestro widget raíz.
-        # Kivy aplicará automáticamente las reglas de <FinanceRootWidget> del .kv cargado.
-        self.logger.info("Construyendo el widget raíz...")
-        root_widget = FinanceRootWidget()
-        self.logger.info("Widget raíz construido. Devolviendo...")
-        return root_widget # ¡Importante devolver la instancia!
+class FinanceApp(MDApp): # <--- Inherit from MDApp
+    """Main application class."""
+    fig = ObjectProperty(None)
+    ax = ObjectProperty(None)
+    graph_widget = ObjectProperty(None)
+
+    def build(self):
+        """Builds the app. KivyMD handles KV file loading automatically."""
+        global kivy_log_handler_instance
+        self.theme_cls.theme_style = "Dark"  # Uncommented - Restore Dark theme
+        self.theme_cls.primary_palette = "Green" # Uncommented - Restore Green palette
+        logging.info("Dark theme and Green palette re-enabled.")
+
+        # Initialize popup instances to None
+        self.add_category_popup_instance = None
+        self.edit_popup = None
+
+        # Setup logging handler instance (can be done early)
+        if kivy_log_handler_instance is None:
+             kivy_log_handler_instance = KivyLogHandler()
+             formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+             kivy_log_handler_instance.setFormatter(formatter)
+             root_logger = logging.getLogger()
+             # Remove old handlers of this type if any exist (useful for hot-reloading)
+             for handler in root_logger.handlers[:]:
+                 if isinstance(handler, KivyLogHandler):
+                     root_logger.removeHandler(handler)
+             root_logger.addHandler(kivy_log_handler_instance)
+             root_logger.setLevel(logging.INFO) # Set root logger level
+
+        logging.info("Configuring theme and loading KV file...")
+        # Load the KV file. KivyMD automatically handles this if named correctly (financeapp.kv)
+        # but explicit loading works too and is clearer here.
+        # root_widget = Builder.load_file('src/ui/finance.kv')
+        logging.info("KV file loaded.")
+        return FinanceRootWidget() # Return the root widget
 
     def on_start(self):
-        """Se llama después de que build() ha terminado y la UI está lista."""
-        self.logger.info("App iniciada, preparando gráfico y cargando categorías...")
+        """Called after the build() method returns and the root widget is built."""
+        logging.info("App started, scheduling UI initialization.")
+        # Schedule the UI initialization for the next frame
+        # This ensures the root widget and its ids dictionary are fully available.
+        from kivy.clock import Clock
+        Clock.schedule_once(self.initialize_ui, 0)
 
-        # --- Crear y añadir el gráfico dinámicamente ---
+    def initialize_ui(self, dt): # dt argument is required by schedule_once
+        """Initializes UI elements that depend on the root widget being ready."""
         try:
-            placeholder = self.root.ids.graph_placeholder
-            # Creamos el widget de Kivy para Matplotlib CON nuestra figura
-            self.graph_widget = FigureCanvasKivyAgg(figure=self.fig)
-            # Lo añadimos al BoxLayout que dejamos como placeholder en el KV
-            placeholder.add_widget(self.graph_widget)
-            self.logger.info("Widget de gráfico añadido al placeholder.")
+            global kivy_log_handler_instance
+            if not self.root:
+                logging.error("Root widget is None in initialize_ui. Cannot proceed.")
+                return
+
+            logging.info(f"Accessing root.ids in initialize_ui. Root type: {type(self.root)}")
+            # We expect ids to be empty now as the KV is minimal
+            if not hasattr(self.root, 'ids'):
+                 logging.error("root.ids attribute is missing in initialize_ui.")
+                 return
+            logging.info(f"root.ids content: {self.root.ids}")
+
+            # --- Keep actual UI interactions commented out for now ---
+            # # 1. Setup Kivy Log Handler Widget
+            # log_label = self.root.ids.get('log_display_label')
+            # if log_label and kivy_log_handler_instance:
+            #     kivy_log_handler_instance.set_widget(log_label)
+            #     logging.info("Kivy log handler widget set successfully.")
+            # elif not log_label:
+            #     logging.warning("'log_display_label' not found in root.ids.")
+            # elif not kivy_log_handler_instance:
+            #     logging.warning("kivy_log_handler_instance is None, cannot set widget.")
+
+            # # 2. Setup Matplotlib Graph (Placeholder logic)
+            # graph_placeholder = self.root.ids.get('graph_placeholder')
+            # if graph_placeholder:
+            #     self.setup_graph(graph_placeholder) # Call setup_graph
+            #     logging.info("Graph setup initiated.")
+            # else:
+            #     logging.warning("'graph_placeholder' not found in root.ids.")
+
+            # # 3. Load Categories into the UI
+            # category_list_layout = self.root.ids.get('category_list_layout')
+            # if category_list_layout:
+            #     self.load_categories() # Call load_categories (which uses the id)
+            #     logging.info("Initial category loading initiated.")
+            # else:
+            #     logging.warning("'category_list_layout' not found in root.ids.")
+
+            logging.info("UI Initialization complete (or attempted).")
+
+        except AttributeError as ae:
+            logging.error(f"AttributeError during UI initialization: {ae}", exc_info=True)
+        except KeyError as ke:
+            logging.error(f"KeyError accessing root.ids: {ke}. ID likely missing in KV file.", exc_info=True)
         except Exception as e:
-            self.logger.error(f"Error al añadir dinámicamente el widget del gráfico: {e}")
-            # Puedes decidir si la app debe continuar sin gráfico o parar
+            logging.error(f"Unexpected error during UI initialization: {e}", exc_info=True)
 
-        self.load_categories()
-        self.update_graph()
-        self._setup_logging()
-        
-    # --- Métodos de Interacción con la UI y la Lógica --- 
-    def load_categories(self):
-        """Carga las categorías de la BD y las muestra en la lista."""
-        self.logger.info("Cargando categorías desde la BD...")
-        category_list = self.root.ids.category_list_layout 
-        category_list.clear_widgets()
+    # --- UI Interaction Methods --- #
+    def setup_graph(self, graph_placeholder):
+        """Sets up the Matplotlib graph area."""
+        logging.info("Setting up graph placeholder...")
+        # Create a figure and axis
+        self.fig, self.ax = plt.subplots()
+        # Set the figure background color to match the dark theme
+        self.fig.patch.set_facecolor('#303030')
+        self.ax.set_facecolor('#303030')
+        # Set the text color for labels, titles, etc.
+        self.ax.tick_params(axis='x', colors='white', rotation=45)
+        self.ax.tick_params(axis='y', colors='white')
+        self.ax.title.set_color('white')
+        # Create a canvas to display the figure
+        self.graph_widget = FigureCanvasKivyAgg(self.fig)
+        # Add the canvas to the placeholder
+        graph_placeholder.add_widget(self.graph_widget)
 
-        categories_data = get_all_categories()
-        if not categories_data:
-            self.logger.info("No hay categorías en la BD.")
-            # Podríamos mostrar un mensaje en la UI aquí, como un Label
-            no_cat_label = Label(text="Aún no hay categorías", size_hint_y=None, height='30dp')
-            category_list.add_widget(no_cat_label)
-            return
-        
-        self.logger.info(f"Encontradas {len(categories_data)} categorías. Construyendo widgets...")
-        for category in categories_data:
-            # Crear una instancia del widget definido en .kv
-            # Pasamos los datos para que el widget los use
-            # Nota: Kivy automáticamente intenta emparejar keys del dict con ids dentro del widget
-            # pero es más explícito (y a veces necesario) hacerlo manualmente.
-            row = CategoryRow() # Creamos la fila
-            # Asignamos el ID de la base de datos a la propiedad Kivy de la fila
-            row.category_id = category['id'] 
-            row.ids.name_label.text = category['name']
-            row.ids.percentage_label.text = f"{category['percentage']:.1f}%"
-            row.ids.balance_label.text = f"€{category['current_balance']:.2f}"
-            # Podríamos guardar el ID para futuras acciones (editar/borrar)
-            # row.category_id = category['id'] 
-            
-            # Añadir la fila al GridLayout
-            category_list.add_widget(row)
-            self.logger.info(f"  - Fila añadida para: {category['name']} (ID: {row.category_id})")
-            
-        self.logger.info(f"Carga de categorías completada.")
-        # Actualizamos el gráfico después de cargar/recargar categorías
-        # self.update_graph()
-            
-    def show_add_category_popup(self):
-        """Muestra un Popup para añadir una nueva categoría."""
-        self.logger.info("Mostrando popup para añadir categoría...")
-        
-        # --- Contenido del Popup ---
-        content = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        grid = GridLayout(cols=2, spacing=10, size_hint_y=None, height='80dp')
- 
-        grid.add_widget(Label(text='Nombre:'))
-        name_input = TextInput(multiline=False)
-        grid.add_widget(name_input)
- 
-        grid.add_widget(Label(text='Porcentaje (%):'))
-        percentage_input = TextInput(multiline=False, input_filter='float')
-        grid.add_widget(percentage_input)
- 
-        content.add_widget(grid)
- 
-        # Label para mostrar mensajes de error dentro del popup
-        error_label = Label(text='', color=(1, 0, 0, 1), size_hint_y=None, height='30dp') 
-        content.add_widget(error_label)
-        
-        # --- Botones del Popup ---
-        button_layout = BoxLayout(size_hint_y=None, height='50dp', spacing=10)
-        save_button = Button(text='Guardar')
- 
-        # --- Acciones de los botones del Popup --- 
-        def save_action(instance, error_widget):
-            error_widget.text = '' # Limpiar errores previos al intentar guardar
-            name = name_input.text.strip()
-            percentage_str = percentage_input.text.strip().replace(',', '.') # Reemplazar coma por punto
-            self.logger.info(f"Intentando guardar nueva categoría: {name}, {percentage_str}%")
- 
-            if not name or not percentage_str:
-                self.logger.error("Error: Nombre y porcentaje no pueden estar vacíos.")
-                error_widget.text = "Nombre y porcentaje no pueden estar vacíos."
-                return
-                
-            try:
-                percentage = float(percentage_str)
-                if not (0 <= percentage <= 100):
-                    raise ValueError("Porcentaje fuera de rango")
-            except ValueError as e:
-                self.logger.error(f"Error de valor: {e}")
-                error_widget.text = "Porcentaje debe ser un número válido entre 0 y 100."
-                return
-                
-            # --- Validación del 100% --- 
-            try:
-                current_categories = get_all_categories()
-                current_total_percentage = sum(float(cat['percentage']) for cat in current_categories)
-                self.logger.info(f"Porcentaje total actual: {current_total_percentage:.2f}%")
-                
-                if current_total_percentage + percentage > 100.001: # Pequeño margen para errores de flotantes
-                    error_msg = f"Error: Supera el 100% (actual: {current_total_percentage:.2f}%)"
-                    self.logger.error(error_msg)
-                    error_widget.text = error_msg
-                    return
-            except Exception as e:
-                self.logger.error(f"Error al obtener categorías para validación: {e}")
-                error_widget.text = "Error al validar porcentajes."
-                return # No continuar si no podemos validar
-            # --- Fin Validación --- 
- 
-            try:
-                if add_category(name, percentage):
-                    self.logger.info(f"Categoría '{name}' añadida con éxito desde Popup.")
-                    self.load_categories() # Recargar la lista
-                    self.update_graph() # Actualizar el gráfico
-                    popup.dismiss() # Cerrar el popup
-                else:
-                    self.logger.error("Error desconocido al añadir categoría desde Popup.")
-                    error_widget.text = "Error desconocido al guardar."
-            except sqlite3.IntegrityError:
-                error_msg = f"Error: La categoría '{name}' ya existe."
-                self.logger.error(error_msg)
-                error_widget.text = error_msg
-            except Exception as e:
-                self.logger.error(f"Error inesperado al guardar desde Popup: {e}")
-                error_widget.text = "Error inesperado al guardar."
-                
-        def cancel_action(instance, error_widget):
-            error_widget.text = '' # Limpiar también al cancelar
-            self.logger.info("Popup de añadir categoría cancelado.")
-            popup.dismiss()
- 
-        save_button.bind(on_press=lambda instance: save_action(instance, error_label))
-        button_layout.add_widget(save_button)
- 
-        cancel_button = Button(text='Cancelar')
-        cancel_button.bind(on_press=lambda instance: cancel_action(instance, error_label))
-        button_layout.add_widget(cancel_button)
- 
-        content.add_widget(button_layout)
-        
-        # --- Crear y abrir el Popup --- 
-        popup = Popup(title='Añadir Categoría',
-                      content=content, # Usamos el layout que creamos
-                      size_hint=(0.8, 0.6), # Ajustamos tamaño si es necesario
-                      auto_dismiss=False) # Evita que se cierre al tocar fuera
-
-        popup.open()
-
-    def show_edit_popup(self, category_id):
-        """Muestra un Popup para editar la categoría especificada."""
-        self.logger.info(f"Mostrando popup para editar categoría ID: {category_id}")
-        
-        # 1. Obtener datos actuales de la categoría (¡Necesitamos una función en database.py!)
-        # category_data = get_category_by_id(category_id) # Asumimos que existe
-        # if not category_data:
-        #     self.logger.error(f"Error: No se encontró la categoría con ID {category_id}")
-        #     return
-            
-        # --- Creación del contenido del Popup (Placeholder) ---
-        # Esto será un Layout (e.g., BoxLayout) con Labels, TextInputs y Buttons
-        popup_content = BoxLayout(orientation='vertical', padding=10, spacing=5)
-        popup_content.add_widget(Label(text=f"Editando Categoría ID: {category_id}"))
-
-        # 2. Obtener datos actuales de la categoría
+    def load_categories(self, dt=None): # Add dt=None argument to accept Clock's call
+        """Loads categories from the database and displays them using CategoryRow (KivyMD)."""
+        logging.info("Loading categories into KivyMD list...")
         try:
-            category_data = get_category_by_id(category_id)
-            if not category_data:
-                self.logger.error(f"Error: No se encontró la categoría con ID {category_id}")
-                # TODO: Mostrar error en popup o label
+            category_list_layout = self.root.ids.get('category_list_layout')
+            if not category_list_layout:
+                logging.error("Cannot find 'category_list_layout' in root.ids")
                 return
+
+            category_list_layout.clear_widgets() # Clear previous widgets
+            categories = get_all_categories() # Assuming this returns list of dicts
+
+            if not categories:
+                logging.info("No categories found in the database.")
+                # Optional: Add a placeholder label if needed
+                # category_list_layout.add_widget(MDLabel(text="No categories defined.", halign="center"))
+                return
+
+            logging.info(f"Found {len(categories)} categories. Populating list...")
+            for category in categories:
+                logging.debug(f"Creating CategoryRow for: {category['name']}")
+                balance = category['current_balance'] if category['current_balance'] is not None else 0.0
+                # Create CategoryRow instance using Factory and KV definition
+                row = CategoryRow() # Create instance first
+                # Then set properties
+                row.category_id = category['id']
+                row.category_name = category['name']
+                row.category_percentage = f"{category['percentage']:.2f}%"
+                row.category_balance = f"{balance:.2f} €"
+
+                # Bind buttons inside the row (assuming buttons are defined in <CategoryRow> rule)
+                # The KV rule already binds them: on_press: app.open_edit_popup(root.category_id)
+                category_list_layout.add_widget(row)
+
+        except KeyError as e:
+            logging.error(f"KeyError accessing root.ids in load_categories: {e}. ID likely missing in KV file.", exc_info=True)
         except Exception as e:
-            self.logger.error(f"Error al obtener datos para editar categoría ID {category_id}: {e}")
+            logging.error(f"Unexpected error during category loading: {e}", exc_info=True)
+
+    # Update graph needs implementation based on what you want to show
+    def update_graph(self):
+        """Updates the Matplotlib graph with current data (Placeholder)."""
+        logging.info("(Placeholder) Updating graph...")
+        if not self.ax or not self.graph_widget:
+            logging.warning("Graph axes or widget not ready for update.")
             return
-
-        # 3. Crear contenido del Popup
-        content_layout = BoxLayout(orientation='vertical', padding=10, spacing=5)
-        
-        # Guardamos referencias a los inputs para leerlos después
-        name_input = TextInput(text=category_data['name'], hint_text="Nombre categoría")
-        percentage_input = TextInput(text=str(category_data['percentage']), hint_text="Porcentaje (%)", input_filter='float')
-        
-        content_layout.add_widget(Label(text="Nombre:"))
-        content_layout.add_widget(name_input)
-        content_layout.add_widget(Label(text="Porcentaje (%):"))
-        content_layout.add_widget(percentage_input)
-
-        # Label para mostrar mensajes de error dentro del popup
-        error_label = Label(text='', color=(1, 0, 0, 1), size_hint_y=None, height='30dp') 
-        content_layout.add_widget(error_label)
-
-        # Botones dentro del Popup
-        button_layout = BoxLayout(size_hint_y=None, height='50dp', spacing=5)
-        save_button = Button(text="Guardar Cambios")
-        cancel_button = Button(text="Cancelar")
-        button_layout.add_widget(save_button)
-        button_layout.add_widget(cancel_button)
-        
-        content_layout.add_widget(button_layout)
-
-        # --- Crear y abrir el Popup --- 
-        popup = Popup(title="Editar Categoría",
-                      content=content_layout, # Usamos el layout que creamos
-                      size_hint=(0.8, 0.6), # Ajustamos tamaño si es necesario
-                      auto_dismiss=False) # Evita que se cierre al tocar fuera
-
-        # --- Acciones de los botones del Popup ---
-        def save_action(instance, error_widget):
-            error_widget.text = '' # Limpiar errores previos
-            new_name = name_input.text.strip()
-            new_percentage_str = percentage_input.text.strip().replace(',', '.') # Reemplazar coma
-            
-            # Validación simple
-            if not new_name or not new_percentage_str:
-                self.logger.error("Error: El nombre y porcentaje no pueden estar vacíos.")
-                error_widget.text = "Nombre y porcentaje no pueden estar vacíos."
-                return
-            try:
-                new_percentage = float(new_percentage_str)
-                if not (0 <= new_percentage <= 100):
-                    raise ValueError("El porcentaje debe estar entre 0 y 100.")
-            except ValueError as ve:
-                self.logger.error(f"Error de valor: {ve}")
-                error_widget.text = "Porcentaje debe ser numérico (0-100)."
-                return # Salir si el porcentaje no es válido
-                
-            # --- Validación del 100% --- 
-            try:
-                current_categories = get_all_categories()
-                # Sumar porcentajes EXCEPTO el de la categoría actual
-                current_total_excluding_this = sum(float(cat['percentage']) for cat in current_categories if cat['id'] != category_id)
-                self.logger.info(f"Porcentaje total actual (sin ID {category_id}): {current_total_excluding_this:.2f}%")
-                
-                if current_total_excluding_this + new_percentage > 100.001:
-                    error_msg = f"Error: Supera 100% (actual sin esta: {current_total_excluding_this:.2f}%)"
-                    self.logger.error(error_msg)
-                    error_widget.text = error_msg
-                    return
-            except Exception as e:
-                self.logger.error(f"Error al obtener categorías para validación del 100%: {e}")
-                error_widget.text = "Error al validar porcentajes."
-                return # No continuar si no podemos validar
-            # --- Fin Validación ---
-            
-            # Si la validación pasa, intentamos actualizar la BD
-            try:
-                if update_category(category_id, new_name, new_percentage):
-                    self.logger.info("Actualización exitosa en BD.")
-                    self.load_categories() # Recargar la lista principal
-                    self.update_graph() # Actualizar el gráfico
-                    popup.dismiss() # Cerrar el popup
-                else:
-                    self.logger.error("Error al guardar en BD (ver logs de database.py).")
-                    error_widget.text = "Error al guardar en BD."
-            except sqlite3.IntegrityError:
-                error_msg = f"Error: Ya existe una categoría con el nombre '{new_name}'."
-                self.logger.error(error_msg)
-                error_widget.text = error_msg
-            except Exception as e:
-                self.logger.error(f"Error al guardar cambios: {e}")
-                error_widget.text = "Error inesperado al guardar."
-
-        def cancel_action(instance, error_widget):
-            error_widget.text = '' # Limpiar también al cancelar
-            self.logger.info("Edición cancelada.")
-            popup.dismiss()
-            
-        save_button.bind(on_press=lambda instance: save_action(instance, error_label))
-        cancel_button.bind(on_press=lambda instance: cancel_action(instance, error_label))
-        # ---------------------------------------
-
-        popup.open()
+        # Example: Clear and plot new data (e.g., category balances)
+        # self.ax.clear()
+        # categories = get_all_categories()
+        # names = [cat['name'] for cat in categories]
+        # balances = [cat['current_balance'] if cat['current_balance'] is not None else 0 for cat in categories]
+        # self.ax.bar(names, balances)
+        # self.ax.set_title("Category Balances")
+        # self.ax.set_facecolor('#303030') # Re-apply styles if clear removes them
+        # self.fig.patch.set_facecolor('#303030')
+        # self.ax.tick_params(axis='x', colors='white', rotation=45)
+        # self.ax.tick_params(axis='y', colors='white')
+        # self.ax.title.set_color('white')
+        # self.graph_widget.draw_idle() # Redraw the canvas
+        pass # Keep as placeholder for now
 
     def ui_distribute_income_kivy(self):
-        """Se llama al pulsar el botón 'Distribuir Ingreso'"""
-        self.logger.info("\n--- Intentando distribuir ingreso --- ")
-        income_input = self.root.ids.income_input 
-        try:
-            total_income = float(income_input.text.strip())
-            if total_income <= 0:
-                 self.logger.warning("Error: El ingreso debe ser un número positivo.")
-                 # TODO: Mostrar feedback en la UI
-                 return
-            
-            self.logger.info(f"Distribuyendo {total_income:.2f}€...")
-            if distribute_income(total_income):
-                self.logger.info("Distribución completada. Recargando categorías...")
-                self.load_categories() # Recargar para ver nuevos balances
-                self.update_graph() # Actualiza el gráfico
-                # Limpiar input?
-                # income_input.text = ""
-            else:
-                self.logger.error("La distribución falló (ver logs de database.py). อาจจะไม่มีหมวดหมู่ที่มีเปอร์เซ็นต์")
-                 # TODO: Mostrar feedback en la UI
+        """Distributes the entered income across categories based on percentages."""
+        log_widget = self.root.ids.get('log_display_label')
+        income_input_widget = self.root.ids.get('income_input')
 
-        except ValueError:
-            self.logger.error("Error: Ingreso inválido. Introduce un número.")
-            # TODO: Mostrar feedback en la UI
-        except Exception as e:
-            self.logger.error(f"Error inesperado al distribuir: {e}")
-            # TODO: Mostrar feedback en la UI
-
-    def update_graph(self):
-        """Actualiza el gráfico de Matplotlib con los datos actuales."""
-        # Asegurarnos que el widget del gráfico se creó correctamente en on_start
-        if not self.graph_widget:
-            self.logger.error("Error: El widget del gráfico (self.graph_widget) no está inicializado.")
+        if not log_widget or not income_input_widget:
+            logging.error("Error: Log display or income input widget not found in root.ids.")
+            # Optionally show a user-facing error popup
             return
 
-        self.logger.info("Actualizando gráfico...")
         try:
-            # Limpiamos la figura (self.fig), no el widget
-            self.fig.clf()
+            income_text = income_input_widget.text.strip()
+            if not income_text:
+                log_widget.text += "[color=ff0000]Error: El campo de ingreso está vacío.[/color]\n"
+                logging.warning("Distribute income attempt with empty input.")
+                return
+
+            # Replace comma with dot for float conversion
+            income_text = income_text.replace(",", ".")
+            total_income = float(income_text)
+
+            if total_income <= 0:
+                log_widget.text += f"[color=ffff00]Advertencia: El ingreso debe ser positivo ({total_income} introducido).[/color]\n"
+                logging.warning(f"Distribute income attempt with non-positive value: {total_income}")
+                return
+
+            log_widget.text += f"[color=00ff00]Distribuyendo ingreso: {total_income:.2f} €[/color]\n"
+            logging.info(f"Attempting to distribute income: {total_income:.2f}")
 
             categories = get_all_categories()
             if not categories:
-                self.logger.info("No hay categorías para graficar.")
-                # Podríamos mostrar un mensaje en el gráfico o dejarlo vacío
-                ax = self.fig.add_subplot(111)
-                ax.text(0.5, 0.5, 'Sin datos', ha='center', va='center') # Usar ha y va
-                self.graph_widget.draw() # Llamamos draw sobre el widget guardado
+                log_widget.text += "[color=ff0000]Error: No hay categorías definidas para distribuir.[/color]\n"
+                logging.warning("Distribute income attempt with no categories defined.")
                 return
 
-            # Preparamos datos para el gráfico (ej: gráfico de pastel de balances)
-            labels = [c['name'] for c in categories]
-            # Asegúrate que 'current_balance' existe en los datos de get_all_categories
-            sizes = [c.get('current_balance', 0) for c in categories] # Usar .get con default 0
-            # Filtrar categorías con balance > 0 para que el gráfico sea más limpio?
-            positive_labels = [labels[i] for i, size in enumerate(sizes) if size > 0]
-            positive_sizes = [size for size in sizes if size > 0]
-
-            if not positive_sizes:
-                 self.logger.warning("No hay balances positivos para graficar.")
-                 ax = self.fig.add_subplot(111)
-                 ax.text(0.5, 0.5, 'Sin balances > 0', ha='center', va='center')
-                 self.graph_widget.draw() # Llamamos draw sobre el widget guardado
+            total_percentage = sum(cat['percentage'] for cat in categories)
+            # Optional: Check if total percentage is reasonable (e.g., close to 100)
+            if not (99.9 < total_percentage < 100.1) and total_percentage != 0:
+                log_widget.text += f"[color=ffff00]Advertencia: La suma de porcentajes ({total_percentage:.2f}%) no es 100%. La distribución puede ser inesperada.[/color]\n"
+                logging.warning(f"Total category percentage is {total_percentage:.2f}%, not 100%.")
+            elif total_percentage == 0 and len(categories) > 0:
+                 log_widget.text += f"[color=ff0000]Error: Todas las categorías tienen 0%. No se puede distribuir.[/color]\n"
+                 logging.error(f"Distribution impossible: All categories have 0%.")
                  return
 
-            # Creamos el gráfico de pastel en la figura (self.fig)
-            ax = self.fig.add_subplot(111)
-            ax.pie(positive_sizes, labels=positive_labels, autopct='%1.1f%%', startangle=90)
-            ax.axis('equal')  # Asegura que el pastel sea un círculo.
-            self.fig.tight_layout() # Ajusta para que no se corten las etiquetas
+            logging.info(f"Starting income distribution for ${total_income:.2f}")
 
-            # Redibujamos el widget Kivy que contiene la figura
-            self.graph_widget.draw() # Llamamos draw sobre el widget guardado
-            self.logger.info("Gráfico actualizado.")
+            # --- Loop through categories and call the new DB function ---
+            for category in categories:
+                cat_id = category['id']
+                cat_name = category['name']
+                percentage = category['percentage']
+                allocated_amount = round((percentage / 100.0) * total_income, 2)
 
+                if allocated_amount > 0:
+                    description = f"Asignación del {percentage:.2f}% de ${total_income:.2f}"
+                    try:
+                        # --- Call the new database function directly ---
+                        add_allocation_transaction(cat_id, allocated_amount, description)
+                        log_widget.text += f"[color=00ff00]  - Asignado ${allocated_amount:.2f} a '{cat_name}'[/color]\n"
+                        logging.info(f"Successfully allocated ${allocated_amount:.2f} to category ID {cat_id} ('{cat_name}')")
+                    except Exception as db_err:
+                        # The DB function logs its own errors, but we add context here
+                        log_widget.text += f"[color=ff0000]  - Error al asignar a '{cat_name}': {db_err}[/color]\n"
+                        logging.error(f"Error calling add_allocation_transaction for category ID {cat_id} ('{cat_name}'): {db_err}", exc_info=True)
+                        # Decide if you want to stop the whole process or continue with others
+                        # return # Example: Stop if one fails
+
+            # --- No longer needed: call to non-existent add_multiple_transactions ---
+            # if transactions_to_add:
+            #     try:
+            #         # This function doesn't exist! This was the problem.
+            #         # add_multiple_transactions(transactions_to_add)
+            #         # log_widget.text += "[color=00ff00]Distribución completada y registrada.[/color]\n"
+            #         # logging.info("Income distribution transactions presumably added.")
+            #         pass # Now handled inside the loop
+            #     except Exception as e:
+            #         log_widget.text += f"[color=ff0000]Error al registrar la distribución: {e}[/color]\n"
+            #         logging.error(f"Error during (non-existent) bulk transaction add: {e}", exc_info=True)
+
+            log_widget.text += "[color=00ff00]Distribución procesada.[/color]\n"
+            logging.info("Income distribution process finished.")
+            Clock.schedule_once(self.load_categories, 0) # Schedule refresh for next frame
+            # self.update_graph() # Update graph if it exists
+
+        except ValueError:
+            log_widget.text += f"[color=ff0000]Error: Entrada de ingreso inválida ('{income_input_widget.text}'). Introduce un número válido.[/color]\n"
+            logging.error(f"ValueError converting income input: '{income_input_widget.text}'", exc_info=True)
         except Exception as e:
-            # Captura más genérica para depuración
-            self.logger.error(f"Error inesperado al actualizar el gráfico: {e}")
-            import traceback
-            traceback.print_exc() # Imprime el traceback completo
+            log_widget.text += f"[color=ff0000]Error inesperado durante la distribución: {e}[/color]\n"
+            logging.error(f"Unexpected error during income distribution: {e}", exc_info=True)
 
-    def delete_category(self, category_id):
-        """Se llama al pulsar el botón 'X' (borrar) en una fila de categoría."""
-        self.logger.info(f"Intentando borrar categoría con ID: {category_id}")
-        
-        # --- ¡IMPORTANTE! Añadir confirmación --- 
-        # TODO: Implementar un Popup de Kivy para preguntar "¿Estás seguro?"
-        # Por ahora, borramos directamente para probar.
-        
+    def delete_category_action(self, category_id):
+        """Deletes a category after user interaction (called from CategoryRow button)."""
+        logging.info(f"Intentando borrar categoría ID: {category_id}")
+        # TODO: Añadir diálogo de confirmación aquí para UX
         try:
-            if delete_category(category_id):
-                self.logger.info(f"Categoría ID {category_id} borrada con éxito.")
-                # Recargar la lista para reflejar el cambio
-                self.load_categories()
-                self.update_graph() # Actualiza el gráfico
+            success = delete_category(category_id)
+            if success:
+                logging.info(f"Categoría ID {category_id} borrada exitosamente.")
+                # Refrescar la lista para quitar la categoría borrada
+                Clock.schedule_once(self.load_categories, 0)
             else:
-                self.logger.error(f"Error: No se pudo borrar la categoría ID {category_id} (quizás no existía?).")
-                # TODO: Mostrar feedback en la UI si es necesario
+                # Esto podría pasar si el ID no existe, aunque delete_category ya loggea
+                logging.warning(f"No se pudo borrar la categoría ID {category_id}, puede que ya no exista.")
+                # Podríamos mostrar un popup de error aquí también
         except Exception as e:
-            self.logger.error(f"Error inesperado al borrar categoría ID {category_id}: {e}")
-            # TODO: Mostrar feedback en la UI
+            logging.error(f"Error inesperado al borrar categoría ID {category_id}: {e}")
+            # Mostrar popup de error genérico
+            self.show_error_popup(f"Error al borrar categoría: {e}")
 
-    def _setup_logging(self):
-        """Configura el handler de logging personalizado para la UI."""
-        if hasattr(self.root, 'ids') and 'log_output_label' in self.root.ids and 'log_scrollview' in self.root.ids:
-            kivy_handler = self.KivyLogHandler(self, 'log_output_label', 'log_scrollview')
-            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-            kivy_handler.setFormatter(formatter)
-            self.logger.addHandler(kivy_handler)
-            # Opcional: Eliminar otros handlers si solo quieres logs en la UI
-            # for handler in logging.root.handlers[:]:
-            #     logging.root.removeHandler(handler)
-            self.logger.info("Logging inicializado y conectado a la UI.")
-        else:
-            print("ADVERTENCIA: No se encontró log_output_label o log_scrollview en los IDs del root widget. El log no aparecerá en la UI.")
-
-    def add_log_message(self, message):
-        """Añade un mensaje al Label de log y hace scroll."""
+    def open_edit_popup(self, category_id):
+        """Opens the Edit Category Popup with the data of the selected category."""
+        logging.info(f"Abriendo popup de edición para categoría ID: {category_id}")
         try:
-            log_label = self.root.ids.log_output_label
-            log_scroll = self.root.ids.log_scrollview
-            
-            # Añadir mensaje con color verde Matrix
-            log_label.text += f"[color=00ff00]{message}[/color]\n"
-            
-            # Hacer scroll hacia abajo para mostrar el último mensaje
-            # Esperar un frame para que el tamaño del label se actualice
-            Clock.schedule_once(lambda dt: setattr(log_scroll, 'scroll_y', 0), 0)
-            
-        except KeyError:
-            self.logger.error(f"Error: No se encontró log_output_label o log_scrollview. Mensaje: {message}")
+            category = get_category_by_id(category_id)
+            if category:
+                if not self.edit_popup:
+                    # Crear el popup si no existe (definido en KV)
+                    self.edit_popup = EditCategoryPopup()
+
+                # Llenar los campos del popup con los datos actuales
+                self.edit_popup.ids.edit_category_id.text = str(category['id']) # Guardamos el ID oculto
+                self.edit_popup.ids.edit_category_name.text = category['name']
+                self.edit_popup.ids.edit_category_percentage.text = str(category['percentage'])
+
+                self.edit_popup.open()
+            else:
+                logging.error(f"No se encontró la categoría con ID {category_id} para editar.")
+                self.show_error_popup("Error: No se encontró la categoría seleccionada.")
         except Exception as e:
-            self.logger.error(f"Error inesperado en add_log_message: {e}")
+            logging.error(f"Error al abrir el popup de edición para ID {category_id}: {e}")
+            self.show_error_popup(f"Error al preparar edición: {e}")
 
-class Separator(Widget):
-    pass
+    # --- Add Category Popup --- > NUEVA FUNCIÓN
+    def show_add_category_popup(self):
+        """Shows the Add Category Popup."""
+        logging.info("Abriendo popup para añadir categoría...")
+        try:
+            if not self.add_category_popup_instance:
+                # Crear instancia si no existe (definida en KV)
+                self.add_category_popup_instance = AddCategoryPopup()
+            
+            # Limpiar campos antes de mostrar
+            self.add_category_popup_instance.ids.category_name_input.text = ""
+            self.add_category_popup_instance.ids.category_percentage_input.text = ""
+            
+            self.add_category_popup_instance.open()
+        except Exception as e:
+            logging.error(f"Error al mostrar el popup de añadir categoría: {e}")
+            self.show_error_popup(f"Error al abrir el popup: {e}")
 
+    # --- Process Add Category Popup --- > RECONSTRUCCIÓN
+    def add_category_from_popup(self, popup, name, percentage_str):
+        """Adds a new category from the AddCategoryPopup data after validation."""
+        log_widget = self.root.ids.get('log_display_label')
+        name = name.strip()
+        percentage_str = percentage_str.strip().replace(',', '.')
+
+        # --- Validation --- #
+        if not name:
+            logging.warning("Intento de añadir categoría sin nombre.")
+            self.show_error_popup("El nombre de la categoría no puede estar vacío.")
+            # No cerramos el popup para que pueda corregir
+            return
+
+        try:
+            percentage = float(percentage_str)
+            if percentage <= 0:
+                logging.warning(f"Intento de añadir categoría con porcentaje no positivo: {percentage}")
+                self.show_error_popup("El porcentaje debe ser un número positivo.")
+                return
+        except ValueError:
+            logging.warning(f"Intento de añadir categoría con porcentaje inválido: '{percentage_str}'")
+            self.show_error_popup("El porcentaje introducido no es un número válido.")
+            return
+
+        # Check total percentage
+        try:
+            categories = get_all_categories()
+            current_total_percentage = sum(cat['percentage'] for cat in categories)
+            if current_total_percentage + percentage > 100.01: # Allow for small float inaccuracies
+                logging.warning(f"Intento de superar el 100% (Actual: {current_total_percentage}, Nuevo: {percentage})")
+                self.show_error_popup(f"Añadir {percentage}% superaría el 100% total (actual: {current_total_percentage:.2f}%)")
+                return
+        except Exception as e:
+            logging.error(f"Error al obtener categorías para validar porcentaje: {e}")
+            self.show_error_popup("Error al verificar el porcentaje total.")
+            # Might still dismiss popup here, or let the user retry?
+            popup.dismiss()
+            return
+
+        # --- Add to Database --- #
+        try:
+            success = add_category(name, percentage)
+            if success:
+                logging.info(f"Categoría '{name}' añadida exitosamente con {percentage}%.")
+                if log_widget:
+                     log_widget.text += f"[color=00ff00]Categoría '{name}' ({percentage}%) añadida.[/color]\n"
+                popup.dismiss() # Cerrar popup si éxito
+                Clock.schedule_once(self.load_categories, 0) # Refrescar lista
+                # self.update_graph() # Update graph if it exists
+            else:
+                # add_category should log specifics, show generic error here
+                self.show_error_popup(f"No se pudo añadir la categoría '{name}'. ¿Quizás ya existe?")
+        except Exception as e:
+            logging.error(f"Error inesperado al añadir categoría '{name}': {e}", exc_info=True)
+            self.show_error_popup(f"Error inesperado al guardar: {e}")
+            popup.dismiss() # Dismiss even on unexpected error?
+
+    # --- Process Edit Category Popup --- > NUEVA FUNCIÓN
+    def update_category_from_popup(self, popup, category_id_str, new_name, new_percentage_str):
+        """Updates an existing category from the EditCategoryPopup data after validation."""
+        log_widget = self.root.ids.get('log_display_label')
+        new_name = new_name.strip()
+        new_percentage_str = new_percentage_str.strip().replace(',', '.')
+
+        # --- Validation --- #
+        if not new_name:
+            logging.warning("Intento de actualizar categoría sin nombre.")
+            self.show_error_popup("El nombre de la categoría no puede estar vacío.")
+            return
+
+        try:
+            category_id = int(category_id_str)
+            new_percentage = float(new_percentage_str)
+            if new_percentage <= 0:
+                logging.warning(f"Intento de actualizar categoría ID {category_id} con porcentaje no positivo: {new_percentage}")
+                self.show_error_popup("El porcentaje debe ser un número positivo.")
+                return
+        except ValueError:
+            logging.warning(f"Intento de actualizar categoría con ID/porcentaje inválido: ID='{category_id_str}', %='{new_percentage_str}'")
+            self.show_error_popup("El porcentaje o el ID interno no son válidos.")
+            return
+        except Exception as e:
+             logging.error(f"Error inesperado en la validación inicial de edición para ID {category_id_str}: {e}")
+             self.show_error_popup(f"Error de validación: {e}")
+             popup.dismiss()
+             return
+
+        # Check total percentage (excluding the original percentage of the item being edited)
+        try:
+            categories = get_all_categories()
+            current_total_percentage_others = sum(cat['percentage'] for cat in categories if cat['id'] != category_id)
+            new_total_percentage = current_total_percentage_others + new_percentage
+
+            if new_total_percentage > 100.01: # Allow for small float inaccuracies
+                original_percentage = next((cat['percentage'] for cat in categories if cat['id'] == category_id), 0)
+                logging.warning(f"Intento de superar el 100% al editar ID {category_id} (Otros: {current_total_percentage_others}, Nuevo: {new_percentage})")
+                self.show_error_popup(f"Editar a {new_percentage}% superaría el 100% total (actual otros: {current_total_percentage_others:.2f}%)")
+                return
+        except Exception as e:
+            logging.error(f"Error al obtener categorías para validar porcentaje en edición: {e}")
+            self.show_error_popup("Error al verificar el porcentaje total durante la edición.")
+            popup.dismiss()
+            return
+
+        # --- Update Database --- #
+        try:
+            success = update_category(category_id, new_name, new_percentage)
+            if success:
+                logging.info(f"Categoría ID {category_id} actualizada a '{new_name}' con {new_percentage}%.")
+                if log_widget:
+                    log_widget.text += f"[color=00ff00]Categoría '{new_name}' ({new_percentage}%) actualizada.[/color]\n"
+                popup.dismiss() # Cerrar popup si éxito
+                Clock.schedule_once(self.load_categories, 0) # Refrescar lista
+                # self.update_graph() # Update graph if it exists
+            else:
+                # update_category should log specifics, show generic error here
+                logging.error(f"Fallo al actualizar la categoría ID {category_id} desde la UI (update_category devolvió False)")
+                self.show_error_popup(f"No se pudo actualizar la categoría '{new_name}'. ¿Conflicto de nombre?")
+        except Exception as e:
+            logging.error(f"Error inesperado al actualizar categoría ID {category_id} ('{new_name}'): {e}", exc_info=True)
+            self.show_error_popup(f"Error inesperado al guardar cambios: {e}")
+            popup.dismiss()
+
+    # --- Generic Error Popup --- > RECONSTRUCCIÓN
+    def show_error_popup(self, error_message):
+        """Displays a simple popup with an error message."""
+        logging.error(f"Mostrando popup de error: {error_message}") # Log the error being shown
+        try:
+            # Contenido: Una etiqueta simple dentro de un BoxLayout
+            content = MDBoxLayout(orientation='vertical', padding="10dp", spacing="10dp", adaptive_height=True)
+            content.add_widget(MDLabel(text=error_message, halign='center', adaptive_height=True))
+
+            # Botón OK para cerrar
+            ok_button = MDRaisedButton(text="OK", size_hint_y=None, height="48dp", pos_hint={"center_x": 0.5})
+            content.add_widget(ok_button)
+
+            # Crear el popup
+            popup = Popup(title='Error',
+                          content=content,
+                          size_hint=(0.7, None), # Ancho relativo, alto automático
+                          height="200dp", # Altura fija o adaptativa? Intentemos fija por ahora
+                          auto_dismiss=False) # Evitar cerrar al hacer clic fuera
+
+            # Vincular el botón para cerrar el popup
+            ok_button.bind(on_press=popup.dismiss)
+
+            # Abrir el popup
+            popup.open()
+        except Exception as e:
+            # Fallback si crear el popup falla
+            logging.critical(f"CRÍTICO: Fallo al crear/mostrar popup de error: {e}", exc_info=True)
+            print(f"ERROR CRÍTICO AL MOSTRAR POPUP: {error_message}\nError creación popup: {e}")
+
+    # --- Update Graph --- #
+    def update_graph(self):
+        """Updates the Matplotlib graph with current data (Placeholder)."""
+        logging.info("(Placeholder) Updating graph...")
+        if not self.ax or not self.graph_widget:
+            logging.warning("Graph axes or widget not ready for update.")
+            return
+        # Example: Clear and plot new data (e.g., category balances)
+        # self.ax.clear()
+        # categories = get_all_categories()
+        # names = [cat['name'] for cat in categories]
+        # balances = [cat['current_balance'] if cat['current_balance'] is not None else 0 for cat in categories]
+        # self.ax.bar(names, balances)
+        # self.ax.set_title("Category Balances")
+        # self.ax.set_facecolor('#303030') # Re-apply styles if clear removes them
+        # self.fig.patch.set_facecolor('#303030')
+        # self.ax.tick_params(axis='x', colors='white', rotation=45)
+        # self.ax.tick_params(axis='y', colors='white')
+        # self.ax.title.set_color('white')
+        # self.graph_widget.draw_idle() # Redraw the canvas
+        pass # Keep as placeholder for now
+
+# --- Entry Point --- #
 if __name__ == '__main__':
-    # Ya no necesitamos llamar a create_tables() aquí si se llama
-    # automáticamente al conectar (aunque no hace daño llamarlo)
-    print("Verificando/Creando tablas si es necesario...")
-    create_tables() # Asegura que las tablas existen antes de iniciar la app
-    
+    # Create tables if they don't exist
+    create_tables()
+
+    # Setup Kivy logging *before* running the app
+    # Note: We instantiate the handler here, but it needs the widget from on_start
+    kivy_log_handler_instance = KivyLogHandler()
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    kivy_log_handler_instance.setFormatter(formatter)
+    root_logger = logging.getLogger()
+    # Clean up potential old handlers (important for reloading/multiple runs)
+    for handler in root_logger.handlers[:]:
+        if isinstance(handler, KivyLogHandler):
+            root_logger.removeHandler(handler)
+    root_logger.addHandler(kivy_log_handler_instance)
+    root_logger.setLevel(logging.INFO) # Set the desired level for the root logger
+
+    logging.info("Iniciando la aplicación FinanceApp...")
     FinanceApp().run()

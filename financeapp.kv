@@ -1,0 +1,200 @@
+#:kivy 2.3.0
+#:import FigureCanvasKivyAgg kivy_garden.matplotlib.backend_kivyagg.FigureCanvasKivyAgg
+#:import MDLabel kivymd.uix.label.MDLabel
+#:import MDRaisedButton kivymd.uix.button.MDRaisedButton
+#:import MDTextField kivymd.uix.textfield.MDTextField
+#:import MDIconButton kivymd.uix.button.MDIconButton
+#:import MDBoxLayout kivymd.uix.boxlayout.MDBoxLayout
+#:import AnchorLayout kivy.uix.anchorlayout.AnchorLayout
+
+<CategoryRow@MDBoxLayout>:
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: "48dp"
+    padding: "10dp"
+    spacing: "10dp"
+
+    category_id: 0
+    category_name: ""
+    category_percentage: ""
+    category_balance: ""
+
+    MDLabel:
+        text: root.category_name
+        size_hint_x: 0.4
+        halign: 'left'
+        valign: 'center'
+
+    MDLabel:
+        text: root.category_percentage
+        size_hint_x: 0.15
+        halign: 'right'
+        valign: 'center'
+
+    MDLabel:
+        text: root.category_balance
+        size_hint_x: 0.25
+        halign: 'right'
+        valign: 'center'
+
+    MDBoxLayout:
+        size_hint_x: 0.2
+        adaptive_size: True
+        pos_hint: {'center_y': 0.5}
+        spacing: '5dp'
+        MDIconButton:
+            icon: "pencil"
+            theme_text_color: "Custom"
+            text_color: app.theme_cls.primary_color
+            on_press: app.open_edit_popup(root.category_id)
+        MDIconButton:
+            icon: "delete"
+            theme_text_color: "Custom"
+            text_color: app.theme_cls.error_color
+            on_press: app.delete_category_action(root.category_id)
+
+<FinanceRootWidget>:
+    FloatLayout: 
+        BoxLayout:
+            orientation: 'vertical'
+            spacing: 10
+            padding: "10dp" 
+            size_hint: (1, 1) 
+            pos_hint: {'top': 1} 
+
+            # Placeholder donde añadiremos el gráfico desde Python
+            BoxLayout:
+                id: graph_placeholder 
+                size_hint_y: 0.4 
+                canvas.before:
+                    Color:
+                        rgba: app.theme_cls.bg_darkest 
+                    Rectangle:
+                        pos: self.pos
+                        size: self.size
+
+            MDLabel: 
+                text: 'Categorías'
+                size_hint_y: None
+                height: self.texture_size[1] 
+                font_style: "H6" 
+                halign: 'center'
+
+            ScrollView: 
+                size_hint_y: 0.4 
+                GridLayout: 
+                    id: category_list_layout 
+                    cols: 1 
+                    size_hint_y: None 
+                    height: self.minimum_height 
+                    spacing: '2dp'
+                    # Las filas (CategoryRow) se añadirán aquí desde Python
+
+            MDRaisedButton: 
+                text: 'Añadir Categoría'
+                size_hint_y: None
+                height: '48dp' 
+                on_press: app.show_add_category_popup() 
+                pos_hint: {'center_x': 0.5} 
+
+            # --- Sección Distribuir Ingreso --- #
+            BoxLayout:
+                size_hint_y: None
+                height: '60dp' 
+                spacing: '10dp'
+                padding: [0, "10dp", 0, 0] 
+
+                MDLabel: 
+                    text: "Ingreso (€):" 
+                    size_hint_x: 0.3 
+                    halign: 'right'
+                    valign: 'center'
+
+                MDTextField: 
+                    id: income_input 
+                    mode: "rectangle" 
+                    size_hint_x: 0.3
+                    hint_text: "1500.50" 
+                    helper_text: "Introduce el ingreso total"
+                    helper_text_mode: "on_focus" 
+
+                MDRaisedButton: 
+                    text: "Distribuir" 
+                    size_hint_x: 0.3
+                    on_press: app.ui_distribute_income_kivy() 
+                    pos_hint: {'center_y': 0.5} 
+
+            # --- Log estilo Matrix (Overlay) --- #
+            AnchorLayout:
+                anchor_x: 'center' 
+                anchor_y: 'bottom' 
+                size_hint_y: 0.15 
+                ScrollView:
+                    size_hint: (0.9, 1) 
+                    MDLabel: 
+                        id: log_display_label 
+                        text: 'Log inicial...\n' 
+                        size_hint_y: None
+                        height: self.texture_size[1]
+                        font_size: '10sp' 
+                        markup: True 
+                        readonly: True 
+                        padding: [5, 5]
+
+# --- Popup Definitions --- # 
+<AddCategoryPopup@Popup>: 
+    title: "Añadir Nueva Categoría"
+    size_hint: 0.8, 0.5
+    auto_dismiss: False
+    BoxLayout:
+        orientation: 'vertical'
+        padding: "10dp"
+        spacing: "10dp"
+        MDTextField:
+            id: category_name_input
+            hint_text: "Nombre de la categoría"
+            mode: "rectangle"
+        MDTextField:
+            id: category_percentage_input
+            hint_text: "Porcentaje (%)"
+            input_filter: 'float' # Permitir solo números decimales
+            mode: "rectangle"
+        BoxLayout:
+            size_hint_y: None
+            height: "48dp"
+            spacing: "10dp"
+            MDRaisedButton:
+                text: "Guardar"
+                on_press: app.add_category_from_popup(root, category_name_input.text, category_percentage_input.text)
+            MDRaisedButton:
+                text: "Cancelar"
+                on_press: root.dismiss() # 'root' aquí se refiere al Popup
+
+<EditCategoryPopup@Popup>: 
+    title: "Editar Categoría"
+    size_hint: 0.8, 0.5
+    auto_dismiss: False
+    category_id: None # Property to hold the ID of the category being edited
+    BoxLayout:
+        orientation: 'vertical'
+        padding: "10dp"
+        spacing: "10dp"
+        MDTextField:
+            id: edit_category_name_input
+            hint_text: "Nuevo nombre"
+            mode: "rectangle"
+        MDTextField:
+            id: edit_category_percentage_input
+            hint_text: "Nuevo porcentaje (%)"
+            input_filter: 'float'
+            mode: "rectangle"
+        BoxLayout:
+            size_hint_y: None
+            height: "48dp"
+            spacing: "10dp"
+            MDRaisedButton:
+                text: "Guardar Cambios"
+                on_press: app.update_category_from_popup(root, root.category_id, edit_category_name_input.text, edit_category_percentage_input.text)
+            MDRaisedButton:
+                text: "Cancelar"
+                on_press: root.dismiss()
