@@ -55,11 +55,12 @@ def create_tables():
 # --- Funciones CRUD para Categorías ---
 
 def get_all_categories() -> list[dict]:
-    """Obtiene todas las categorías de la base de datos con todos sus campos."""
+    """Obtiene todas las categorías de la base de datos, incluyendo su balance actual."""
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT id, name, percentage, current_balance FROM Categories ORDER BY name")
+        # Asegurarse de que la columna se llama 'current_balance'
+        cursor.execute("SELECT id, name, percentage, current_balance FROM Categories ORDER BY name") # Añadido current_balance y orden
         categories = [{'id': row[0], 'name': row[1], 'percentage': row[2], 'current_balance': row[3]}
                       for row in cursor.fetchall()]
         return categories
