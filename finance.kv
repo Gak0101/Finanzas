@@ -1,0 +1,91 @@
+# Archivo finance.kv
+# Kivy automáticamente busca este archivo porque nuestra clase App se llama FinanceApp.
+# Este archivo define la estructura visual.
+
+<CategoryRow@BoxLayout>:
+    # Definimos un widget reutilizable para cada fila de categoría
+    # (Lo usaremos más adelante desde Python)
+    orientation: 'horizontal'
+    size_hint_y: None
+    height: '40dp'
+    spacing: '5dp'
+    
+    Label:
+        id: name_label
+        text: 'Category Name'
+        size_hint_x: 0.5 # Ocupa la mitad del espacio
+    Label:
+        id: percentage_label
+        text: '0%'
+        size_hint_x: 0.2
+    Label: # Placeholder for balance
+        id: balance_label 
+        text: '€0.00' 
+        size_hint_x: 0.2
+    Button:
+        text: 'Edit'
+        size_hint_x: 0.15 # Un poco más de espacio
+        on_press: app.show_edit_popup(root.category_id) # Conectado!
+    Button:
+        text: 'X' # Más compacto
+        size_hint_x: 0.1
+        on_press: app.delete_category(root.category_id) # ¡Conectado!
+
+BoxLayout: # BoxLayout Principal (Vertical)
+    orientation: 'vertical'
+    padding: '10dp'
+    spacing: '10dp'
+
+    Label: # Placeholder para el gráfico
+        id: chart_placeholder
+        text: '[ Aquí irá el Gráfico de Dona ]'
+        size_hint_y: 0.4 # Ocupa el 40% de la altura vertical
+        canvas.before:
+            Color:
+                rgba: 0.2, 0.2, 0.2, 1 # Fondo gris oscuro para distinguirlo
+            Rectangle:
+                pos: self.pos
+                size: self.size
+
+    Label: # Título para la lista de categorías
+        text: 'Categorías'
+        size_hint_y: None
+        height: '30dp'
+        font_size: '18sp'
+
+    ScrollView: # Para que la lista sea desplazable
+        size_hint_y: 0.4 # Ocupa otro 40% de la altura
+        GridLayout: # Contendrá las filas de categorías
+            id: category_list_layout # Le damos ID para acceder desde Python
+            cols: 1 # Una columna (cada fila será un CategoryRow)
+            size_hint_y: None # Su altura crecerá con el contenido
+            height: self.minimum_height # Ajusta la altura al contenido
+            row_default_height: '40dp' # Altura por defecto de las filas (puede ser redundante con CategoryRow)
+            row_force_default: True
+            spacing: '2dp'
+            # Las filas (CategoryRow) se añadirán aquí desde Python
+
+    BoxLayout: # Controles inferiores (Horizontal)
+        size_hint_y: None # Altura fija
+        height: '50dp'
+        spacing: '10dp'
+
+        TextInput:
+            id: new_category_name
+            hint_text: 'Nombre Nueva Categoría'
+            size_hint_x: 0.4
+            multiline: False
+        TextInput:
+            id: new_category_percentage
+            hint_text: '%'
+            size_hint_x: 0.15
+            input_filter: 'float' # Solo permite números flotantes
+            multiline: False
+        Button:
+            text: 'Añadir'
+            size_hint_x: 0.2
+            on_press: app.ui_add_category_kivy() # Llamará a una función en Python
+        Button:
+            text: 'Distribuir Ingreso'
+            size_hint_x: 0.25
+            # on_press: app.ui_distribute_income_kivy()

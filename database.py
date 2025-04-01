@@ -130,6 +130,19 @@ def delete_category(category_id: int):
     finally:
         conn.close()
 
+def get_category_by_id(category_id: int):
+    """Obtiene los datos de una categoría por su ID."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, percentage FROM Categories WHERE id = ?", (category_id,))
+    category = cursor.fetchone() # fetchone devuelve una tupla o None
+    conn.close()
+    if category:
+        # Convertimos la tupla a un diccionario para facilitar el acceso
+        return {'id': category[0], 'name': category[1], 'percentage': category[2]}
+    else:
+        return None # O podrías lanzar una excepción
+
 # --- Funciones para Transacciones (Placeholder) ---
 # TODO: Añadir funciones para registrar, ver, editar, eliminar transacciones
 
