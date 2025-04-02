@@ -3,22 +3,28 @@ Config.set('graphics', 'width', '1200')
 Config.set('graphics', 'height', '800')
 
 from kivymd.app import MDApp
-from kivymd.uix.boxlayout import MDBoxLayout # Import needed for FinanceRootWidget
+from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDRaisedButton, MDIconButton
+from kivymd.uix.button import MDRaisedButton, MDIconButton, MDFlatButton
 from kivymd.uix.textfield import MDTextField
+from kivymd.uix.snackbar import Snackbar
+from kivymd.uix.card import MDCard
+from kivy.animation import Animation
 
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
-from kivy.uix.popup import Popup # Added for Error Popup
+from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
 from kivy_garden.matplotlib.backend_kivyagg import FigureCanvasKivyAgg
-from kivy.properties import ObjectProperty, StringProperty, NumericProperty
+from kivy.properties import ObjectProperty, NumericProperty, StringProperty
 from kivy.clock import Clock
 from kivy.lang import Builder
+from kivy.metrics import dp
+from kivy.factory import Factory
+from kivy.utils import get_color_from_hex
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -73,14 +79,6 @@ class EditCategoryPopup(Popup):
     """Popup for editing categories."""
     category_id = NumericProperty(None)  # Properly define the property
     pass # Rest defined in KV
-
-# --- Kivy Dynamic Class for Category Rows --- #
-class CategoryRow(MDBoxLayout):
-    """Widget that represents a category row in the list."""
-    category_id = NumericProperty(None)
-    category_name = StringProperty("")
-    category_percentage = StringProperty("")
-    category_balance = StringProperty("")
 
 # --- Define Placeholder Classes for KV Popups --- #
 class AddCategoryPopup(Popup):
@@ -186,7 +184,7 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
         except AttributeError as ae:
             logging.error(f"AttributeError during UI initialization: {ae}", exc_info=True)
         except KeyError as ke:
-            logging.error(f"KeyError accessing root.ids: {ke}. ID likely missing in KV file.", exc_info=True)
+            logging.error(f"KeyError accessing root.ids in load_categories: {ke}. ID likely missing in KV file.", exc_info=True)
         except Exception as e:
             logging.error(f"Unexpected error during UI initialization: {e}", exc_info=True)
 
@@ -208,44 +206,64 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
         # Add the canvas to the placeholder
         graph_placeholder.add_widget(self.graph_widget)
 
-    def load_categories(self, dt=None): # Add dt=None argument to accept Clock's call
+    def load_categories(self, dt=None):
         """Loads categories from the database and displays them using CategoryRow (KivyMD)."""
-        logging.info("Loading categories into KivyMD list...")
         try:
             category_list_layout = self.root.ids.get('category_list_layout')
             if not category_list_layout:
-                logging.error("Cannot find 'category_list_layout' in root.ids")
+                logging.error("Category list layout not found in root.ids.")
                 return
 
-            category_list_layout.clear_widgets() # Clear previous widgets
-            categories = get_all_categories() # Assuming this returns list of dicts
+            # Clear existing widgets with animation
+            for child in category_list_layout.children[:]:  # Create a copy of the list
+                anim = Animation(opacity=0, duration=0.3)
+                anim.bind(on_complete=lambda *args: category_list_layout.remove_widget(child))
+                anim.start(child)
 
-            if not categories:
-                logging.info("No categories found in the database.")
-                # Optional: Add a placeholder label if needed
-                # category_list_layout.add_widget(MDLabel(text="No categories defined.", halign="center"))
+            # Get categories from database
+            categories = get_all_categories()
+            
+            # Limpiar completamente el layout después de las animaciones
+            Clock.schedule_once(lambda dt: self._add_category_widgets(categories), 0.4)
+
+        except Exception as e:
+            logging.error(f"Error loading categories: {e}", exc_info=True)
+            self.show_error_popup(f"Error al cargar categorías: {str(e)}")
+            
+    def _add_category_widgets(self, categories):
+        """Helper method to add category widgets after clearing the layout."""
+        try:
+            category_list_layout = self.root.ids.get('category_list_layout')
+            if not category_list_layout:
                 return
-
-            logging.info(f"Found {len(categories)} categories. Populating list...")
-            for category in categories:
+                
+            # Asegurarse de que el layout esté completamente vacío
+            category_list_layout.clear_widgets()
+            
+            # Add new category rows with fade-in animation
+            for category in reversed(categories):  # Usamos reversed para que aparezcan en orden inverso
                 logging.debug(f"Creating CategoryRow for: {category['name']}")
                 balance = category['current_balance'] if category['current_balance'] is not None else 0.0
-                # Create CategoryRow instance using Factory and KV definition
-                row = CategoryRow() # Create instance first
-                # Then set properties
+                
+                # Create CategoryRow instance using Factory
+                row = Factory.CategoryRow()
+                
+                # Set properties
                 row.category_id = category['id']
                 row.category_name = category['name']
-                row.category_percentage = f"{category['percentage']:.2f}%"
+                row.category_percentage = f"{category['percentage']}%"
                 row.category_balance = f"{balance:.2f} €"
-
-                # Bind buttons inside the row (assuming buttons are defined in <CategoryRow> rule)
-                # The KV rule already binds them: on_press: app.open_edit_popup(root.category_id)
+                
+                # Add to layout (al principio)
                 category_list_layout.add_widget(row)
-
-        except KeyError as e:
-            logging.error(f"KeyError accessing root.ids in load_categories: {e}. ID likely missing in KV file.", exc_info=True)
+                
+                # Start fade-in animation
+                row.opacity = 0
+                anim = Animation(opacity=1, duration=0.5)
+                anim.start(row)
+                
         except Exception as e:
-            logging.error(f"Unexpected error during category loading: {e}", exc_info=True)
+            logging.error(f"Error adding category widgets: {e}", exc_info=True)
 
     def update_graph(self, dt=None):
         """Updates the pie chart with current category data."""
@@ -273,17 +291,26 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
 
             # Create figure with dark theme
             plt.style.use('dark_background')
-            fig, ax = plt.subplots(figsize=(6, 5))
-            fig.patch.set_facecolor('#121212')  # Dark background
+            fig, ax = plt.subplots(figsize=(8, 6))
+            fig.patch.set_facecolor('#1E1E1E')  # Match MDBoxLayout background
 
-            # Porcentajes Pie Chart
+            # Porcentajes Pie Chart with better colors
+            colors = plt.cm.Greens(np.linspace(0.5, 0.8, len(sizes)))  # More saturated greens
             wedges, texts, autotexts = ax.pie(sizes, labels=labels, autopct='%1.1f%%',
-                                            startangle=90, colors=plt.cm.Greens(np.linspace(0.4, 0.8, len(sizes))))
-            ax.set_title('Distribución de Porcentajes', color='white', pad=20)
+                                            startangle=90, colors=colors,
+                                            textprops={'color': 'white'},
+                                            wedgeprops={'width': 0.7})  # Donut style
+            
+            # Center circle for donut effect
+            centre_circle = plt.Circle((0,0), 0.50, fc='#1E1E1E')
+            ax.add_artist(centre_circle)
 
             # Style the text
-            plt.setp(autotexts, size=10, weight="bold", color="white")
-            plt.setp(texts, size=10, color="white")
+            plt.setp(autotexts, size=11, weight="bold", color="white")
+            plt.setp(texts, size=10, color="#4CAF50")  # Match category text color
+
+            # Add title with custom style
+            ax.set_title('Distribución de Categorías', color='white', pad=20, fontsize=14, fontweight='bold')
 
             # Add the graph to the layout
             canvas = FigureCanvasKivyAgg(figure=fig)
@@ -296,7 +323,7 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
 
     def ui_distribute_income_kivy(self):
         """Distributes the entered income across categories based on percentages."""
-        log_widget = self.root.ids.get('log_display_label')
+        log_widget = self.root.ids.get('log_label')  # Updated ID to match KV file
         income_input_widget = self.root.ids.get('income_input')
 
         if not log_widget or not income_input_widget:
@@ -377,7 +404,7 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
             log_widget.text += "[color=00ff00]Distribución procesada.[/color]\n"
             logging.info("Income distribution process finished.")
             Clock.schedule_once(self.load_categories, 0) # Schedule refresh for next frame
-            Clock.schedule_once(self.update_graph, 0) # Update graph if it exists
+            Clock.schedule_once(self.update_graph, 0.3)  # Update graph if it exists
 
         except ValueError:
             log_widget.text += f"[color=ff0000]Error: Entrada de ingreso inválida ('{income_input_widget.text}'). Introduce un número válido.[/color]\n"
@@ -391,16 +418,38 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
         logging.info(f"Intentando borrar categoría ID: {category_id}")
         # TODO: Añadir diálogo de confirmación aquí para UX
         try:
-            success = delete_category(category_id)
-            if success:
-                logging.info(f"Categoría ID {category_id} borrada exitosamente.")
-                # Refrescar la lista para quitar la categoría borrada
-                Clock.schedule_once(self.load_categories, 0)
-                Clock.schedule_once(self.update_graph, 0) # Update graph
-            else:
-                # Esto podría pasar si el ID no existe, aunque delete_category ya loggea
-                logging.warning(f"No se pudo borrar la categoría ID {category_id}, puede que ya no exista.")
-                # Podríamos mostrar un popup de error aquí también
+            # Find the category widget
+            category_list = self.root.ids.category_list_layout
+            category_widget = None
+            for widget in category_list.children:
+                if widget.category_id == category_id:
+                    category_widget = widget
+                    break
+
+            if category_widget:
+                # Create fade-out animation
+                anim = Animation(opacity=0, duration=0.3)
+                
+                # Definir la función fuera del callback para evitar problemas
+                def on_complete_delete(animation, target_widget):
+                    try:
+                        delete_category(category_id)
+                        Clock.schedule_once(self.load_categories, 0)
+                        Clock.schedule_once(self.update_graph, 0.1)
+                        
+                        # Show deletion notification
+                        snackbar = Snackbar()
+                        snackbar.text = "Categoría eliminada ✨"
+                        snackbar.bg_color = get_color_from_hex('#FF5252')
+                        snackbar.duration = 1.5
+                        snackbar.open()
+                    except Exception as inner_e:
+                        logging.error(f"Error en callback de eliminación: {inner_e}")
+                        self.show_error_popup(f"Error al finalizar eliminación: {inner_e}")
+                
+                anim.bind(on_complete=on_complete_delete)
+                anim.start(category_widget)
+            
         except Exception as e:
             logging.error(f"Error inesperado al borrar categoría ID {category_id}: {e}")
             # Mostrar popup de error genérico
@@ -448,11 +497,11 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
             self.show_error_popup(f"Error al abrir el popup: {e}")
 
     # --- Process Add Category Popup --- > RECONSTRUCCIÓN
-    def add_category_from_popup(self, popup, name, percentage_str):
+    def add_category_from_popup(self, popup, name, percentage):
         """Adds a new category from the AddCategoryPopup data after validation."""
-        log_widget = self.root.ids.get('log_display_label')
+        log_widget = self.root.ids.get('log_label')
         name = name.strip()
-        percentage_str = percentage_str.strip().replace(',', '.')
+        percentage = percentage.strip().replace(',', '.')
 
         # --- Validation --- #
         if not name:
@@ -462,13 +511,13 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
             return
 
         try:
-            percentage = float(percentage_str)
+            percentage = float(percentage)
             if percentage <= 0:
                 logging.warning(f"Intento de añadir categoría con porcentaje no positivo: {percentage}")
                 self.show_error_popup("El porcentaje debe ser un número positivo.")
                 return
         except ValueError:
-            logging.warning(f"Intento de añadir categoría con porcentaje inválido: '{percentage_str}'")
+            logging.warning(f"Intento de añadir categoría con porcentaje inválido: '{percentage}'")
             self.show_error_popup("El porcentaje introducido no es un número válido.")
             return
 
@@ -495,7 +544,14 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
                      log_widget.text += f"[color=00ff00]Categoría '{name}' ({percentage}%) añadida.[/color]\n"
                 popup.dismiss() # Cerrar popup si éxito
                 Clock.schedule_once(self.load_categories, 0) # Refrescar lista
-                Clock.schedule_once(self.update_graph, 0) # Update graph
+                Clock.schedule_once(self.update_graph, 0.1)  # Slight delay for smooth animation
+                
+                # Show success snackbar
+                snackbar = Snackbar()
+                snackbar.text = f"¡Categoría {name} añadida! 🎉"
+                snackbar.bg_color = get_color_from_hex('#4CAF50')
+                snackbar.duration = 1.5
+                snackbar.open()
             else:
                 # add_category should log specifics, show generic error here
                 self.show_error_popup(f"No se pudo añadir la categoría '{name}'. ¿Quizás ya existe?")
@@ -507,7 +563,7 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
     # --- Process Edit Category Popup --- > NUEVA FUNCIÓN
     def update_category_from_popup(self, popup, category_id_str, new_name, new_percentage_str):
         """Updates an existing category from the EditCategoryPopup data after validation."""
-        log_widget = self.root.ids.get('log_display_label')
+        log_widget = self.root.ids.get('log_label')
         new_name = new_name.strip()
         new_percentage_str = new_percentage_str.strip().replace(',', '.')
 
@@ -560,7 +616,14 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
                     log_widget.text += f"[color=00ff00]Categoría '{new_name}' ({new_percentage}%) actualizada.[/color]\n"
                 popup.dismiss() # Cerrar popup si éxito
                 Clock.schedule_once(self.load_categories, 0) # Refrescar lista
-                Clock.schedule_once(self.update_graph, 0) # Update graph
+                Clock.schedule_once(self.update_graph, 0.1)  # Slight delay for smooth animation
+                
+                # Show success snackbar
+                snackbar = Snackbar()
+                snackbar.text = f"¡Categoría {new_name} actualizada! 🎉"
+                snackbar.bg_color = get_color_from_hex('#4CAF50')
+                snackbar.duration = 1.5
+                snackbar.open()
             else:
                 # update_category should log specifics, show generic error here
                 logging.error(f"Fallo al actualizar la categoría ID {category_id} desde la UI (update_category devolvió False)")
@@ -575,26 +638,29 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
         """Displays a simple popup with an error message."""
         logging.error(f"Mostrando popup de error: {error_message}") # Log the error being shown
         try:
-            # Contenido: Una etiqueta simple dentro de un BoxLayout
-            content = MDBoxLayout(orientation='vertical', padding="10dp", spacing="10dp", adaptive_height=True)
-            content.add_widget(MDLabel(text=error_message, halign='center', adaptive_height=True))
-
-            # Botón OK para cerrar
-            ok_button = MDRaisedButton(text="OK", size_hint_y=None, height="48dp", pos_hint={"center_x": 0.5})
-            content.add_widget(ok_button)
-
-            # Crear el popup
-            popup = Popup(title='Error',
-                          content=content,
-                          size_hint=(0.7, None), # Ancho relativo, alto automático
-                          height="200dp", # Altura fija o adaptativa? Intentemos fija por ahora
-                          auto_dismiss=False) # Evitar cerrar al hacer clic fuera
-
-            # Vincular el botón para cerrar el popup
-            ok_button.bind(on_press=popup.dismiss)
-
-            # Abrir el popup
+            popup = Popup(
+                title='Error',
+                content=MDLabel(
+                    text=error_message,
+                    theme_text_color="Error",
+                    halign='center'
+                ),
+                size_hint=(None, None),
+                size=(400, 200),
+                background_color=get_color_from_hex('#1E1E1E'),
+                title_color=get_color_from_hex('#FF5252')
+            )
+            
+            # Start minimized and scale up
+            popup.opacity = 0
+            popup.scale = 0
             popup.open()
+            
+            anim = (Animation(opacity=1, duration=0.2) & 
+                   Animation(scale=1.1, duration=0.2)) + \
+                   Animation(scale=1, duration=0.1)
+            anim.start(popup)
+            
         except Exception as e:
             # Fallback si crear el popup falla
             logging.critical(f"CRÍTICO: Fallo al crear/mostrar popup de error: {e}", exc_info=True)
