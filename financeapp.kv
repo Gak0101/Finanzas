@@ -26,13 +26,13 @@
 <CategoryRow@MDCard>:
     orientation: 'horizontal'
     size_hint_y: None
-    height: "56dp"
+    height: "64dp"
     padding: "16dp"
     spacing: "16dp"
-    md_bg_color: get_color_from_hex('#1E1E1E')
-    radius: [8]
+    md_bg_color: get_color_from_hex('#1A1A1A')
+    radius: [12]
     ripple_behavior: True
-    elevation: 2
+    elevation: 3
     opacity: 0
 
     category_id: 0
@@ -42,11 +42,20 @@
 
     canvas.before:
         Color:
-            rgba: get_color_from_hex('#2A2A2A')
+            rgba: get_color_from_hex('#222222')
         RoundedRectangle:
             pos: self.pos
             size: self.size
-            radius: [8]
+            radius: [12]
+
+    MDBoxLayout:
+        size_hint_x: 0.1
+        MDIcon:
+            icon: "tag-outline"
+            theme_icon_color: "Custom"
+            icon_color: get_color_from_hex('#4CAF50')
+            pos_hint: {'center_y': 0.5}
+            font_size: "24sp"
 
     MDLabel:
         text: root.category_name
@@ -54,6 +63,8 @@
         halign: 'left'
         theme_text_color: "Custom"
         text_color: get_color_from_hex('#FFFFFF')
+        font_size: "18sp"
+        bold: True
 
     MDLabel:
         text: root.category_percentage
@@ -61,6 +72,8 @@
         halign: 'center'
         theme_text_color: "Custom"
         text_color: get_color_from_hex('#4CAF50')
+        font_size: "16sp"
+        bold: True
 
     MDLabel:
         text: root.category_balance
@@ -68,6 +81,8 @@
         halign: 'right'
         theme_text_color: "Custom"
         text_color: get_color_from_hex('#4CAF50')
+        font_size: "16sp"
+        bold: True
 
     MDBoxLayout:
         size_hint_x: None
@@ -80,7 +95,7 @@
             icon: "pencil"
             pos_hint: {'center_y': 0.5}
             theme_icon_color: "Custom"
-            icon_color: get_color_from_hex('#FFFFFF')
+            icon_color: get_color_from_hex('#64B5F6')
             on_release: app.show_edit_category_popup(root.category_id)
 
         MDIconButton:
@@ -93,7 +108,7 @@
 <FinanceRootWidget>:
     canvas.before:
         Color:
-            rgba: get_color_from_hex('#121212')
+            rgba: get_color_from_hex('#0A0A0A')
         Rectangle:
             pos: self.pos
             size: self.size
@@ -124,21 +139,22 @@
                     
                     MDBoxLayout:
                         size_hint_y: None
-                        height: "56dp"
-                        padding: ["8dp", "0dp", "8dp", "0dp"]
-                        md_bg_color: get_color_from_hex('#2A2A2A')
-                        radius: [8]
+                        height: "70dp"
+                        padding: ["12dp", "0dp", "12dp", "0dp"]
+                        md_bg_color: get_color_from_hex('#1A1A1A')
+                        radius: [15]
                         
                         MDIcon:
                             icon: "chart-donut"
-                            theme_text_color: "Custom"
-                            text_color: get_color_from_hex('#4CAF50')
+                            theme_icon_color: "Custom"
+                            icon_color: get_color_from_hex('#64B5F6')
                             size_hint_x: None
-                            width: "36dp"
+                            width: "40dp"
+                            font_size: "28sp"
                             
                         MDLabel: 
                             text: 'DASHBOARD FINANCIERO'
-                            font_size: "24sp"
+                            font_size: "26sp"
                             bold: True
                             theme_text_color: "Custom"
                             text_color: get_color_from_hex('#FFFFFF')
@@ -166,21 +182,22 @@
 
                 MDBoxLayout:
                     size_hint_y: None
-                    height: "56dp"
-                    padding: ["8dp", "0dp", "8dp", "0dp"]
-                    md_bg_color: get_color_from_hex('#2A2A2A')
-                    radius: [8]
+                    height: "70dp"
+                    padding: ["12dp", "0dp", "12dp", "0dp"]
+                    md_bg_color: get_color_from_hex('#1A1A1A')
+                    radius: [15]
                     
                     MDIcon:
                         icon: "tag-multiple"
-                        theme_text_color: "Custom"
-                        text_color: get_color_from_hex('#4CAF50')
+                        theme_icon_color: "Custom"
+                        icon_color: get_color_from_hex('#FF9800')
                         size_hint_x: None
-                        width: "36dp"
+                        width: "40dp"
+                        font_size: "28sp"
                         
                     MDLabel: 
                         text: 'CATEGORÍAS DE GASTO'
-                        font_size: "24sp"
+                        font_size: "26sp"
                         bold: True
                         theme_text_color: "Custom"
                         text_color: get_color_from_hex('#FFFFFF')
@@ -214,63 +231,76 @@
                 MDButton:
                     style: "elevated"
                     size_hint_x: None
-                    width: "200dp"
+                    width: "220dp"
+                    height: "60dp"
                     pos_hint: {'center_x': .5, 'center_y': .5}
-                    md_bg_color: get_color_from_hex('#4CAF50')
-                    elevation: 3
+                    md_bg_color: get_color_from_hex('#8E24AA')  # Púrpura
+                    elevation: 4
+                    radius: [15]
                     on_press: 
-                        self.md_bg_color = get_color_from_hex('#45a049')
+                        self.md_bg_color = get_color_from_hex('#7B1FA2')
                     on_release:
-                        self.md_bg_color = get_color_from_hex('#4CAF50')
+                        self.md_bg_color = get_color_from_hex('#8E24AA')
                         app.show_add_category_popup()
                     MDButtonIcon:
-                        icon: "plus" 
+                        icon: "plus"
+                        icon_size: "24sp"
                     MDButtonText:
                         text: "NUEVA CATEGORÍA"
+                        font_size: "18sp"
+                        bold: True
 
             MDBoxLayout:
                 orientation: 'horizontal'
                 spacing: "16dp"
                 
                 MDCard:
-                    elevation: 2
-                    radius: [12]
-                    md_bg_color: get_color_from_hex('#2A2A2A')
-                    padding: "16dp"
+                    elevation: 3
+                    radius: [15]
+                    md_bg_color: get_color_from_hex('#1A1A1A')
+                    padding: "20dp"
                 
                     MDBoxLayout:
                         orientation: 'vertical'
-                        spacing: "8dp"
+                        spacing: "12dp"
                         
                         MDBoxLayout:
                             size_hint_y: None
-                            height: "40dp"
+                            height: "50dp"
                             
                             MDIcon:
                                 icon: "cash-multiple"
-                                theme_text_color: "Custom"
-                                text_color: get_color_from_hex('#4CAF50')
+                                theme_icon_color: "Custom"
+                                icon_color: get_color_from_hex('#4CAF50')
                                 size_hint_x: None
-                                width: "24dp"
+                                width: "30dp"
+                                font_size: "24sp"
                                 
                             MDLabel:
                                 text: "INGRESO (€)"
                                 theme_text_color: "Custom"
                                 text_color: get_color_from_hex('#FFFFFF')
                                 bold: True
-                                font_size: "18sp"
+                                font_size: "20sp"
                 
                         MDTextField:
                             id: income_input
-                            hint_text: "Cantidad a distribuir"
+                            helper_text_mode: "on_focus"
                             text: "100"
                             input_filter: "float"
-                            helper_text: "¡Listo para distribuir!"
-                            helper_text_mode: "on_focus"
                             icon_right: "currency-eur"
                             icon_right_color: get_color_from_hex('#4CAF50')
                             line_color_normal: get_color_from_hex('#4CAF50')
-                            line_color_focus: get_color_from_hex('#4CAF50')
+                            line_color_focus: get_color_from_hex('#64B5F6')
+                            font_size: "20sp"
+                            MDTextFieldHintText:
+                                text: "Cantidad a distribuir"
+                                text_color_normal: 1, 1, 1, 0.8
+                                font_size: "16sp"
+                            MDTextFieldHelperText:
+                                text: "¡Listo para distribuir!"
+                                text_color_normal: 0.3, 0.8, 0.3, 0.8
+                                font_size: "14sp"
                 
                 MDCard:
                     elevation: 2
@@ -281,19 +311,23 @@
                     MDButton:
                         style: "elevated"
                         size_hint: None, None
-                        size: "200dp", "50dp"
+                        size: "220dp", "60dp"
                         pos_hint: {'center_x': 0.5, 'center_y': 0.5}
-                        md_bg_color: get_color_from_hex('#4CAF50')
-                        elevation: 3
+                        md_bg_color: get_color_from_hex('#00BCD4')  # Cyan
+                        elevation: 4
+                        radius: [15]
                         on_press: 
-                            self.md_bg_color = get_color_from_hex('#45a049')
+                            self.md_bg_color = get_color_from_hex('#0097A7')
                         on_release:
-                            self.md_bg_color = get_color_from_hex('#4CAF50')
+                            self.md_bg_color = get_color_from_hex('#00BCD4')
                             app.ui_distribute_income_kivy(income_input.text)
                         MDButtonIcon:
-                            icon: "rocket-launch-outline" 
+                            icon: "rocket-launch-outline"
+                            icon_size: "24sp"
                         MDButtonText:
                             text: "DISTRIBUIR"
+                            font_size: "18sp"
+                            bold: True
 
         # --- Log Display Area --- #
         AnchorLayout: 
@@ -314,24 +348,25 @@
                     
                     MDBoxLayout:
                         size_hint_y: None
-                        height: "40dp"
-                        padding: ["8dp", "0dp", "8dp", "0dp"]
-                        md_bg_color: get_color_from_hex('#2A2A2A')
-                        radius: [8]
+                        height: "50dp"
+                        padding: ["12dp", "0dp", "12dp", "0dp"]
+                        md_bg_color: get_color_from_hex('#1A1A1A')
+                        radius: [15]
                         
                         MDIcon:
                             icon: "console"
-                            theme_text_color: "Custom"
-                            text_color: get_color_from_hex('#4CAF50')
+                            theme_icon_color: "Custom"
+                            icon_color: get_color_from_hex('#FF5722')  # Naranja profundo
                             size_hint_x: None
-                            width: "24dp"
+                            width: "30dp"
+                            font_size: "24sp"
                             
                         MDLabel:
                             text: "CONSOLA DE ACTIVIDAD"
                             theme_text_color: "Custom"
                             text_color: get_color_from_hex('#FFFFFF')
                             bold: True
-                            font_size: "18sp"
+                            font_size: "20sp"
                             halign: 'center'
                     
                     ScrollView:
@@ -355,11 +390,11 @@
 
 <AddCategoryPopup>:
     title: "Añadir Nueva Categoría"
-    size_hint: 0.8, 0.4
+    size_hint: 0.6, 0.4
     auto_dismiss: False
-    background_color: get_color_from_hex('#1E1E1E')
+    background_color: get_color_from_hex('#151515')
     title_color: get_color_from_hex('#FFFFFF')
-    separator_color: get_color_from_hex('#4CAF50')
+    separator_color: get_color_from_hex('#8E24AA')  # Púrpura para combinar con el botón
     
     BoxLayout:
         orientation: 'vertical'
@@ -401,10 +436,14 @@
                 
             MDButton:
                 style: "filled"
-                on_release: 
-                    app.add_category_from_popup(root, category_name_input.text, category_percentage_input.text)
+                md_bg_color: get_color_from_hex('#8E24AA')  # Púrpura
+                radius: [10]
+                on_release: app.add_category_from_popup(root, category_name_input.text, category_percentage_input.text)
+                MDButtonIcon:
+                    icon: "check"
                 MDButtonText:
-                    text: "Guardar"
+                    text: "Añadir"
+                    bold: True
 
 <EditCategoryPopup>:
     title: "Editar Categoría"
@@ -413,7 +452,7 @@
     background_color: get_color_from_hex('#1E1E1E')
     title_color: get_color_from_hex('#FFFFFF')
     separator_color: get_color_from_hex('#4CAF50')
-    category_id: None
+    category_id: 0
     
     BoxLayout:
         orientation: 'vertical'

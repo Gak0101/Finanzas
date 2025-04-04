@@ -5,16 +5,17 @@ Config.set('graphics', 'height', '800')
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDRaisedButton, MDIconButton, MDFlatButton
+from kivymd.uix.button import MDButton, MDButtonIcon, MDButtonText
 from kivymd.uix.textfield import MDTextField
-from kivymd.uix.snackbar import Snackbar
+from kivymd.uix.snackbar import MDSnackbar, MDSnackbarSupportingText
 from kivymd.uix.card import MDCard
 from kivy.animation import Animation
 
+from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.gridlayout import GridLayout
 from kivy.uix.popup import Popup
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
@@ -54,7 +55,35 @@ class KivyLogHandler(logging.Handler):
             # print(f"Log widget not set, dropping message: {self.format(record)}") # Debug print
             return
 
+        # Acortar mensajes largos para aprovechar mejor el espacio
         log_entry = self.format(record)
+        
+        # Optimizaciones para mensajes comunes y repetitivos
+        if "Successfully allocated" in log_entry:
+            # Formato más compacto para asignaciones
+            parts = log_entry.split("to category ID")
+            if len(parts) > 1:
+                amount = parts[0].split("Successfully allocated")[1].strip()
+                cat_info = parts[1].strip()
+                log_entry = f"✅ Asignado {amount} → Cat ID{cat_info}"
+        
+        elif "Asignación del" in log_entry and "de $" in log_entry:
+            # Acortar mensajes de asignación
+            log_entry = log_entry.replace("[📝 Transacción 'Allocation' registrada para Cat ID", "💼 Cat ID")
+            log_entry = log_entry.replace("Asignación del", "→")
+        
+        elif "[💰 Balance establecido para Cat ID" in log_entry:
+            # Acortar mensajes de balance
+            parts = log_entry.split("[💰 Balance establecido para Cat ID")
+            if len(parts) > 1:
+                cat_id = parts[1].split("]")[0].strip()
+                balance = parts[1].split("]")[1].strip()
+                log_entry = f"💰 Balance Cat ID {cat_id}: {balance}"
+        
+        # Limitar longitud máxima
+        if len(log_entry) > 80:
+            log_entry = log_entry[:77] + "..."
+            
         # Basic color coding based on level
         level_color_map = {
             logging.INFO: "00ff00",    # Green
@@ -66,7 +95,7 @@ class KivyLogHandler(logging.Handler):
         color = level_color_map.get(record.levelno, "ffffff") # Default white
 
         # Append new log with color markup
-        self.log_widget.text += f"[color={color}]{log_entry}[/color]\\n"
+        self.log_widget.text += f"[color={color}]{log_entry}[/color]\n"
         # Auto-scroll to the bottom
         if hasattr(self.log_widget.parent, 'scroll_y'):
             scroll_view = self.log_widget.parent # Assuming Label is direct child of ScrollView
@@ -82,9 +111,10 @@ class EditCategoryPopup(Popup):
 
 # --- Define Placeholder Classes for KV Popups --- #
 class AddCategoryPopup(Popup):
-    pass # Defined in KV
+    pass
 
 class EditCategoryPopup(Popup):
+    category_id = NumericProperty(0)
     pass # Defined in KV, but Python class helps linkage
 
 # --- Define Root Widget Class Explicitly --- #
@@ -321,97 +351,85 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
             logging.error(f"Error al actualizar el gráfico: {e}", exc_info=True)
             self.show_error_popup(f"Error al actualizar el gráfico: {str(e)}")
 
-    def ui_distribute_income_kivy(self):
-        """Distributes the entered income across categories based on percentages."""
-        log_widget = self.root.ids.get('log_label')  # Updated ID to match KV file
-        income_input_widget = self.root.ids.get('income_input')
-
-        if not log_widget or not income_input_widget:
-            logging.error("Error: Log display or income input widget not found in root.ids.")
-            # Optionally show a user-facing error popup
-            return
-
+    def ui_distribute_income_kivy(self, income_text=None):
+        """Distributes income based on the value in the income input field."""
         try:
-            income_text = income_input_widget.text.strip()
-            if not income_text:
-                log_widget.text += "[color=ff0000]Error: El campo de ingreso está vacío.[/color]\n"
-                logging.warning("Distribute income attempt with empty input.")
-                return
-
+            if income_text is None:
+                income_input = self.root.ids.get('income_input')
+                if not income_input:
+                    logging.error("Income input field not found.")
+                    return
+                income_text = income_input.text
+            
             # Replace comma with dot for float conversion
             income_text = income_text.replace(",", ".")
             total_income = float(income_text)
-
+            
             if total_income <= 0:
-                log_widget.text += f"[color=ffff00]Advertencia: El ingreso debe ser positivo ({total_income} introducido).[/color]\n"
-                logging.warning(f"Distribute income attempt with non-positive value: {total_income}")
+                self.show_error_popup("El ingreso debe ser positivo")
                 return
-
-            log_widget.text += f"[color=00ff00]Distribuyendo ingreso: {total_income:.2f} €[/color]\n"
-            logging.info(f"Attempting to distribute income: {total_income:.2f}")
-
+                
+            logging.info(f"[Attempting to distribute income] {total_income:.2f}")
+            
             categories = get_all_categories()
             if not categories:
-                log_widget.text += "[color=ff0000]Error: No hay categorías definidas para distribuir.[/color]\n"
-                logging.warning("Distribute income attempt with no categories defined.")
+                self.show_error_popup("No hay categorías definidas para distribuir")
                 return
-
+                
             total_percentage = sum(cat['percentage'] for cat in categories)
-            # Optional: Check if total percentage is reasonable (e.g., close to 100)
             if not (99.9 < total_percentage < 100.1) and total_percentage != 0:
-                log_widget.text += f"[color=ffff00]Advertencia: La suma de porcentajes ({total_percentage:.2f}%) no es 100%. La distribución puede ser inesperada.[/color]\n"
                 logging.warning(f"Total category percentage is {total_percentage:.2f}%, not 100%.")
             elif total_percentage == 0 and len(categories) > 0:
-                 log_widget.text += f"[color=ff0000]Error: Todas las categorías tienen 0%. No se puede distribuir.[/color]\n"
-                 logging.error(f"Distribution impossible: All categories have 0%.")
-                 return
-
+                self.show_error_popup("Todas las categorías tienen 0%. No se puede distribuir.")
+                return
+                
             logging.info(f"Starting income distribution for ${total_income:.2f}")
-
-            # --- Loop through categories and call the new DB function ---
+            
+            # Loop through categories and allocate income
             for category in categories:
                 cat_id = category['id']
                 cat_name = category['name']
                 percentage = category['percentage']
                 allocated_amount = round((percentage / 100.0) * total_income, 2)
-
+                
                 if allocated_amount > 0:
                     description = f"Asignación del {percentage:.2f}% de ${total_income:.2f}"
                     try:
-                        # --- Call the new database function directly ---
                         add_allocation_transaction(cat_id, allocated_amount, description)
-                        log_widget.text += f"[color=00ff00]  - Asignado ${allocated_amount:.2f} a '{cat_name}'[/color]\n"
                         logging.info(f"Successfully allocated ${allocated_amount:.2f} to category ID {cat_id} ('{cat_name}')")
                     except Exception as db_err:
-                        # The DB function logs its own errors, but we add context here
-                        log_widget.text += f"[color=ff0000]  - Error al asignar a '{cat_name}': {db_err}[/color]\n"
-                        logging.error(f"Error calling add_allocation_transaction for category ID {cat_id} ('{cat_name}'): {db_err}", exc_info=True)
-                        # Decide if you want to stop the whole process or continue with others
-                        # return # Example: Stop if one fails
-
-            # --- No longer needed: call to non-existent add_multiple_transactions ---
-            # if transactions_to_add:
-            #     try:
-            #         # This function doesn't exist! This was the problem.
-            #         # add_multiple_transactions(transactions_to_add)
-            #         # log_widget.text += "[color=00ff00]Distribución completada y registrada.[/color]\n"
-            #         # logging.info("Income distribution transactions presumably added.")
-            #         pass # Now handled inside the loop
-            #     except Exception as e:
-            #         log_widget.text += f"[color=ff0000]Error al registrar la distribución: {e}[/color]\n"
-            #         logging.error(f"Error during (non-existent) bulk transaction add: {e}", exc_info=True)
-
-            log_widget.text += "[color=00ff00]Distribución procesada.[/color]\n"
+                        logging.error(f"Error allocating to category ID {cat_id}: {db_err}", exc_info=True)
+            
             logging.info("Income distribution process finished.")
-            Clock.schedule_once(self.load_categories, 0) # Schedule refresh for next frame
-            Clock.schedule_once(self.update_graph, 0.3)  # Update graph if it exists
-
+            Clock.schedule_once(self.load_categories, 0)
+            Clock.schedule_once(self.update_graph, 0.3)
+            
+            # Mostrar snackbar de éxito
+            snackbar = MDSnackbar(
+                MDBoxLayout(
+                    MDSnackbarSupportingText(
+                        text=f"¡Ingreso de {total_income:.2f}€ distribuido con éxito! 💰",
+                        text_color=get_color_from_hex('#FFFFFF'),
+                        theme_text_color="Custom",
+                    ),
+                    md_bg_color=get_color_from_hex('#00796B'),  # Teal oscuro
+                    padding="12dp",
+                    adaptive_height=True,
+                ),
+            )
+            snackbar.y = dp(24)
+            snackbar.pos_hint = {"center_x": 0.5}
+            snackbar.size_hint_x = 0.5
+            snackbar.snackbar_animation_dir = "Bottom"
+            snackbar.md_bg_color = (0, 0, 0, 0)  # Hacer transparente el snackbar exterior
+            snackbar.duration = 1.5
+            snackbar.open()
+            
         except ValueError:
-            log_widget.text += f"[color=ff0000]Error: Entrada de ingreso inválida ('{income_input_widget.text}'). Introduce un número válido.[/color]\n"
-            logging.error(f"ValueError converting income input: '{income_input_widget.text}'", exc_info=True)
+            self.show_error_popup(f"Entrada de ingreso inválida: '{income_text}'. Introduce un número válido.")
         except Exception as e:
-            log_widget.text += f"[color=ff0000]Error inesperado durante la distribución: {e}[/color]\n"
-            logging.error(f"Unexpected error during income distribution: {e}", exc_info=True)
+            logging.error(f"Error distributing income: {e}", exc_info=True)
+            self.show_error_popup(f"Error al distribuir ingreso: {str(e)}")
 
     def delete_category_action(self, category_id):
         """Deletes a category after user interaction (called from CategoryRow button)."""
@@ -438,9 +456,23 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
                         Clock.schedule_once(self.update_graph, 0.1)
                         
                         # Show deletion notification
-                        snackbar = Snackbar()
-                        snackbar.text = "Categoría eliminada ✨"
-                        snackbar.bg_color = get_color_from_hex('#FF5252')
+                        snackbar = MDSnackbar(
+                            MDBoxLayout(
+                                MDSnackbarSupportingText(
+                                    text="Categoría eliminada ✨",
+                                    text_color=get_color_from_hex('#FAFAFA'), # Casi blanco para buen contraste
+                                    theme_text_color="Custom",
+                                ),
+                                md_bg_color=get_color_from_hex('#FF5252'), # Fondo rojo
+                                padding="12dp",
+                                adaptive_height=True,
+                            ),
+                        )
+                        snackbar.y = dp(24)
+                        snackbar.pos_hint = {"center_x": 0.5}
+                        snackbar.size_hint_x = 0.5
+                        snackbar.snackbar_animation_dir = "Bottom"
+                        snackbar.md_bg_color = (0, 0, 0, 0) # Hacer transparente el snackbar exterior
                         snackbar.duration = 1.5
                         snackbar.open()
                     except Exception as inner_e:
@@ -456,46 +488,44 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
             self.show_error_popup(f"Error al borrar categoría: {e}")
 
     def open_edit_popup(self, category_id):
-        """Opens the Edit Category Popup with the data of the selected category."""
-        logging.info(f"Abriendo popup de edición para categoría ID: {category_id}")
+        """Alias for show_edit_category_popup for backwards compatibility."""
+        self.show_edit_category_popup(category_id)
+
+    def show_edit_category_popup(self, category_id):
+        """Shows the popup for editing an existing category."""
+        logging.info(f"[Abriendo popup de edición para categoría ID] {category_id}")
         try:
             category = get_category_by_id(category_id)
-            if category:
-                if not self.edit_popup:
-                    # Crear el popup si no existe (definido en KV)
-                    self.edit_popup = EditCategoryPopup()
-
-                # Llenar los campos del popup con los datos actuales
-                self.edit_popup.category_id = category['id']  # Usar la propiedad definida
-                self.edit_popup.ids.edit_category_name_input.text = category['name']
-                self.edit_popup.ids.edit_category_percentage_input.text = str(category['percentage'])
-
-                self.edit_popup.open()
+            if not category:
+                logging.error(f"Categoría ID {category_id} no encontrada para editar.")
+                self.show_error_popup(f"No se pudo encontrar la categoría ID {category_id}")
+                return
+                
+            popup = EditCategoryPopup()
+            popup.category_id = category_id
+            
+            # Get references to the input fields
+            name_input = popup.ids.get('edit_category_name_input')
+            percentage_input = popup.ids.get('edit_category_percentage_input')
+            
+            if name_input and percentage_input:
+                name_input.text = category['name']
+                percentage_input.text = str(category['percentage'])
             else:
-                logging.error(f"No se encontró la categoría con ID {category_id} para editar.")
-                self.show_error_popup("Error: No se encontró la categoría seleccionada.")
+                logging.error("No se pudieron encontrar los campos de entrada en el popup de edición.")
+                
+            popup.open()
         except Exception as e:
-            logging.error(f"Error al abrir el popup de edición para ID {category_id}: {e}")
-            self.show_error_popup(f"Error al preparar edición: {e}")
+            logging.error(f"Error al abrir popup de edición: {e}", exc_info=True)
+            self.show_error_popup(f"Error al abrir editor: {str(e)}")
 
     # --- Add Category Popup --- > NUEVA FUNCIÓN
     def show_add_category_popup(self):
-        """Shows the Add Category Popup."""
+        """Shows the popup for adding a new category."""
         logging.info("Abriendo popup para añadir categoría...")
-        try:
-            if not self.add_category_popup_instance:
-                # Crear instancia si no existe (definida en KV)
-                self.add_category_popup_instance = AddCategoryPopup()
-            
-            # Limpiar campos antes de mostrar
-            self.add_category_popup_instance.ids.category_name_input.text = ""
-            self.add_category_popup_instance.ids.category_percentage_input.text = ""
-            
-            self.add_category_popup_instance.open()
-        except Exception as e:
-            logging.error(f"Error al mostrar el popup de añadir categoría: {e}")
-            self.show_error_popup(f"Error al abrir el popup: {e}")
-
+        popup = AddCategoryPopup()
+        popup.open()
+        
     # --- Process Add Category Popup --- > RECONSTRUCCIÓN
     def add_category_from_popup(self, popup, name, percentage):
         """Adds a new category from the AddCategoryPopup data after validation."""
@@ -547,9 +577,23 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
                 Clock.schedule_once(self.update_graph, 0.1)  # Slight delay for smooth animation
                 
                 # Show success snackbar
-                snackbar = Snackbar()
-                snackbar.text = f"¡Categoría {name} añadida! 🎉"
-                snackbar.bg_color = get_color_from_hex('#4CAF50')
+                snackbar = MDSnackbar(
+                    MDBoxLayout(
+                        MDSnackbarSupportingText(
+                            text=f"¡Categoría {name} añadida! 🎉",
+                            text_color=get_color_from_hex('#FAFAFA'), # Casi blanco para buen contraste
+                            theme_text_color="Custom",
+                        ),
+                        md_bg_color=get_color_from_hex('#00796B'), # Teal oscuro
+                        padding="12dp",
+                        adaptive_height=True,
+                    ),
+                )
+                snackbar.y = dp(24)
+                snackbar.pos_hint = {"center_x": 0.5}
+                snackbar.size_hint_x = 0.5
+                snackbar.snackbar_animation_dir = "Bottom"
+                snackbar.md_bg_color = (0, 0, 0, 0)  # Hacer transparente el snackbar exterior
                 snackbar.duration = 1.5
                 snackbar.open()
             else:
@@ -619,9 +663,23 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
                 Clock.schedule_once(self.update_graph, 0.1)  # Slight delay for smooth animation
                 
                 # Show success snackbar
-                snackbar = Snackbar()
-                snackbar.text = f"¡Categoría {new_name} actualizada! 🎉"
-                snackbar.bg_color = get_color_from_hex('#4CAF50')
+                snackbar = MDSnackbar(
+                    MDBoxLayout(
+                        MDSnackbarSupportingText(
+                            text=f"¡Categoría {new_name} actualizada! 🎉",
+                            text_color=get_color_from_hex('#FAFAFA'), # Casi blanco
+                            theme_text_color="Custom",
+                        ),
+                        md_bg_color=get_color_from_hex('#00796B'), # Teal oscuro
+                        padding="12dp",
+                        adaptive_height=True,
+                    ),
+                )
+                snackbar.y = dp(24)
+                snackbar.pos_hint = {"center_x": 0.5}
+                snackbar.size_hint_x = 0.5
+                snackbar.snackbar_animation_dir = "Bottom"
+                snackbar.md_bg_color = (0, 0, 0, 0)  # Hacer transparente el snackbar exterior
                 snackbar.duration = 1.5
                 snackbar.open()
             else:
@@ -642,13 +700,11 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
                 title='Error',
                 content=MDLabel(
                     text=error_message,
-                    theme_text_color="Error",
-                    halign='center'
+                    halign='center',
+                    text_color=(1, 1, 1, 1)  # <--- ¡Forzando color blanco!
                 ),
                 size_hint=(None, None),
-                size=(400, 200),
-                background_color=get_color_from_hex('#1E1E1E'),
-                title_color=get_color_from_hex('#FF5252')
+                size=(dp(400), dp(200))
             )
             
             # Start minimized and scale up
