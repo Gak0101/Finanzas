@@ -275,6 +275,18 @@
                         halign: 'left'
                         valign: 'middle'
 
+                # --- Display Total Percentage --- #
+                MDLabel:
+                    id: total_percentage_label
+                    text: "Total Asignado: 0.00%"
+                    halign: "center"
+                    theme_text_color: "Custom"
+                    text_color: get_color_from_hex('#BDBDBD')
+                    size_hint_y: None
+                    height: self.texture_size[1]
+                    padding: [dp(0), dp(8)]
+
+                # --- Distribute Income Section --- #
                 MDBoxLayout:
                     size_hint_y: None
                     height: "60dp"
@@ -299,6 +311,17 @@
                         pos_hint: {'center_y': 0.5}
                         MDButtonText:
                             text: "Distribuir"
+
+                # --- Display Total Balance --- #
+                MDLabel:
+                    id: total_balance_label
+                    text: "Balance Total: €0.00"
+                    halign: "center"
+                    theme_text_color: "Custom"
+                    text_color: get_color_from_hex('#90CAF9') # Light Blue
+                    size_hint_y: None
+                    height: self.texture_size[1]
+                    padding: [dp(0), dp(8), dp(0), dp(16)] # More padding below
 
             # --- Right Side: Activity Log Card --- #
             MDCard:
@@ -376,12 +399,12 @@
             mode: "outlined"
             required: True
             icon_left: "tag"
+            helper_text_mode: "on_error"
             MDTextFieldHintText:
                 text: "Nombre de la categoría"
                 text_color_normal: [1, 1, 1, 0.7]
             MDTextFieldHelperText:
                 text: "El nombre es obligatorio"
-                mode: "on_error"
                 text_color_normal: [0.8, 0.8, 0.8, 0.7]
 
         MDTextField:
@@ -390,12 +413,12 @@
             input_filter: "float"
             required: True
             icon_left: "percent"
+            helper_text_mode: "on_error"
             MDTextFieldHintText:
                 text: "Porcentaje (%)"
                 text_color_normal: [1, 1, 1, 0.7]
             MDTextFieldHelperText:
                 text: "Debe ser un número positivo"
-                mode: "on_error"
                 text_color_normal: [0.8, 0.8, 0.8, 0.7]
 
         MDBoxLayout:
@@ -446,12 +469,12 @@
             mode: "outlined"
             required: True
             icon_left: "tag"
+            helper_text_mode: "on_error"
             MDTextFieldHintText:
                 text: "Nuevo nombre"
                 text_color_normal: [1, 1, 1, 0.7]
             MDTextFieldHelperText:
                 text: "El nombre es obligatorio"
-                mode: "on_error"
                 text_color_normal: [0.8, 0.8, 0.8, 0.7]
 
         MDTextField:
@@ -460,12 +483,12 @@
             input_filter: "float"
             required: True
             icon_left: "percent"
+            helper_text_mode: "on_error"
             MDTextFieldHintText:
                 text: "Nuevo porcentaje (%)"
                 text_color_normal: [1, 1, 1, 0.7]
             MDTextFieldHelperText:
                 text: "Debe ser un número positivo"
-                mode: "on_error"
                 text_color_normal: [0.8, 0.8, 0.8, 0.7]
 
         MDBoxLayout:

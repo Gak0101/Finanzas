@@ -200,6 +200,8 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
             # --- Load Initial Categories --- #
             logging.info("Initializing categories list...")
             self.load_categories()
+            Clock.schedule_once(self.update_total_percentage_display, 0.5)
+            Clock.schedule_once(self.update_total_balance_display, 0.6) # Call after categories load
 
             logging.info("UI Initialization complete (or attempted).")
 
@@ -407,6 +409,7 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
             logging.info("Income distribution process finished.")
             Clock.schedule_once(self.load_categories, 0)
             Clock.schedule_once(self.update_graph, 0.3)
+            Clock.schedule_once(self.update_total_balance_display, 0.3)
             
             # Mostrar snackbar de éxito
             snackbar = MDSnackbar(
@@ -482,6 +485,8 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
                     except Exception as inner_e:
                         logging.error(f"Error en callback de eliminación: {inner_e}")
                         self.show_error_popup(f"Error al finalizar eliminación: {inner_e}")
+                        # Update percentage display even if snackbar fails
+                        Clock.schedule_once(self.update_total_percentage_display, 0)
                 
                 anim.bind(on_complete=on_complete_delete)
                 anim.start(category_widget)
@@ -579,6 +584,7 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
                 popup.dismiss() # Cerrar popup si éxito
                 Clock.schedule_once(self.load_categories, 0) # Refrescar lista
                 Clock.schedule_once(self.update_graph, 0.1)  # Slight delay for smooth animation
+                Clock.schedule_once(self.update_total_percentage_display, 0.1) # Call after adding
                 
                 # Show success snackbar
                 snackbar = MDSnackbar(
@@ -665,6 +671,7 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
                 popup.dismiss() # Cerrar popup si éxito
                 Clock.schedule_once(self.load_categories, 0) # Refrescar lista
                 Clock.schedule_once(self.update_graph, 0.1)  # Slight delay for smooth animation
+                Clock.schedule_once(self.update_total_percentage_display, 0.1) # Call after updating
                 
                 # Show success snackbar
                 snackbar = MDSnackbar(
@@ -725,6 +732,63 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
             # Fallback si crear el popup falla
             logging.critical(f"CRÍTICO: Fallo al crear/mostrar popup de error: {e}", exc_info=True)
             print(f"ERROR CRÍTICO AL MOSTRAR POPUP: {error_message}\nError creación popup: {e}")
+
+    def update_total_percentage_display(self, dt=None):
+        """Calculates and updates the label showing the total assigned percentage."""
+        try:
+            label = self.root.ids.get('total_percentage_label')
+            if not label:
+                logging.warning("total_percentage_label not found in root.ids.")
+                return
+
+            categories = get_all_categories()
+            total_percentage = sum(cat['percentage'] for cat in categories)
+
+            text = f"Total Asignado: {total_percentage:.2f}%"
+            color = get_color_from_hex('#BDBDBD') # Default grey
+
+            if 99.99 < total_percentage < 100.01:
+                color = get_color_from_hex('#4CAF50') # Green for 100%
+                text += " ✅"
+            elif total_percentage > 100.01:
+                color = get_color_from_hex('#FF5252') # Red if over 100%
+                text += " ❌ (>100%)"
+            elif total_percentage == 0 and categories:
+                color = get_color_from_hex('#FFAB00') # Amber if 0% but categories exist
+                text += " ⚠️ (0%)"
+            else: # Less than 100
+                color = get_color_from_hex('#FFAB00') # Amber if under 100%
+                text += " ⏳ (<100%)"
+
+            label.text = text
+            label.text_color = color
+            logging.info(f"Updated total percentage display: {text}")
+
+        except Exception as e:
+            logging.error(f"Error updating total percentage display: {e}", exc_info=True)
+            if label:
+                label.text = "Error al calcular total %"
+                label.text_color = get_color_from_hex('#FF5252')
+
+    def update_total_balance_display(self, dt=None):
+        """Calculates and updates the label showing the total current balance across all categories."""
+        try:
+            label = self.root.ids.get('total_balance_label')
+            if not label:
+                logging.warning("total_balance_label not found in root.ids.")
+                return
+
+            categories = get_all_categories()
+            total_balance = sum(cat['current_balance'] for cat in categories)
+
+            label.text = f"Balance Total Actual: €{total_balance:.2f}"
+            logging.info(f"Updated total balance display: {label.text}")
+
+        except Exception as e:
+            logging.error(f"Error updating total balance display: {e}", exc_info=True)
+            if label:
+                label.text = "Error calculando balance"
+                label.text_color = get_color_from_hex('#FF5252')
 
     # --- Entry Point --- #
 if __name__ == '__main__':
