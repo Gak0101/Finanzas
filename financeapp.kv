@@ -50,6 +50,7 @@
 
     MDBoxLayout:
         size_hint_x: 0.1
+        adaptive_width: True
         MDIcon:
             icon: "tag-outline"
             theme_icon_color: "Custom"
@@ -65,6 +66,7 @@
         text_color: get_color_from_hex('#FFFFFF')
         font_size: "18sp"
         bold: True
+        pos_hint: {'center_y': 0.5}
 
     MDLabel:
         text: root.category_percentage
@@ -74,6 +76,7 @@
         text_color: get_color_from_hex('#4CAF50')
         font_size: "16sp"
         bold: True
+        pos_hint: {'center_y': 0.5}
 
     MDLabel:
         text: root.category_balance
@@ -83,6 +86,7 @@
         text_color: get_color_from_hex('#4CAF50')
         font_size: "16sp"
         bold: True
+        pos_hint: {'center_y': 0.5}
 
     MDBoxLayout:
         size_hint_x: None
@@ -113,380 +117,373 @@
             pos: self.pos
             size: self.size
 
-    BoxLayout: 
+    BoxLayout:
         orientation: 'vertical'
-        spacing: "16dp"
-        padding: "16dp"
+        spacing: "24dp"
+        padding: "24dp"
 
-        # --- Main Content Area --- #
+        # --- Top Row: Graph and Categories --- #
         MDBoxLayout:
             orientation: 'horizontal'
-            size_hint_y: 0.7 
-            spacing: "16dp"
+            size_hint_y: 0.65
+            spacing: "24dp"
 
             # --- Left Side: Graph --- #
-            MDCard: 
-                id: graph_layout
-                size_hint_x: 0.5
+            MDCard:
+                id: graph_card
+                size_hint_x: 0.45
+                orientation: 'vertical'
                 elevation: 4
-                radius: [12]
+                radius: [15]
                 md_bg_color: get_color_from_hex('#1E1E1E')
                 ripple_behavior: True
-                padding: "16dp"
-                
-                BoxLayout:
-                    orientation: 'vertical'
-                    
-                    MDBoxLayout:
-                        size_hint_y: None
-                        height: "70dp"
-                        padding: ["12dp", "0dp", "12dp", "0dp"]
-                        md_bg_color: get_color_from_hex('#1A1A1A')
-                        radius: [15]
-                        
-                        MDIcon:
-                            icon: "chart-donut"
-                            theme_icon_color: "Custom"
-                            icon_color: get_color_from_hex('#64B5F6')
-                            size_hint_x: None
-                            width: "40dp"
-                            font_size: "28sp"
-                            
-                        MDLabel: 
-                            text: 'DASHBOARD FINANCIERO'
-                            font_size: "26sp"
-                            bold: True
-                            theme_text_color: "Custom"
-                            text_color: get_color_from_hex('#FFFFFF')
-                            halign: 'center'
-                    
-                    Widget:
-                        size_hint_y: 1
-                        
-                    # Botón invisible para actualizar el gráfico
-                    Button:
-                        size_hint: None, None
-                        size: 0, 0
-                        opacity: 0
-                        on_release: app.update_graph()
-
-            # --- Right Side: Categories --- #
-            MDCard:
-                orientation: 'vertical'
-                size_hint_x: 0.5
-                spacing: "8dp"
-                elevation: 4
-                radius: [12]
-                md_bg_color: get_color_from_hex('#1E1E1E')
                 padding: "16dp"
 
                 MDBoxLayout:
                     size_hint_y: None
-                    height: "70dp"
+                    height: "50dp"
                     padding: ["12dp", "0dp", "12dp", "0dp"]
                     md_bg_color: get_color_from_hex('#1A1A1A')
-                    radius: [15]
-                    
+                    radius: [10]
+                    spacing: "10dp"
+
                     MDIcon:
-                        icon: "tag-multiple"
+                        icon: "chart-donut"
                         theme_icon_color: "Custom"
-                        icon_color: get_color_from_hex('#FF9800')
+                        icon_color: get_color_from_hex('#64B5F6')
                         size_hint_x: None
-                        width: "40dp"
+                        width: "30dp"
                         font_size: "28sp"
-                        
-                    MDLabel: 
-                        text: 'CATEGORÍAS DE GASTO'
-                        font_size: "26sp"
+                        pos_hint: {'center_y': 0.5}
+
+                    MDLabel:
+                        text: 'DASHBOARD FINANCIERO'
+                        font_size: "20sp"
                         bold: True
                         theme_text_color: "Custom"
                         text_color: get_color_from_hex('#FFFFFF')
-                        halign: 'center'
+                        halign: 'left'
+                        valign: 'middle'
 
-                ScrollView: 
+                BoxLayout:
+                    id: graph_placeholder
+                    size_hint_y: 1
+                    padding: ["0dp", "16dp", "0dp", "0dp"]
+
+            # --- Right Side: Categories --- #
+            MDCard:
+                id: categories_card
+                orientation: 'vertical'
+                size_hint_x: 0.55
+                elevation: 4
+                radius: [15]
+                md_bg_color: get_color_from_hex('#1E1E1E')
+                padding: "16dp"
+                spacing: "12dp"
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: "50dp"
+                    padding: ["12dp", "0dp", "12dp", "0dp"]
+                    md_bg_color: get_color_from_hex('#1A1A1A')
+                    radius: [10]
+                    spacing: "10dp"
+
+                    MDIcon:
+                        icon: "tag-multiple-outline"
+                        theme_icon_color: "Custom"
+                        icon_color: get_color_from_hex('#FF9800')
+                        size_hint_x: None
+                        width: "30dp"
+                        font_size: "28sp"
+                        pos_hint: {'center_y': 0.5}
+
+                    MDLabel:
+                        text: 'CATEGORÍAS DE GASTO'
+                        font_size: "20sp"
+                        bold: True
+                        theme_text_color: "Custom"
+                        text_color: get_color_from_hex('#FFFFFF')
+                        halign: 'left'
+                        valign: 'middle'
+
+                    Widget:
+                        size_hint_x: 1
+
+                    MDIconButton:
+                        icon: "plus-circle-outline"
+                        theme_icon_color: "Custom"
+                        icon_color: get_color_from_hex('#4CAF50')
+                        pos_hint: {'center_y': 0.5}
+                        on_release: app.show_add_category_popup()
+
+                ScrollView:
                     size_hint_y: 1
                     do_scroll_x: False
-                    GridLayout: 
-                        id: category_list_layout 
-                        cols: 1 
-                        spacing: "8dp"
+                    bar_width: dp(8)
+                    bar_color: get_color_from_hex('#4CAF50')
+                    effect_cls: 'ScrollEffect'
+
+                    GridLayout:
+                        id: category_list_layout
+                        cols: 1
                         size_hint_y: None
                         height: self.minimum_height
-                        padding: 0
-                        pos_hint: {'top': 1}
+                        spacing: "8dp"
+                        padding: ["0dp", "8dp"]
 
-        # --- Bottom Controls --- #
+        # --- Bottom Row: Actions and Log --- #
         MDBoxLayout:
-            orientation: 'vertical'
-            size_hint_y: 0.3
-            spacing: "16dp"
+            orientation: 'horizontal'
+            size_hint_y: 0.35
+            spacing: "24dp"
 
+            # --- Left Side: Actions Card (Add/Distribute) --- #
             MDCard:
-                size_hint_y: None
-                height: "60dp"
-                md_bg_color: get_color_from_hex('#2A2A2A')
-                radius: [12]
+                id: actions_card
+                orientation: 'vertical'
+                size_hint_x: 0.45
+                elevation: 4
+                radius: [15]
+                md_bg_color: get_color_from_hex('#1E1E1E')
                 padding: "16dp"
-                
-                MDButton:
-                    style: "elevated"
-                    size_hint_x: None
-                    width: "220dp"
-                    height: "60dp"
-                    pos_hint: {'center_x': .5, 'center_y': .5}
-                    md_bg_color: get_color_from_hex('#8E24AA')  # Púrpura
-                    elevation: 4
-                    radius: [15]
-                    on_press: 
-                        self.md_bg_color = get_color_from_hex('#7B1FA2')
-                    on_release:
-                        self.md_bg_color = get_color_from_hex('#8E24AA')
-                        app.show_add_category_popup()
-                    MDButtonIcon:
-                        icon: "plus"
-                        icon_size: "24sp"
-                    MDButtonText:
-                        text: "NUEVA CATEGORÍA"
-                        font_size: "18sp"
-                        bold: True
+                spacing: "12dp"
 
-            MDBoxLayout:
-                orientation: 'horizontal'
-                spacing: "16dp"
-                
-                MDCard:
-                    elevation: 3
-                    radius: [15]
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: "50dp"
+                    padding: ["12dp", "0dp", "12dp", "0dp"]
                     md_bg_color: get_color_from_hex('#1A1A1A')
-                    padding: "20dp"
-                
-                    MDBoxLayout:
-                        orientation: 'vertical'
-                        spacing: "12dp"
-                        
-                        MDBoxLayout:
-                            size_hint_y: None
-                            height: "50dp"
-                            
-                            MDIcon:
-                                icon: "cash-multiple"
-                                theme_icon_color: "Custom"
-                                icon_color: get_color_from_hex('#4CAF50')
-                                size_hint_x: None
-                                width: "30dp"
-                                font_size: "24sp"
-                                
-                            MDLabel:
-                                text: "INGRESO (€)"
-                                theme_text_color: "Custom"
-                                text_color: get_color_from_hex('#FFFFFF')
-                                bold: True
-                                font_size: "20sp"
-                
-                        MDTextField:
-                            id: income_input
-                            helper_text_mode: "on_focus"
-                            text: "100"
-                            input_filter: "float"
-                            icon_right: "currency-eur"
-                            icon_right_color: get_color_from_hex('#4CAF50')
-                            line_color_normal: get_color_from_hex('#4CAF50')
-                            line_color_focus: get_color_from_hex('#64B5F6')
-                            font_size: "20sp"
-                            MDTextFieldHintText:
-                                text: "Cantidad a distribuir"
-                                text_color_normal: 1, 1, 1, 0.8
-                                font_size: "16sp"
-                            MDTextFieldHelperText:
-                                text: "¡Listo para distribuir!"
-                                text_color_normal: 0.3, 0.8, 0.3, 0.8
-                                font_size: "14sp"
-                
-                MDCard:
-                    elevation: 2
-                    radius: [12]
-                    md_bg_color: get_color_from_hex('#2A2A2A')
-                    padding: "16dp"
-                    
+                    radius: [10]
+                    spacing: "10dp"
+
+                    MDIcon:
+                        icon: "cogs"
+                        theme_icon_color: "Custom"
+                        icon_color: get_color_from_hex('#9C27B0')
+                        size_hint_x: None
+                        width: "30dp"
+                        font_size: "28sp"
+                        pos_hint: {'center_y': 0.5}
+
+                    MDLabel:
+                        text: 'ACCIONES RÁPIDAS'
+                        font_size: "20sp"
+                        bold: True
+                        theme_text_color: "Custom"
+                        text_color: get_color_from_hex('#FFFFFF')
+                        halign: 'left'
+                        valign: 'middle'
+
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: "60dp"
+                    spacing: "10dp"
+                    padding: ["0dp", "10dp"]
+
+                    MDTextField:
+                        id: income_input
+                        hint_text: "Ingreso a distribuir (€)"
+                        mode: "outlined"
+                        size_hint_x: 0.7
+                        input_filter: "float"
+                        helper_text_mode: "on_focus"
+                        helper_text: "Introduce el total de ingresos"
+                        icon_right: "currency-eur"
+                        on_text_validate: app.ui_distribute_income_kivy(self.text)
+
                     MDButton:
-                        style: "elevated"
-                        size_hint: None, None
-                        size: "220dp", "60dp"
-                        pos_hint: {'center_x': 0.5, 'center_y': 0.5}
-                        md_bg_color: get_color_from_hex('#00BCD4')  # Cyan
-                        elevation: 4
-                        radius: [15]
-                        on_press: 
-                            self.md_bg_color = get_color_from_hex('#0097A7')
-                        on_release:
-                            self.md_bg_color = get_color_from_hex('#00BCD4')
-                            app.ui_distribute_income_kivy(income_input.text)
-                        MDButtonIcon:
-                            icon: "rocket-launch-outline"
-                            icon_size: "24sp"
+                        size_hint_x: 0.3
+                        on_release: app.ui_distribute_income_kivy(income_input.text)
+                        md_bg_color: get_color_from_hex('#00796B')
+                        pos_hint: {'center_y': 0.5}
                         MDButtonText:
-                            text: "DISTRIBUIR"
-                            font_size: "18sp"
-                            bold: True
+                            text: "Distribuir"
 
-        # --- Log Display Area --- #
-        AnchorLayout: 
-            anchor_x: 'center'
-            anchor_y: 'bottom'
-            size_hint_y: 0.2
-            padding: "16dp"
-            
+            # --- Right Side: Activity Log Card --- #
             MDCard:
-                elevation: 2
-                radius: [12]
-                md_bg_color: get_color_from_hex('#1A1A1A')
-                padding: "12dp"
-                
-                BoxLayout:
-                    orientation: 'vertical'
-                    spacing: "4dp"
-                    
-                    MDBoxLayout:
-                        size_hint_y: None
-                        height: "50dp"
-                        padding: ["12dp", "0dp", "12dp", "0dp"]
-                        md_bg_color: get_color_from_hex('#1A1A1A')
-                        radius: [15]
-                        
-                        MDIcon:
-                            icon: "console"
-                            theme_icon_color: "Custom"
-                            icon_color: get_color_from_hex('#FF5722')  # Naranja profundo
-                            size_hint_x: None
-                            width: "30dp"
-                            font_size: "24sp"
-                            
-                        MDLabel:
-                            text: "CONSOLA DE ACTIVIDAD"
-                            theme_text_color: "Custom"
-                            text_color: get_color_from_hex('#FFFFFF')
-                            bold: True
-                            font_size: "20sp"
-                            halign: 'center'
-                    
-                    ScrollView:
-                        id: log_scroll
-                        do_scroll_x: False
-                        bar_width: 5
-                        bar_color: get_color_from_hex('#4CAF50')
-                        bar_inactive_color: get_color_from_hex('#333333')
-                        effect_cls: "ScrollEffect"
-                        scroll_type: ['bars']
-                        
-                        MDLabel:
-                            id: log_label
-                            text: ""
-                            markup: True
-                            size_hint_y: None
-                            height: self.texture_size[1]
-                            font_name: "RobotoMono-Regular"
-                            font_size: "12sp"
-                            padding: "8dp", "8dp"
+                id: log_card
+                orientation: 'vertical'
+                size_hint_x: 0.55
+                elevation: 4
+                radius: [15]
+                md_bg_color: get_color_from_hex('#1E1E1E')
+                padding: "16dp"
+                spacing: "12dp"
 
-<AddCategoryPopup>:
-    title: "Añadir Nueva Categoría"
-    size_hint: 0.6, 0.4
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: "50dp"
+                    padding: ["12dp", "0dp", "12dp", "0dp"]
+                    md_bg_color: get_color_from_hex('#1A1A1A')
+                    radius: [10]
+                    spacing: "10dp"
+
+                    MDIcon:
+                        icon: "clipboard-text-clock-outline"
+                        theme_icon_color: "Custom"
+                        icon_color: get_color_from_hex('#2196F3')
+                        size_hint_x: None
+                        width: "30dp"
+                        font_size: "28sp"
+                        pos_hint: {'center_y': 0.5}
+
+                    MDLabel:
+                        text: 'REGISTRO DE ACTIVIDAD'
+                        font_size: "20sp"
+                        bold: True
+                        theme_text_color: "Custom"
+                        text_color: get_color_from_hex('#FFFFFF')
+                        halign: 'left'
+                        valign: 'middle'
+
+                ScrollView:
+                    id: log_scroll_view
+                    size_hint_y: 1
+                    do_scroll_x: False
+                    bar_width: dp(8)
+                    bar_color: get_color_from_hex('#2196F3')
+                    effect_cls: 'ScrollEffect'
+
+                    MDLabel:
+                        id: log_display_label
+                        text: ""
+                        markup: True
+                        size_hint_y: None
+                        height: self.texture_size[1]
+                        padding: dp(10)
+                        font_size: "13sp"
+                        line_height: 1.4
+                        theme_text_color: "Custom"
+                        text_color: get_color_from_hex('#BDBDBD')
+
+<AddCategoryPopup@Popup>:
+    title: 'Añadir Nueva Categoría'
+    size_hint: 0.6, 0.5
     auto_dismiss: False
-    background_color: get_color_from_hex('#151515')
+    separator_color: get_color_from_hex('#4CAF50')
     title_color: get_color_from_hex('#FFFFFF')
-    separator_color: get_color_from_hex('#8E24AA')  # Púrpura para combinar con el botón
-    
-    BoxLayout:
+    title_size: '20sp'
+    background_color: get_color_from_hex('#1E1E1E')[:3] + [0.95]
+
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: "16dp"
+        padding: "24dp"
         spacing: "16dp"
-        
+
         MDTextField:
-            id: category_name_input
-            helper_text_mode: "on_focus"
+            id: add_category_name_input
+            mode: "outlined"
+            required: True
+            icon_left: "tag"
             MDTextFieldHintText:
                 text: "Nombre de la categoría"
-                text_color_normal: 1, 1, 1, 1
+                text_color_normal: [1, 1, 1, 0.7]
             MDTextFieldHelperText:
-                text: "Introduce un nombre único"
-                text_color_normal: 1, 1, 1, 0.7
-            
+                text: "El nombre es obligatorio"
+                mode: "on_error"
+                text_color_normal: [0.8, 0.8, 0.8, 0.7]
+
         MDTextField:
-            id: category_percentage_input
-            helper_text_mode: "on_focus"
+            id: add_category_percentage_input
+            mode: "outlined"
             input_filter: "float"
+            required: True
+            icon_left: "percent"
             MDTextFieldHintText:
                 text: "Porcentaje (%)"
-                text_color_normal: 1, 1, 1, 1
+                text_color_normal: [1, 1, 1, 0.7]
             MDTextFieldHelperText:
-                text: "Valor entre 0 y 100"
-                text_color_normal: 1, 1, 1, 0.7
-            
-        BoxLayout:
-            orientation: 'horizontal'
-            spacing: "16dp"
+                text: "Debe ser un número positivo"
+                mode: "on_error"
+                text_color_normal: [0.8, 0.8, 0.8, 0.7]
+
+        MDBoxLayout:
             size_hint_y: None
-            height: "56dp"
-            
+            height: "48dp"
+            spacing: "16dp"
+            padding: ["0dp", "8dp", "0dp", "0dp"]
+
             MDButton:
-                style: "filled"
+                md_bg_color: get_color_from_hex('#FF5252')
                 on_release: root.dismiss()
+                pos_hint: {'center_y': 0.5}
                 MDButtonText:
                     text: "Cancelar"
-                
-            MDButton:
-                style: "filled"
-                md_bg_color: get_color_from_hex('#8E24AA')  # Púrpura
-                radius: [10]
-                on_release: app.add_category_from_popup(root, category_name_input.text, category_percentage_input.text)
-                MDButtonIcon:
-                    icon: "check"
-                MDButtonText:
-                    text: "Añadir"
-                    bold: True
 
-<EditCategoryPopup>:
-    title: "Editar Categoría"
-    size_hint: 0.8, 0.4
+            MDButton:
+                md_bg_color: get_color_from_hex('#4CAF50')
+                on_release: app.add_category_from_popup(root, add_category_name_input.text, add_category_percentage_input.text)
+                pos_hint: {'center_y': 0.5}
+                MDButtonText:
+                    text: "Añadir Categoría"
+
+<EditCategoryPopup@Popup>:
+    title: 'Editar Categoría'
+    size_hint: 0.6, 0.5
     auto_dismiss: False
-    background_color: get_color_from_hex('#1E1E1E')
+    separator_color: get_color_from_hex('#64B5F6')
     title_color: get_color_from_hex('#FFFFFF')
-    separator_color: get_color_from_hex('#4CAF50')
+    title_size: '20sp'
+    background_color: get_color_from_hex('#1E1E1E')[:3] + [0.95]
+
     category_id: 0
-    
-    BoxLayout:
+
+    MDBoxLayout:
         orientation: 'vertical'
-        padding: "16dp"
+        padding: "24dp"
         spacing: "16dp"
-        
+
+        Label:
+            id: edit_category_id_label
+            text: str(root.category_id)
+            size_hint_y: None
+            height: 0
+            opacity: 0
+
         MDTextField:
             id: edit_category_name_input
-            hint_text: "Nombre de la categoría"
-            helper_text: "Introduce un nombre único"
-            helper_text_mode: "on_focus"
-            
+            mode: "outlined"
+            required: True
+            icon_left: "tag"
+            MDTextFieldHintText:
+                text: "Nuevo nombre"
+                text_color_normal: [1, 1, 1, 0.7]
+            MDTextFieldHelperText:
+                text: "El nombre es obligatorio"
+                mode: "on_error"
+                text_color_normal: [0.8, 0.8, 0.8, 0.7]
+
         MDTextField:
             id: edit_category_percentage_input
-            hint_text: "Porcentaje (%)"
-            helper_text: "Valor entre 0 y 100"
-            helper_text_mode: "on_focus"
+            mode: "outlined"
             input_filter: "float"
-            
-        BoxLayout:
-            orientation: 'horizontal'
-            spacing: "16dp"
+            required: True
+            icon_left: "percent"
+            MDTextFieldHintText:
+                text: "Nuevo porcentaje (%)"
+                text_color_normal: [1, 1, 1, 0.7]
+            MDTextFieldHelperText:
+                text: "Debe ser un número positivo"
+                mode: "on_error"
+                text_color_normal: [0.8, 0.8, 0.8, 0.7]
+
+        MDBoxLayout:
             size_hint_y: None
-            height: "56dp"
-            
+            height: "48dp"
+            spacing: "16dp"
+            padding: ["0dp", "8dp", "0dp", "0dp"]
+
             MDButton:
-                style: "filled"
+                md_bg_color: get_color_from_hex('#FF5252')
                 on_release: root.dismiss()
+                pos_hint: {'center_y': 0.5}
                 MDButtonText:
                     text: "Cancelar"
-                
+
             MDButton:
-                style: "filled"
-                on_release: 
-                    app.update_category_from_popup(root, str(root.category_id), edit_category_name_input.text, edit_category_percentage_input.text)
+                md_bg_color: get_color_from_hex('#64B5F6')
+                on_release: app.update_category_from_popup(root, edit_category_id_label.text, edit_category_name_input.text, edit_category_percentage_input.text)
+                pos_hint: {'center_y': 0.5}
                 MDButtonText:
                     text: "Guardar Cambios"

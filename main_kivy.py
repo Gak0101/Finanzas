@@ -5,7 +5,7 @@ Config.set('graphics', 'height', '800')
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.label import MDLabel
-from kivymd.uix.button import MDButton, MDButtonIcon, MDButtonText
+from kivymd.uix.button import MDButtonIcon, MDButtonText, MDIconButton, MDButton
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.snackbar import MDSnackbar, MDSnackbarSupportingText
 from kivymd.uix.card import MDCard
@@ -299,14 +299,22 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
         """Updates the pie chart with current category data."""
         logging.info("Actualizando gráfico de categorías...")
         try:
-            # Get the graph layout widget
-            graph_layout = self.root.ids.graph_layout
-            if not graph_layout:
-                logging.error("No se encontró el widget graph_layout")
+            # Get the placeholder widget directly using its ID from root.ids
+            graph_placeholder = self.root.ids.get('graph_placeholder')
+            
+            if not graph_placeholder:
+                # Log if the placeholder ID wasn't found in the root ids dictionary
+                logging.error("No se encontró el widget con id 'graph_placeholder' en root.ids")
+                # Optional: Check if graph_card exists, just in case
+                graph_card = self.root.ids.get('graph_card')
+                if graph_card:
+                     logging.debug(f"Contenido de graph_card.children: {graph_card.children}")
+                else:
+                     logging.debug("graph_card tampoco fue encontrado.")
                 return
 
-            # Clear previous graph
-            graph_layout.clear_widgets()
+            # Clear previous graph from the placeholder
+            graph_placeholder.clear_widgets()
 
             # Get categories data
             categories = get_all_categories()
@@ -342,11 +350,15 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
             # Add title with custom style
             ax.set_title('Distribución de Categorías', color='white', pad=20, fontsize=14, fontweight='bold')
 
-            # Add the graph to the layout
+            # Add the graph to the placeholder
             canvas = FigureCanvasKivyAgg(figure=fig)
-            graph_layout.add_widget(canvas)
+            graph_placeholder.add_widget(canvas)
             plt.close(fig)  # Close the figure to free memory
 
+        except KeyError as ke:
+             # Catch KeyError specifically if .get() is not used or if accessing ids fails unexpectedly
+             logging.error(f"KeyError al acceder a 'graph_placeholder': {ke}. ¿El ID existe en financeapp.kv y está en self.root.ids?", exc_info=True)
+             self.show_error_popup(f"Error interno al buscar el área del gráfico (ID: {ke})")
         except Exception as e:
             logging.error(f"Error al actualizar el gráfico: {e}", exc_info=True)
             self.show_error_popup(f"Error al actualizar el gráfico: {str(e)}")

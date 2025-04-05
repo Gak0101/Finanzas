@@ -1,0 +1,11 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# Your rule content
+
+Se va a utilizar el framework kivy accede a al doc que tienes @kivy
+
+centrate unicamente en la documentación https://app.readthedocs.org/projects/kivy/downloads/pdf/latest/
