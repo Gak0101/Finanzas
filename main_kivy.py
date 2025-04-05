@@ -182,32 +182,24 @@ class FinanceApp(MDApp): # <--- Inherit from MDApp
                  return
             logging.info(f"root.ids content: {self.root.ids}")
 
-            # --- Keep actual UI interactions commented out for now ---
-            # # 1. Setup Kivy Log Handler Widget
-            # log_label = self.root.ids.get('log_display_label')
-            # if log_label and kivy_log_handler_instance:
-            #     kivy_log_handler_instance.set_widget(log_label)
-            #     logging.info("Kivy log handler widget set successfully.")
-            # elif not log_label:
-            #     logging.warning("'log_display_label' not found in root.ids.")
-            # elif not kivy_log_handler_instance:
-            #     logging.warning("kivy_log_handler_instance is None, cannot set widget.")
+            # --- Link Log Handler to UI Label --- #
+            log_label = self.root.ids.get('log_display_label')
+            if log_label and kivy_log_handler_instance:
+                kivy_log_handler_instance.set_widget(log_label)
+                logging.info("Kivy log handler widget set successfully.")
+            elif not log_label:
+                logging.warning("'log_display_label' not found in root.ids.")
+            elif not kivy_log_handler_instance:
+                logging.warning("kivy_log_handler_instance is None, cannot set widget.")
 
-            # # 2. Setup Matplotlib Graph (Placeholder logic)
-            # graph_placeholder = self.root.ids.get('graph_placeholder')
-            # if graph_placeholder:
-            #     self.setup_graph(graph_placeholder) # Call setup_graph
-            #     logging.info("Graph setup initiated.")
-            # else:
-            #     logging.warning("'graph_placeholder' not found in root.ids.")
+            # --- Setup Graph --- #
+            # Note: Graph setup now happens within update_graph, called from on_start
+            # self.setup_graph(...) is likely deprecated or refactored
+            logging.info("Graph setup is handled by update_graph.") 
 
-            # # 3. Load Categories into the UI
-            # category_list_layout = self.root.ids.get('category_list_layout')
-            # if category_list_layout:
-            #     self.load_categories() # Call load_categories (which uses the id)
-            #     logging.info("Initial category loading initiated.")
-            # else:
-            #     logging.warning("'category_list_layout' not found in root.ids.")
+            # --- Load Initial Categories --- #
+            logging.info("Initializing categories list...")
+            self.load_categories()
 
             logging.info("UI Initialization complete (or attempted).")
 
