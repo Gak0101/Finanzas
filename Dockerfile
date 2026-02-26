@@ -39,8 +39,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Dependencias de sistema para better-sqlite3 en runtime
-RUN apk add --no-cache libc6-compat
+# [2026-02-26] Dependencias de sistema para better-sqlite3 en runtime
+# su-exec para ejecutar la app como usuario no-root desde start.sh
+RUN apk add --no-cache libc6-compat su-exec
 
 # Usuario no-root por seguridad
 RUN addgroup --system --gid 1001 nodejs && \
@@ -67,7 +68,8 @@ RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
 
 RUN chmod +x ./scripts/start.sh
 
-USER nextjs
+# [2026-02-26] No se usa USER nextjs aquí - start.sh maneja los permisos del volumen
+# como root y luego ejecuta la app como nextjs via su-exec
 
 EXPOSE 3000
 ENV PORT=3000
