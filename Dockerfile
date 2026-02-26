@@ -6,12 +6,18 @@ WORKDIR /app
 
 # ── Dependencias ──────────────────────────────────────────────────────────────
 FROM base AS deps
+# [2026-02-26] Forzar NODE_ENV=development para que npm ci instale devDependencies
+# (typescript, tailwindcss, etc.) necesarias para el build.
+# Coolify inyecta NODE_ENV=production a build-time, lo que causa que se salten.
+ENV NODE_ENV=development
 COPY package.json package-lock.json* ./
 RUN npm ci
 
 # ── Builder ───────────────────────────────────────────────────────────────────
 FROM base AS builder
 WORKDIR /app
+# [2026-02-26] Forzar NODE_ENV=development para que next build encuentre typescript
+ENV NODE_ENV=development
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
