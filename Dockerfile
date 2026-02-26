@@ -29,7 +29,8 @@ ENV DATABASE_URL=./data/finanzas.db
 
 # [2026-02-26] Crear directorio data para que SQLite no falle durante el build
 # (Next.js pre-renderiza rutas API y necesita acceder a la BD)
-RUN mkdir -p data && npm run build
+# Se establece NODE_ENV=production para el build de Next.js (las deps ya están instaladas)
+RUN mkdir -p data && NODE_ENV=production npm run build
 
 # ── Runner ────────────────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
