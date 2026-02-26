@@ -1,36 +1,97 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Finanzas Personales
 
-## Getting Started
+App web de gestión de finanzas personales. Gestiona categorías de gasto con porcentajes, registra ingresos mensuales, crea huchas de ahorro y visualiza el historial con gráficos.
 
-First, run the development server:
+## Funcionalidades
+
+- **Categorías**: Define cómo distribuir tus ingresos (Alimentación 30%, Ahorro 20%, etc.)
+- **Ingresos**: Registra tu ingreso mensual bruto y la app calcula el desglose automáticamente
+- **Huchas**: Crea objetivos de ahorro y añade aportaciones manuales
+- **Dashboard**: Gráfico donut con la distribución del mes seleccionado
+- **Historial**: Evolución de ingresos mes a mes con gráfico de barras
+
+## Stack
+
+- Next.js 14 (App Router)
+- SQLite + Drizzle ORM
+- next-auth v5
+- Recharts + Tailwind + shadcn/ui
+
+---
+
+## Desarrollo local
+
+### 1. Instalar dependencias
+
+```bash
+npm install
+```
+
+### 2. Variables de entorno
+
+Copia `.env.example` como `.env.local` y edítalo:
+
+```bash
+DATABASE_URL=./data/finanzas.db
+NEXTAUTH_SECRET=un-secreto-de-minimo-32-caracteres
+NEXTAUTH_URL=http://localhost:3000
+```
+
+### 3. Crear base de datos y usuario inicial
+
+```bash
+# Crear tablas
+node scripts/migrate.mjs
+
+# Crear usuario (cambia los valores)
+node scripts/seed.mjs tuusuario tupassword
+```
+
+### 4. Arrancar
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Despliegue en Coolify (VPS)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Variables de entorno en Coolify
 
-## Learn More
+| Variable | Valor |
+|----------|-------|
+| `DATABASE_URL` | `/app/data/finanzas.db` |
+| `NEXTAUTH_SECRET` | Genera con: `openssl rand -base64 32` |
+| `NEXTAUTH_URL` | `https://tudominio.com` |
 
-To learn more about Next.js, take a look at the following resources:
+### Volumen persistente
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+En Coolify, configura un volumen persistente:
+- **Ruta del contenedor**: `/app/data`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Esto preserva la base de datos SQLite entre reinicios y permite hacer backups desde Coolify.
 
-## Deploy on Vercel
+### Crear usuario inicial en producción
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Tras el primer despliegue, ejecuta en el terminal de Coolify:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+docker exec -it <nombre_contenedor> node /app/scripts/seed.mjs tuusuario tupassword
+```
+
+### Puerto
+
+La app escucha en el puerto `3000`.
+
+---
+
+## Scripts disponibles
+
+```bash
+npm run dev                          # Desarrollo local
+npm run build                        # Build de producción
+node scripts/migrate.mjs             # Ejecutar migraciones
+node scripts/seed.mjs <user> <pass>  # Crear/actualizar usuario
+npx drizzle-kit generate             # Generar migraciones tras cambiar el schema
+```
