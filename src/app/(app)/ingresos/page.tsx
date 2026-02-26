@@ -35,6 +35,7 @@ export default function IngresosPage() {
   const [loading, setLoading] = useState(true)
   const [guardando, setGuardando] = useState(false)
   const [editandoId, setEditandoId] = useState<number | null>(null)
+  const [regenerandoId, setRegenerandoId] = useState<number | null>(null)
 
   async function cargarRegistros() {
     const res = await fetch('/api/ingresos')
@@ -58,6 +59,19 @@ export default function IngresosPage() {
     setNotas(registro.notas ?? '')
     setEditandoId(registro.id)
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  async function handleRegenerarSnapshots(id: number) {
+    setRegenerandoId(id)
+    const res = await fetch(`/api/ingresos/${id}/regenerar`, { method: 'POST' })
+    if (res.ok) {
+      toast.success('Distribución actualizada con las categorías actuales')
+      cargarRegistros()
+    } else {
+      const err = await res.json()
+      toast.error(err.error || 'Error al actualizar la distribución')
+    }
+    setRegenerandoId(null)
   }
 
   async function handleEliminar(id: number) {
@@ -241,6 +255,15 @@ export default function IngresosPage() {
                     <p className="text-lg font-bold">{formatEuro(r.ingreso_bruto)}</p>
                     <Badge variant="outline">{r.snapshots.length} categorías</Badge>
                     <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        title="Actualizar distribución con las categorías actuales"
+                        onClick={() => handleRegenerarSnapshots(r.id)}
+                        disabled={regenerandoId === r.id}
+                      >
+                        {regenerandoId === r.id ? '...' : '↻'}
+                      </Button>
                       <Button
                         size="sm"
                         variant="outline"
