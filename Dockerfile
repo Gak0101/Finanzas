@@ -27,7 +27,9 @@ ENV NEXTAUTH_SECRET=build-time-secret
 ENV NEXTAUTH_URL=http://localhost:3000
 ENV DATABASE_URL=./data/finanzas.db
 
-RUN npm run build
+# [2026-02-26] Crear directorio data para que SQLite no falle durante el build
+# (Next.js pre-renderiza rutas API y necesita acceder a la BD)
+RUN mkdir -p data && npm run build
 
 # ── Runner ────────────────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
