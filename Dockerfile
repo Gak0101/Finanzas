@@ -55,6 +55,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --chown=nextjs:nodejs scripts/migrate.mjs ./scripts/migrate.mjs
 COPY --chown=nextjs:nodejs scripts/start.sh ./scripts/start.sh
 
+# [2026-02-26] Copiar node_modules necesarios para migrate.mjs (drizzle-orm, better-sqlite3)
+# El output standalone de Next.js no los incluye porque solo se usan en el script de migración
+COPY --from=builder /app/node_modules ./node_modules
+
 # Migraciones de Drizzle
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/db/migrations ./src/lib/db/migrations
 
