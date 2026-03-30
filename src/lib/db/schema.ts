@@ -76,20 +76,40 @@ export const aportaciones = sqliteTable('aportaciones', {
   created_at: text('created_at').default(sql`(datetime('now'))`),
 })
 
+// ─── DESVIACIONES ────────────────────────────────────────────────────────────
+// Editado: 2026-03-30 — Sistema de desviaciones/deudas entre categorías
+// Registra movimientos de dinero: de dónde salió, a dónde fue, por qué, y si está saldada
+export const desviaciones = sqliteTable('desviaciones', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  registro_id: integer('registro_id').notNull().references(() => registros_mensuales.id),
+  usuario_id: integer('usuario_id').notNull().references(() => usuarios.id),
+  categoria_origen: text('categoria_origen').notNull(),   // De dónde salió el dinero (ej: "Ocio")
+  categoria_destino: text('categoria_destino').notNull(),  // A dónde se debe (ej: "Ahorro")
+  monto: real('monto').notNull(),                          // Cantidad desviada (ej: 280.80)
+  motivo: text('motivo'),                                  // En qué se gastó (ej: "Deuda cuenta ahorro")
+  etiqueta: text('etiqueta'),                              // Tipo: "ahorro_forzado","imprevisto","capricho","emergencia"
+  saldada: integer('saldada', { mode: 'boolean' }).default(false), // false=pendiente, true=saldada
+  saldada_en_registro_id: integer('saldada_en_registro_id'), // ID del registro donde se saldó
+  created_at: text('created_at').default(sql`(datetime('now'))`),
+})
+
 // ─── RELACIONES ──────────────────────────────────────────────────────────────
 export const usuariosRelations = relations(usuarios, ({ many }) => ({
   categorias: many(categorias),
   registros_mensuales: many(registros_mensuales),
   huchas: many(huchas),
+  desviaciones: many(desviaciones), // Editado: 2026-03-30 — relación con desviaciones
 }))
 
 export const categoriasRelations = relations(categorias, ({ one }) => ({
   usuario: one(usuarios, { fields: [categorias.usuario_id], references: [usuarios.id] }),
 }))
 
+// Editado: 2026-03-30 — añadida relación con desviaciones
 export const registrosMensualesRelations = relations(registros_mensuales, ({ one, many }) => ({
   usuario: one(usuarios, { fields: [registros_mensuales.usuario_id], references: [usuarios.id] }),
   snapshots: many(snapshots_categorias),
+  desviaciones: many(desviaciones),
 }))
 
 export const snapshotsCategoriasRelations = relations(snapshots_categorias, ({ one }) => ({
@@ -108,6 +128,18 @@ export const aportacionesRelations = relations(aportaciones, ({ one }) => ({
   hucha: one(huchas, { fields: [aportaciones.hucha_id], references: [huchas.id] }),
 }))
 
+// Editado: 2026-03-30 — relaciones de desviaciones con registro y usuario
+export const desviacionesRelations = relations(desviaciones, ({ one }) => ({
+  registro: one(registros_mensuales, {
+    fields: [desviaciones.registro_id],
+    references: [registros_mensuales.id],
+  }),
+  usuario: one(usuarios, {
+    fields: [desviaciones.usuario_id],
+    references: [usuarios.id],
+  }),
+}))
+
 // Tipos inferidos de Drizzle
 export type Usuario = typeof usuarios.$inferSelect
 export type NuevoUsuario = typeof usuarios.$inferInsert
@@ -120,3 +152,5 @@ export type Hucha = typeof huchas.$inferSelect
 export type NuevaHucha = typeof huchas.$inferInsert
 export type Aportacion = typeof aportaciones.$inferSelect
 export type NuevaAportacion = typeof aportaciones.$inferInsert
+export type Desviacion = typeof desviaciones.$inferSelect        // Editado: 2026-03-30
+export type NuevaDesviacion = typeof desviaciones.$inferInsert   // Editado: 2026-03-30

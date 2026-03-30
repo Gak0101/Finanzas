@@ -1,3 +1,6 @@
+// Editado: 2026-03-30 — Integración del sistema de desviaciones/deudas en dashboard
+// Se añade: carga de desviaciones, banner de deudas pendientes, badges por categoría,
+// botón registrar desviación, y sección de análisis inteligente
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -6,14 +9,16 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { DonutChart } from '@/components/dashboard/DonutChart'
+import { RegistrarDesviacion } from '@/components/dashboard/RegistrarDesviacion'
 import Link from 'next/link'
-import type { RegistroMensual, SnapshotCategoria, Hucha, Aportacion, Categoria } from '@/lib/db/schema'
+import type { RegistroMensual, SnapshotCategoria, Hucha, Aportacion, Categoria, Desviacion } from '@/lib/db/schema'
 
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ]
 
+// Formatea un número como moneda en euros
 function formatEuro(val: number) {
   return new Intl.NumberFormat('es-ES', {
     style: 'currency',
@@ -22,12 +27,33 @@ function formatEuro(val: number) {
   }).format(val)
 }
 
+// Formatea un porcentaje con signo
 function formatPct(val: number) {
   return `${val >= 0 ? '+' : ''}${val.toFixed(1)}%`
 }
 
 type RegistroConSnapshots = RegistroMensual & { snapshots: SnapshotCategoria[] }
 type HuchaConSaldo = Hucha & { aportaciones: Aportacion[]; saldo_actual: number }
+
+// Tipo para el análisis inteligente de desviaciones
+interface AnalisisData {
+  analisis: Array<{
+    categoria: string
+    total_desviado: number
+    num_desviaciones: number
+    media_por_desviacion: number
+  }>
+  sugerencias: string[]
+  total_historico: number
+  num_total: number
+}
+
+// Tipo para las deudas pendientes
+interface PendientesData {
+  pendientes: Desviacion[]
+  resumen: Record<string, { total: number; detalle: Desviacion[] }>
+  total_deuda: number
+}
 
 export default function DashboardPage() {
   const now = new Date()
@@ -38,21 +64,45 @@ export default function DashboardPage() {
   const [categorias, setCategorias] = useState<Categoria[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  // Editado: 2026-03-30 — Estados para desviaciones
+  const [desviacionesMes, setDesviacionesMes] = useState<Desviacion[]>([])
+  const [pendientes, setPendientes] = useState<PendientesData | null>(null)
+  const [analisis, setAnalisis] = useState<AnalisisData | null>(null)
+  const [mostrarAnalisis, setMostrarAnalisis] = useState(false)
+
+  // Carga datos principales: ingresos, huchas, categorías
+  function cargarDatos() {
     Promise.all([
       fetch('/api/ingresos').then((r) => r.json()),
       fetch('/api/huchas').then((r) => r.json()),
       fetch('/api/categorias').then((r) => r.json()),
-    ]).then(([ingresos, huchasData, catsData]) => {
+      fetch('/api/desviaciones/pendientes').then((r) => r.json()),
+    ]).then(([ingresos, huchasData, catsData, pendientesData]) => {
       setRegistros(ingresos)
       setHuchas(huchasData)
       setCategorias(catsData)
+      setPendientes(pendientesData)
       setLoading(false)
     })
+  }
+
+  useEffect(() => {
+    cargarDatos()
   }, [])
 
   const registroActual = registros.find((r) => r.anio === anio && r.mes === mes)
   const huchasActivas = huchas.filter((h) => h.activa && h.saldo_actual < h.objetivo)
+
+  // Editado: 2026-03-30 — Cargar desviaciones del mes cuando cambia el registro
+  useEffect(() => {
+    if (registroActual) {
+      fetch(`/api/desviaciones?registro_id=${registroActual.id}`)
+        .then((r) => r.json())
+        .then(setDesviacionesMes)
+    } else {
+      setDesviacionesMes([])
+    }
+  }, [registroActual?.id])
 
   // Mes anterior para comparativa
   const mesPrevNum = mes === 1 ? 12 : mes - 1
@@ -112,6 +162,67 @@ export default function DashboardPage() {
     return maxCatFecha > registroFecha
   })()
 
+  // Editado: 2026-03-30 — Calcula deuda total de una categoría por sus desviaciones del mes
+  // Retorna cuánto se desvió de esa categoría (negativo = prestó dinero)
+  function getDeudaCategoria(nombreCategoria: string): number {
+    let deuda = 0
+    for (const d of desviacionesMes) {
+      if (d.categoria_origen === nombreCategoria) {
+        deuda -= d.monto // Prestó dinero → deuda negativa
+      }
+      if (d.categoria_destino === nombreCategoria) {
+        deuda += d.monto // Recibió dinero → deuda positiva
+      }
+    }
+    return deuda
+  }
+
+  // Editado: 2026-03-30 — Carga análisis inteligente
+  function cargarAnalisis() {
+    fetch('/api/desviaciones/analisis')
+      .then((r) => r.json())
+      .then((data) => {
+        setAnalisis(data)
+        setMostrarAnalisis(true)
+      })
+  }
+
+  // Editado: 2026-03-30 — Callback cuando se registra una desviación
+  function handleDesviacionGuardada() {
+    cargarDatos()
+    if (registroActual) {
+      fetch(`/api/desviaciones?registro_id=${registroActual.id}`)
+        .then((r) => r.json())
+        .then(setDesviacionesMes)
+    }
+  }
+
+  // Editado: 2026-03-30 — Saldar una deuda manualmente
+  async function handleSaldarDeuda(desvId: number) {
+    const res = await fetch(`/api/desviaciones/${desvId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ saldada_en_registro_id: registroActual?.id }),
+    })
+    if (res.ok) {
+      cargarDatos()
+      if (registroActual) {
+        fetch(`/api/desviaciones?registro_id=${registroActual.id}`)
+          .then((r) => r.json())
+          .then(setDesviacionesMes)
+      }
+    }
+  }
+
+  // Editado: 2026-03-30 — Eliminar una desviación
+  async function handleEliminarDesviacion(desvId: number) {
+    if (!confirm('¿Eliminar esta desviación?')) return
+    const res = await fetch(`/api/desviaciones/${desvId}`, { method: 'DELETE' })
+    if (res.ok) {
+      handleDesviacionGuardada()
+    }
+  }
+
   function irMes(delta: number) {
     let nuevoMes = mes + delta
     let nuevoAnio = anio
@@ -154,6 +265,36 @@ export default function DashboardPage() {
           <Button asChild size="sm" variant="outline" className="shrink-0 text-yellow-800 dark:text-yellow-200 border-yellow-400">
             <Link href="/ingresos">Actualizar distribución →</Link>
           </Button>
+        </div>
+      )}
+
+      {/* Editado: 2026-03-30 — Banner de deudas pendientes de meses anteriores */}
+      {pendientes && pendientes.total_deuda > 0 && (
+        <div className="rounded-lg border border-red-300 bg-red-50 dark:bg-red-950/50 dark:border-red-800 px-4 py-3">
+          <div className="flex items-center gap-3 text-sm text-red-800 dark:text-red-200">
+            <span className="text-lg">🔴</span>
+            <div className="flex-1">
+              <span className="font-medium">Tienes deudas pendientes: {formatEuro(pendientes.total_deuda)}</span>
+              <div className="mt-1 space-y-1">
+                {Object.entries(pendientes.resumen).map(([cat, info]) => (
+                  <p key={cat} className="text-xs">
+                    {cat}: <span className="font-medium">{formatEuro(info.total)}</span> pendiente
+                    {info.detalle.length > 0 && info.detalle[0].motivo && (
+                      <span className="text-red-500/70"> — {info.detalle[0].motivo}</span>
+                    )}
+                  </p>
+                ))}
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 border-red-400 text-red-800 dark:text-red-200"
+              onClick={cargarAnalisis}
+            >
+              Ver análisis →
+            </Button>
+          </div>
         </div>
       )}
 
@@ -293,27 +434,181 @@ export default function DashboardPage() {
             </Card>
           )}
 
-          {/* Tarjetas por categoría */}
+          {/* Editado: 2026-03-30 — Tarjetas por categoría con badges de deuda y botón registrar */}
           <div>
-            <h2 className="text-lg font-semibold mb-3">Por categoría</h2>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold">Por categoría</h2>
+              {/* Botón para registrar desviación */}
+              <RegistrarDesviacion
+                registroId={registroActual.id}
+                snapshots={registroActual.snapshots}
+                ingresoBruto={registroActual.ingreso_bruto}
+                onGuardado={handleDesviacionGuardada}
+              />
+            </div>
+            {/* Editado: 2026-03-30 — Tarjetas simplificadas: solo muestran monto del snapshot */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {registroActual.snapshots.map((snap) => (
-                <Card key={snap.id} className="overflow-hidden">
-                  <div className="h-1" style={{ backgroundColor: snap.color }} />
-                  <CardContent className="py-4">
-                    <div className="flex items-center gap-3 mb-2">
-                      <span className="text-2xl">{snap.icono ?? '💰'}</span>
-                      <div className="flex-1">
-                        <p className="font-medium text-sm">{snap.categoria_nombre}</p>
-                        <Badge variant="outline" className="text-xs">{snap.porcentaje}%</Badge>
+                  <Card key={snap.id} className="overflow-hidden">
+                    <div className="h-1" style={{ backgroundColor: snap.color }} />
+                    <CardContent className="py-4">
+                      <div className="flex items-center gap-3 mb-2">
+                        <span className="text-2xl">{snap.icono ?? '💰'}</span>
+                        <div className="flex-1">
+                          <p className="font-medium text-sm">{snap.categoria_nombre}</p>
+                          <Badge variant="outline" className="text-xs">{snap.porcentaje}%</Badge>
+                        </div>
                       </div>
-                    </div>
-                    <p className="text-xl font-bold">{formatEuro(snap.monto_calculado)}</p>
-                  </CardContent>
-                </Card>
-              ))}
+                      <p className="text-xl font-bold">
+                        {formatEuro(snap.monto_calculado)}
+                      </p>
+                    </CardContent>
+                  </Card>
+                ))}
+
             </div>
           </div>
+
+          {/* Editado: 2026-03-30 — Lista de desviaciones de este mes */}
+          {desviacionesMes.length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold mb-3">Desviaciones de este mes</h2>
+              <div className="space-y-2">
+                {desviacionesMes.map((d) => (
+                  <Card key={d.id} className="group">
+                    <CardContent className="py-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium text-red-500">
+                              -{formatEuro(d.monto)} de {d.categoria_origen}
+                            </span>
+                            <span className="text-muted-foreground text-xs">→</span>
+                            <span className="text-sm font-medium text-green-600">
+                              +{formatEuro(d.monto)} a {d.categoria_destino}
+                            </span>
+                          </div>
+                          {d.motivo && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              📝 {d.motivo}
+                            </p>
+                          )}
+                          <div className="flex gap-2 mt-1">
+                            {d.etiqueta && (
+                              <Badge variant="outline" className="text-xs">
+                                {d.etiqueta.replace('_', ' ')}
+                              </Badge>
+                            )}
+                            <Badge
+                              variant={d.saldada ? 'default' : 'destructive'}
+                              className="text-xs"
+                            >
+                              {d.saldada ? '✅ Saldada' : '⏳ Pendiente'}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {!d.saldada && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleSaldarDeuda(d.id)}
+                              title="Marcar como saldada"
+                            >
+                              ✅
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleEliminarDesviacion(d.id)}
+                            title="Eliminar"
+                          >
+                            🗑️
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Editado: 2026-03-30 — Sección de análisis inteligente (se muestra al pulsar) */}
+          {desviacionesMes.length > 0 && !mostrarAnalisis && (
+            <div className="flex justify-center">
+              <Button variant="ghost" onClick={cargarAnalisis} className="gap-2">
+                <span>💡</span> Ver análisis de desviaciones
+              </Button>
+            </div>
+          )}
+
+          {mostrarAnalisis && analisis && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">💡 Análisis de desviaciones</CardTitle>
+                  <Button variant="ghost" size="sm" onClick={() => setMostrarAnalisis(false)}>
+                    Cerrar
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Resumen general */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="text-center p-3 rounded-lg bg-muted/50">
+                    <p className="text-2xl font-bold">{analisis.num_total}</p>
+                    <p className="text-xs text-muted-foreground">desviaciones totales</p>
+                  </div>
+                  <div className="text-center p-3 rounded-lg bg-muted/50">
+                    <p className="text-2xl font-bold text-red-500">{formatEuro(analisis.total_historico)}</p>
+                    <p className="text-xs text-muted-foreground">total histórico desviado</p>
+                  </div>
+                </div>
+
+                {/* Top categorías más desviadas */}
+                {analisis.analisis.length > 0 && (
+                  <div>
+                    <p className="text-sm font-medium mb-2">Categorías más desviadas:</p>
+                    <div className="space-y-2">
+                      {analisis.analisis.slice(0, 5).map((a) => (
+                        <div key={a.categoria} className="flex items-center gap-3 text-sm">
+                          <span className="font-medium flex-1">{a.categoria}</span>
+                          <span className="text-muted-foreground">{a.num_desviaciones}x</span>
+                          <span className="text-red-500 font-medium">{formatEuro(a.total_desviado)}</span>
+                          <span className="text-xs text-muted-foreground">
+                            (media: {formatEuro(a.media_por_desviacion)})
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Sugerencias inteligentes */}
+                {analisis.sugerencias.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">💡 Sugerencias:</p>
+                    {analisis.sugerencias.map((s, i) => (
+                      <div
+                        key={i}
+                        className="rounded-lg bg-blue-50 dark:bg-blue-950/50 border border-blue-200 dark:border-blue-800 p-3 text-sm text-blue-800 dark:text-blue-200"
+                      >
+                        {s}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {analisis.sugerencias.length === 0 && analisis.num_total > 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-2">
+                    Aún no hay suficientes datos para generar sugerencias. Sigue registrando desviaciones.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </>
       ) : (
         /* Sin ingreso registrado */
