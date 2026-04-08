@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { DonutChart } from '@/components/dashboard/DonutChart'
-import { RegistrarDesviacion } from '@/components/dashboard/RegistrarDesviacion'
+// Editado: 2026-04-08 — Import del componente MoverDinero para transferencias con deuda
+import { MoverDinero } from '@/components/dashboard/MoverDinero'
 import Link from 'next/link'
 import type { RegistroMensual, SnapshotCategoria, Hucha, Aportacion, Categoria, Desviacion } from '@/lib/db/schema'
 
@@ -434,12 +435,12 @@ export default function DashboardPage() {
             </Card>
           )}
 
-          {/* Editado: 2026-03-30 — Tarjetas por categoría con badges de deuda y botón registrar */}
+          {/* Editado: 2026-04-08 — Tarjetas por categoría + botón Mover dinero */}
           <div>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold">Por categoría</h2>
-              {/* Botón para registrar desviación */}
-              <RegistrarDesviacion
+              {/* Botón para mover dinero entre categorías (genera deuda pendiente) */}
+              <MoverDinero
                 registroId={registroActual.id}
                 snapshots={registroActual.snapshots}
                 ingresoBruto={registroActual.ingreso_bruto}

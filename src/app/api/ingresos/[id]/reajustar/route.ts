@@ -16,8 +16,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const registroId = parseInt(id)
   const body = await req.json()
 
-  // body esperado: { snapshots: [{ id, monto_calculado, porcentaje }], motivo?: string, etiqueta?: string }
-  const { snapshots: nuevosSnaps, motivo, etiqueta } = body
+  // body esperado: { snapshots: [...], motivo?, etiqueta?, skipDesviacion?: boolean }
+  // Editado: 2026-04-08 — Añadido skipDesviacion para evitar doble registro desde MoverDinero
+  const { snapshots: nuevosSnaps, motivo, etiqueta, skipDesviacion } = body
 
   if (!Array.isArray(nuevosSnaps) || nuevosSnaps.length === 0) {
     return NextResponse.json({ error: 'Se requiere array de snapshots' }, { status: 400 })
@@ -55,28 +56,32 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       )
   }
 
-  // Registrar las desviaciones (diferencias) en la tabla desviaciones
-  for (const snap of nuevosSnaps) {
-    const original = snapsOriginales.find((s) => s.id === snap.id)
-    if (!original) continue
+  // Editado: 2026-04-08 — Solo registrar desviaciones si no se indica skipDesviacion
+  // Cuando se llama desde MoverDinero, la desviación ya fue creada antes
+  if (!skipDesviacion) {
+    // Registrar las desviaciones (diferencias) en la tabla desviaciones
+    for (const snap of nuevosSnaps) {
+      const original = snapsOriginales.find((s) => s.id === snap.id)
+      if (!original) continue
 
-    const diferencia = snap.monto_calculado - original.monto_calculado
-    // Solo registrar si hay cambio significativo (> 0.01€)
-    if (Math.abs(diferencia) > 0.01) {
-      // Si la categoría recibió más dinero → destino
-      // Si la categoría perdió dinero → origen
-      if (diferencia > 0) {
-        // Esta categoría recibió más → buscar de dónde salió (las que bajaron)
-        await db.insert(desviaciones).values({
-          registro_id: registroId,
-          usuario_id: auth.userId,
-          categoria_origen: 'Distribución variable',
-          categoria_destino: original.categoria_nombre,
-          monto: Math.round(diferencia * 100) / 100,
-          motivo: motivo || `Reajuste: ${original.categoria_nombre} de ${original.monto_calculado}€ a ${snap.monto_calculado}€`,
-          etiqueta: etiqueta || null,
-          saldada: true, // Ya se aplicó, no es deuda pendiente
-        })
+      const diferencia = snap.monto_calculado - original.monto_calculado
+      // Solo registrar si hay cambio significativo (> 0.01€)
+      if (Math.abs(diferencia) > 0.01) {
+        // Si la categoría recibió más dinero → destino
+        // Si la categoría perdió dinero → origen
+        if (diferencia > 0) {
+          // Esta categoría recibió más → buscar de dónde salió (las que bajaron)
+          await db.insert(desviaciones).values({
+            registro_id: registroId,
+            usuario_id: auth.userId,
+            categoria_origen: 'Distribución variable',
+            categoria_destino: original.categoria_nombre,
+            monto: Math.round(diferencia * 100) / 100,
+            motivo: motivo || `Reajuste: ${original.categoria_nombre} de ${original.monto_calculado}€ a ${snap.monto_calculado}€`,
+            etiqueta: etiqueta || null,
+            saldada: true, // Ya se aplicó, no es deuda pendiente
+          })
+        }
       }
     }
   }

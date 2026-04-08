@@ -2,7 +2,7 @@
 // Define las reglas de validación para registrar una desviación entre categorías
 import { z } from 'zod'
 
-// Etiquetas predefinidas para clasificar el tipo de desviación
+// Editado: 2026-04-08 — Añadida etiqueta movimiento_manual
 export const ETIQUETAS_DESVIACION = [
   { value: 'ahorro_forzado', label: '💰 Ahorro forzado' },
   { value: 'imprevisto', label: '⚡ Imprevisto' },
@@ -10,6 +10,7 @@ export const ETIQUETAS_DESVIACION = [
   { value: 'emergencia', label: '🚨 Emergencia' },
   { value: 'deuda', label: '📋 Deuda' },
   { value: 'inversion', label: '📈 Inversión' },
+  { value: 'movimiento_manual', label: '💸 Movimiento manual' },
   { value: 'otro', label: '📝 Otro' },
 ] as const
 
