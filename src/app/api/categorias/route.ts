@@ -5,6 +5,9 @@ import { eq, asc } from 'drizzle-orm'
 import { categoriaSchema } from '@/lib/validations/categoria'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 export async function GET() {
   const auth = await getAuthenticatedUserId()
   if (isNextResponse(auth)) return auth

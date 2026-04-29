@@ -6,6 +6,9 @@ import { hash, compare } from 'bcryptjs'
 import { z } from 'zod'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 const cambiarPasswordSchema = z.object({
   password_actual: z.string().min(1),
   password_nueva: z.string().min(6, 'La nueva contraseña debe tener al menos 6 caracteres'),

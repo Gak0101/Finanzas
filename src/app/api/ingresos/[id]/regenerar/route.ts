@@ -4,6 +4,9 @@ import { registros_mensuales, snapshots_categorias, categorias } from '@/lib/db/
 import { eq, and, asc, sql } from 'drizzle-orm'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 /**
  * POST /api/ingresos/[id]/regenerar
  *

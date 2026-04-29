@@ -6,6 +6,9 @@ import { desviaciones } from '@/lib/db/schema'
 import { eq, and, desc } from 'drizzle-orm'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 // GET /api/desviaciones/pendientes — Deudas no saldadas del usuario
 export async function GET() {
   const auth = await getAuthenticatedUserId()

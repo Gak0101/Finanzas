@@ -6,6 +6,9 @@ import { ingresoSchema } from '@/lib/validations/ingreso'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 import { sql } from 'drizzle-orm'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await getAuthenticatedUserId()
   if (isNextResponse(auth)) return auth

@@ -8,6 +8,9 @@ import { eq, and, desc } from 'drizzle-orm'
 import { desviacionSchema } from '@/lib/validations/desviacion'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 // GET /api/desviaciones?registro_id=X — Lista desviaciones de un registro
 export async function GET(req: Request) {
   const auth = await getAuthenticatedUserId()

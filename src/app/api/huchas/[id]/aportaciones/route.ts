@@ -5,6 +5,9 @@ import { eq, and, desc } from 'drizzle-orm'
 import { aportacionSchema } from '@/lib/validations/hucha'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await getAuthenticatedUserId()
   if (isNextResponse(auth)) return auth

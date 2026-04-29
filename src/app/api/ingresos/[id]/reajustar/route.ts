@@ -7,6 +7,9 @@ import { registros_mensuales, snapshots_categorias, desviaciones } from '@/lib/d
 import { eq, and, sql } from 'drizzle-orm'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 // PUT /api/ingresos/[id]/reajustar — Reajustar distribución de un mes
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await getAuthenticatedUserId()

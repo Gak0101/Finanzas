@@ -7,6 +7,9 @@ import { desviaciones } from '@/lib/db/schema'
 import { eq, and, sql } from 'drizzle-orm'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 // PUT /api/desviaciones/[id] — Marcar desviación como saldada
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await getAuthenticatedUserId()

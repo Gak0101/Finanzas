@@ -11,6 +11,9 @@ import { eq, desc, asc, and } from 'drizzle-orm'
 import { ingresoSchema } from '@/lib/validations/ingreso'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 export async function GET() {
   const auth = await getAuthenticatedUserId()
   if (isNextResponse(auth)) return auth
@@ -127,4 +130,3 @@ export async function POST(req: Request) {
 
   return NextResponse.json(registroCompleto, { status: 201 })
 }
-
