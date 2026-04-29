@@ -6,6 +6,9 @@ import { desviaciones, categorias } from '@/lib/db/schema'
 import { eq, desc } from 'drizzle-orm'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 // Interfaz para el análisis por categoría
 interface AnalisisCategoria {
   categoria: string
