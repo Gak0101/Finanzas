@@ -56,6 +56,13 @@ interface PendientesData {
   total_deuda: number
 }
 
+type ResumenDeudaCategoria = {
+  categoria: string
+  prestado: number
+  recibido: number
+  movimientos: number
+}
+
 export default function DashboardPage() {
   const now = new Date()
   const [anio, setAnio] = useState(now.getFullYear())
@@ -177,6 +184,34 @@ export default function DashboardPage() {
     }
     return deuda
   }
+
+  const resumenDeudaPorCategoria = Object.values(
+    desviacionesMes.reduce<Record<string, ResumenDeudaCategoria>>((acc, d) => {
+      if (!acc[d.categoria_origen]) {
+        acc[d.categoria_origen] = {
+          categoria: d.categoria_origen,
+          prestado: 0,
+          recibido: 0,
+          movimientos: 0,
+        }
+      }
+      if (!acc[d.categoria_destino]) {
+        acc[d.categoria_destino] = {
+          categoria: d.categoria_destino,
+          prestado: 0,
+          recibido: 0,
+          movimientos: 0,
+        }
+      }
+
+      acc[d.categoria_origen].prestado += d.monto
+      acc[d.categoria_origen].movimientos += 1
+      acc[d.categoria_destino].recibido += d.monto
+      acc[d.categoria_destino].movimientos += 1
+      return acc
+    }, {})
+  ).filter((item) => item.prestado > 0 || item.recibido > 0)
+    .sort((a, b) => b.prestado - a.prestado)
 
   // Editado: 2026-03-30 — Carga análisis inteligente
   function cargarAnalisis() {
@@ -435,6 +470,41 @@ export default function DashboardPage() {
             </Card>
           )}
 
+          {resumenDeudaPorCategoria.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Deuda por categoría</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Esto muestra cuánto ha prestado cada categoría este mes y cuánto ha recibido.
+                </p>
+                {resumenDeudaPorCategoria.map((item) => (
+                  <div
+                    key={item.categoria}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 px-3 py-2"
+                  >
+                    <div>
+                      <p className="font-medium">{item.categoria}</p>
+                      <p className="text-xs text-muted-foreground">{item.movimientos} movimiento{item.movimientos !== 1 ? 's' : ''}</p>
+                    </div>
+                    <div className="text-right text-sm">
+                      {item.prestado > 0 && (
+                        <p className="text-red-600 dark:text-red-400">Prestado: {formatEuro(item.prestado)}</p>
+                      )}
+                      {item.recibido > 0 && (
+                        <p className="text-green-600 dark:text-green-400">Recibido: {formatEuro(item.recibido)}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Neto: {formatEuro(item.recibido - item.prestado)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
           {/* Editado: 2026-04-08 — Tarjetas por categoría + botón Mover dinero */}
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -450,11 +520,11 @@ export default function DashboardPage() {
             {/* Editado: 2026-03-30 — Tarjetas simplificadas: solo muestran monto del snapshot */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {registroActual.snapshots.map((snap) => (
-                  <Card key={snap.id} className="overflow-hidden">
-                    <div className="h-1" style={{ backgroundColor: snap.color }} />
-                    <CardContent className="py-4">
-                      <div className="flex items-center gap-3 mb-2">
-                        <span className="text-2xl">{snap.icono ?? '💰'}</span>
+                    <Card key={snap.id} className="overflow-hidden">
+                      <div className="h-1" style={{ backgroundColor: snap.color }} />
+                      <CardContent className="py-4">
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="text-2xl">{snap.icono ?? '💰'}</span>
                         <div className="flex-1">
                           <p className="font-medium text-sm">{snap.categoria_nombre}</p>
                           <Badge variant="outline" className="text-xs">{snap.porcentaje}%</Badge>
@@ -463,6 +533,30 @@ export default function DashboardPage() {
                       <p className="text-xl font-bold">
                         {formatEuro(snap.monto_calculado)}
                       </p>
+                      {(() => {
+                        const deudaPrestada = desviacionesMes
+                          .filter((d) => d.categoria_origen === snap.categoria_nombre)
+                          .reduce((s, d) => s + d.monto, 0)
+                        const deudaRecibida = desviacionesMes
+                          .filter((d) => d.categoria_destino === snap.categoria_nombre)
+                          .reduce((s, d) => s + d.monto, 0)
+                        if (deudaPrestada === 0 && deudaRecibida === 0) return null
+
+                        return (
+                          <div className="mt-2 text-xs space-y-1">
+                            {deudaPrestada > 0 && (
+                              <p className="text-red-600 dark:text-red-400">
+                                Deuda prestada: {formatEuro(deudaPrestada)}
+                              </p>
+                            )}
+                            {deudaRecibida > 0 && (
+                              <p className="text-green-600 dark:text-green-400">
+                                Recibido: {formatEuro(deudaRecibida)}
+                              </p>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </CardContent>
                   </Card>
                 ))}
