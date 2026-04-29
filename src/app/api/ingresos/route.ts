@@ -101,7 +101,6 @@ export async function POST(req: Request) {
         ...snap,
         registro_id: registro.id,
         monto_calculado: nuevoMonto,
-        porcentaje: Math.round((nuevoMonto / registro.ingreso_bruto) * 10000) / 100,
       }
     }
     return { ...snap, registro_id: registro.id }

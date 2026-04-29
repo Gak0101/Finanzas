@@ -47,6 +47,14 @@ type ResumenMensual = {
   count: number
 }
 
+type ResumenCategoria = {
+  categoria: string
+  total: number
+  saldadas: number
+  pendientes: number
+  count: number
+}
+
 export default function HistorialPage() {
   const [registros, setRegistros] = useState<RegistroConSnapshots[]>([])
   const [desviaciones, setDesviaciones] = useState<Desviacion[]>([])
@@ -120,6 +128,26 @@ export default function HistorialPage() {
       return acc
     }, {})
   ).sort((a, b) => (a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes))
+  const resumenPorCategoria = Object.values(
+    movimientosFiltrados.reduce<Record<string, ResumenCategoria>>((acc, d) => {
+      const categoria = d.categoria_origen
+      if (!acc[categoria]) {
+        acc[categoria] = {
+          categoria,
+          total: 0,
+          saldadas: 0,
+          pendientes: 0,
+          count: 0,
+        }
+      }
+
+      acc[categoria].total += d.monto
+      acc[categoria].count += 1
+      if (d.saldada) acc[categoria].saldadas += d.monto
+      else acc[categoria].pendientes += d.monto
+      return acc
+    }, {})
+  ).sort((a, b) => b.total - a.total)
 
   if (loading) {
     return (
@@ -312,6 +340,33 @@ export default function HistorialPage() {
                   </CardContent>
                 </Card>
               </div>
+
+              {resumenPorCategoria.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Deuda por categoría</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {resumenPorCategoria.map((item) => (
+                      <div
+                        key={item.categoria}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm"
+                      >
+                        <div>
+                          <p className="font-medium">{item.categoria}</p>
+                          <p className="text-xs text-muted-foreground">{item.count} movimiento{item.count !== 1 ? 's' : ''}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold">Total {formatEuro(item.total)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Pendiente {formatEuro(item.pendientes)} · Saldado {formatEuro(item.saldadas)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
 
               {resumenPorMes.length > 0 && (
                 <Card>
