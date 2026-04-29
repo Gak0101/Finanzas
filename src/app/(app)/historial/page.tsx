@@ -37,6 +37,15 @@ function formatFecha(iso: string | null) {
 
 type RegistroConSnapshots = RegistroMensual & { snapshots: SnapshotCategoria[] }
 type Tab = 'ingresos' | 'movimientos'
+type ResumenMensual = {
+  key: string
+  anio: number
+  mes: number
+  total: number
+  saldadas: number
+  pendientes: number
+  count: number
+}
 
 export default function HistorialPage() {
   const [registros, setRegistros] = useState<RegistroConSnapshots[]>([])
@@ -70,7 +79,47 @@ export default function HistorialPage() {
 
   // Mapa id → registro para saber en qué mes se saldó cada deuda
   const registroMap = new Map(registros.map((r) => [r.id, r]))
-  const pendientesCount = desviaciones.filter((d) => !d.saldada).length
+  const movimientosFiltrados = desviaciones.filter((d) => {
+    if (anioFiltro === 'todos') return true
+    const registro = registroMap.get(d.registro_id)
+    return registro?.anio === anioFiltro
+  })
+  const pendientesCount = movimientosFiltrados.filter((d) => !d.saldada).length
+  const resumenMovimientos = movimientosFiltrados.reduce(
+    (acc, d) => {
+      acc.total += d.monto
+      acc.count += 1
+      if (d.saldada) acc.saldadas += d.monto
+      else acc.pendientes += d.monto
+      return acc
+    },
+    { total: 0, saldadas: 0, pendientes: 0, count: 0 }
+  )
+  const resumenPorMes = Object.values(
+    movimientosFiltrados.reduce<Record<string, ResumenMensual>>((acc, d) => {
+      const registro = registroMap.get(d.registro_id)
+      if (!registro) return acc
+
+      const key = `${registro.anio}-${registro.mes}`
+      if (!acc[key]) {
+        acc[key] = {
+          key,
+          anio: registro.anio,
+          mes: registro.mes,
+          total: 0,
+          saldadas: 0,
+          pendientes: 0,
+          count: 0,
+        }
+      }
+
+      acc[key].total += d.monto
+      acc[key].count += 1
+      if (d.saldada) acc[key].saldadas += d.monto
+      else acc[key].pendientes += d.monto
+      return acc
+    }, {})
+  ).sort((a, b) => (a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes))
 
   if (loading) {
     return (
@@ -221,18 +270,76 @@ export default function HistorialPage() {
       {/* ── TAB: Movimientos ── */}
       {tab === 'movimientos' && (
         <div className="space-y-4">
-          {desviaciones.length === 0 ? (
+          {movimientosFiltrados.length === 0 ? (
             <Card className="border-dashed">
               <CardContent className="py-16 text-center">
                 <p className="text-5xl mb-4">💸</p>
-                <h2 className="text-xl font-semibold mb-2">Sin movimientos aún</h2>
+                <h2 className="text-xl font-semibold mb-2">Sin movimientos para este filtro</h2>
                 <p className="text-muted-foreground">
-                  Usa el botón &quot;Mover dinero&quot; del dashboard para registrar transferencias entre categorías.
+                  No hay desviaciones para el filtro actual.
                 </p>
               </CardContent>
             </Card>
           ) : (
             <>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <Card>
+                  <CardContent className="py-4 text-center">
+                    <p className="text-xs text-muted-foreground mb-1">Movimientos</p>
+                    <p className="font-bold text-lg">{resumenMovimientos.count}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="py-4 text-center">
+                    <p className="text-xs text-muted-foreground mb-1">Total movido</p>
+                    <p className="font-bold text-lg">{formatEuro(resumenMovimientos.total)}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="py-4 text-center">
+                    <p className="text-xs text-muted-foreground mb-1">Saldado</p>
+                    <p className="font-bold text-lg text-green-600 dark:text-green-400">
+                      {formatEuro(resumenMovimientos.saldadas)}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="py-4 text-center">
+                    <p className="text-xs text-muted-foreground mb-1">Pendiente</p>
+                    <p className="font-bold text-lg text-red-600 dark:text-red-400">
+                      {formatEuro(resumenMovimientos.pendientes)}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {resumenPorMes.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Resumen por mes</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {resumenPorMes.slice(-6).reverse().map((item) => (
+                      <div
+                        key={item.key}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2 text-sm"
+                      >
+                        <div>
+                          <p className="font-medium">{MESES[item.mes - 1]} {item.anio}</p>
+                          <p className="text-xs text-muted-foreground">{item.count} movimiento{item.count !== 1 ? 's' : ''}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold">{formatEuro(item.total)}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Pendiente {formatEuro(item.pendientes)} · Saldado {formatEuro(item.saldadas)}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Banner de pendientes */}
               {pendientesCount > 0 && (
                 <Card className="border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800">
@@ -240,14 +347,14 @@ export default function HistorialPage() {
                     <p className="text-sm font-medium text-red-700 dark:text-red-300 mb-2">
                       ⏳ {pendientesCount} deuda{pendientesCount > 1 ? 's' : ''} pendiente{pendientesCount > 1 ? 's' : ''} — se ajustarán al meter la nómina del próximo mes
                     </p>
-                    {desviaciones.filter((d) => !d.saldada).map((d) => (
+                    {movimientosFiltrados.filter((d) => !d.saldada).map((d) => (
                       <p key={d.id} className="text-xs text-red-600 dark:text-red-400 mt-1">
                         • {formatEuro(d.monto)} de <strong>{d.categoria_origen}</strong> → <strong>{d.categoria_destino}</strong>
                         {d.motivo && <span className="opacity-70"> — {d.motivo}</span>}
                       </p>
                     ))}
                     <p className="text-xs font-medium text-red-600 dark:text-red-400 mt-2 pt-2 border-t border-red-200 dark:border-red-800">
-                      Total pendiente: {formatEuro(desviaciones.filter((d) => !d.saldada).reduce((s, d) => s + d.monto, 0))}
+                      Total pendiente: {formatEuro(movimientosFiltrados.filter((d) => !d.saldada).reduce((s, d) => s + d.monto, 0))}
                     </p>
                   </CardContent>
                 </Card>
@@ -260,7 +367,7 @@ export default function HistorialPage() {
                 </CardHeader>
                 <CardContent className="p-0">
                   <div className="divide-y">
-                    {desviaciones.map((d) => {
+                    {movimientosFiltrados.map((d) => {
                       const registroOrigen = registroMap.get(d.registro_id)
                       const registroSaldado = d.saldada_en_registro_id ? registroMap.get(d.saldada_en_registro_id) : null
 
@@ -268,7 +375,6 @@ export default function HistorialPage() {
                         <div key={d.id} className="px-4 py-3">
                           <div className="flex items-start gap-3">
                             <div className="flex-1 min-w-0">
-                              {/* Movimiento */}
                               <div className="flex flex-wrap items-center gap-1 text-sm">
                                 <span className="font-semibold text-red-500">-{formatEuro(d.monto)}</span>
                                 <span className="text-muted-foreground">de</span>
@@ -277,12 +383,10 @@ export default function HistorialPage() {
                                 <span className="font-semibold text-green-600">{d.categoria_destino}</span>
                               </div>
 
-                              {/* Motivo */}
                               {d.motivo && (
                                 <p className="text-xs text-muted-foreground mt-1">📝 {d.motivo}</p>
                               )}
 
-                              {/* Fechas */}
                               <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted-foreground">
                                 <span>
                                   📅 {formatFecha(d.created_at)}
@@ -301,7 +405,6 @@ export default function HistorialPage() {
                               </div>
                             </div>
 
-                            {/* Badge estado */}
                             <Badge
                               variant={d.saldada ? 'default' : 'destructive'}
                               className="shrink-0 text-xs"
