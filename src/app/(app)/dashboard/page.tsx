@@ -202,7 +202,9 @@ export default function DashboardPage() {
   }
 
   const resumenDeudaPorCategoria = Object.values(
-    desviacionesMes.reduce<Record<string, ResumenDeudaCategoria>>((acc, d) => {
+    desviacionesMes
+      .filter((d) => !d.saldada)
+      .reduce<Record<string, ResumenDeudaCategoria>>((acc, d) => {
       if (!acc[d.categoria_origen]) {
         acc[d.categoria_origen] = {
           categoria: d.categoria_origen,
