@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { registros_mensuales, snapshots_categorias, categorias } from '@/lib/db/schema'
+import { registros_mensuales, snapshots_categorias, categorias, desviaciones } from '@/lib/db/schema'
 import { eq, and, asc, sql } from 'drizzle-orm'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 
@@ -38,6 +38,17 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: 'Registro no encontrado' }, { status: 404 })
   }
 
+  // Si en este registro ya se han saldado deudas, se resta ese importe
+  // del total disponible para repartir.
+  const deudasSaldadas = await db.query.desviaciones.findMany({
+    where: and(
+      eq(desviaciones.usuario_id, auth.userId),
+      eq(desviaciones.saldada_en_registro_id, registroId)
+    ),
+  })
+  const totalSaldado = deudasSaldadas.reduce((sum, d) => sum + d.monto, 0)
+  const ingresoDisponible = Math.max(registro.ingreso_bruto - totalSaldado, 0)
+
   // Obtener categorías actuales del usuario
   const cats = await db.query.categorias.findMany({
     where: eq(categorias.usuario_id, auth.userId),
@@ -63,7 +74,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     color: cat.color,
     icono: cat.icono ?? '💰',
     monto_calculado:
-      Math.round(registro.ingreso_bruto * (cat.porcentaje / 100) * 100) / 100,
+      Math.round(ingresoDisponible * (cat.porcentaje / 100) * 100) / 100,
   }))
 
   await db.insert(snapshots_categorias).values(snapshotsData)

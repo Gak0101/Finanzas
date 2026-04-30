@@ -150,9 +150,12 @@ export default function DashboardPage() {
   const snapAhorro = registroActual?.snapshots.find((s) =>
     s.categoria_nombre.toLowerCase().includes('ahorro')
   )
+  const ingresoDisponible = registroActual
+    ? registroActual.snapshots.reduce((s, snap) => s + snap.monto_calculado, 0)
+    : null
   const tasaAhorro =
-    registroActual && snapAhorro
-      ? (snapAhorro.monto_calculado / registroActual.ingreso_bruto) * 100
+    ingresoDisponible && snapAhorro
+      ? (snapAhorro.monto_calculado / ingresoDisponible) * 100
       : null
 
   // Ingreso medio del año en curso (solo meses registrados)
@@ -552,7 +555,7 @@ export default function DashboardPage() {
                     color: s.color,
                     icono: s.icono ?? '💰',
                   }))}
-                  ingreso={registroActual.ingreso_bruto}
+                  ingreso={ingresoDisponible ?? registroActual.ingreso_bruto}
                 />
               </CardContent>
             </Card>
