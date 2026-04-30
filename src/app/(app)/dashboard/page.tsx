@@ -4,6 +4,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -250,6 +251,27 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleSaldarCategoria(categoria: string) {
+    if (!registroActual) return
+
+    const res = await fetch('/api/desviaciones/saldar-categoria', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ categoria_origen: categoria, registro_id: registroActual.id }),
+    })
+
+    if (res.ok) {
+      toast.success(`Deuda de ${categoria} saldada`)
+      cargarDatos()
+      fetch(`/api/desviaciones?registro_id=${registroActual.id}`)
+        .then((r) => r.json())
+        .then(setDesviacionesMes)
+    } else {
+      const err = await res.json().catch(() => ({}))
+      toast.error(err.error || 'Error al saldar la deuda de esa categoría')
+    }
+  }
+
   // Editado: 2026-03-30 — Eliminar una desviación
   async function handleEliminarDesviacion(desvId: number) {
     if (!confirm('¿Eliminar esta desviación?')) return
@@ -466,6 +488,38 @@ export default function DashboardPage() {
                   }))}
                   ingreso={registroActual.ingreso_bruto}
                 />
+              </CardContent>
+            </Card>
+          )}
+
+          {pendientes && pendientes.total_deuda > 0 && (
+            <Card className="border-red-200 bg-red-50 dark:bg-red-950/30 dark:border-red-800">
+              <CardHeader>
+                <CardTitle className="text-base text-red-700 dark:text-red-200">Deudas pendientes por categoría</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <p className="text-sm text-red-700/80 dark:text-red-200/80">
+                  Saldar una categoría marca como pagadas todas sus deudas pendientes.
+                </p>
+                {Object.entries(pendientes.resumen).map(([cat, info]) => (
+                  <div
+                    key={cat}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-red-200 bg-background px-3 py-2"
+                  >
+                    <div>
+                      <p className="font-medium">{cat}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {info.detalle.length} movimiento{info.detalle.length !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <p className="font-semibold text-red-600 dark:text-red-400">{formatEuro(info.total)}</p>
+                      <Button size="sm" variant="outline" onClick={() => handleSaldarCategoria(cat)}>
+                        Saldar deuda
+                      </Button>
+                    </div>
+                  </div>
+                ))}
               </CardContent>
             </Card>
           )}
