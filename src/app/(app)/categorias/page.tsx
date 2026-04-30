@@ -121,6 +121,7 @@ export default function CategoriasPage() {
             <FormCategoria
               categoria={editando}
               coloresPreset={COLORES_PRESET}
+              totalActual={totalPorcentaje}
               onGuardar={handleGuardar}
               onCancelar={() => {
                 setDialogOpen(false)

@@ -14,28 +14,37 @@ const ICONOS_PRESET = [
 interface Props {
   categoria?: Categoria | null
   coloresPreset: string[]
+  totalActual?: number
   onGuardar: (datos: { nombre: string; porcentaje: number; color: string; icono: string }) => void
   onCancelar: () => void
 }
 
-export function FormCategoria({ categoria, coloresPreset, onGuardar, onCancelar }: Props) {
+export function FormCategoria({ categoria, coloresPreset, totalActual = 0, onGuardar, onCancelar }: Props) {
   const [nombre, setNombre] = useState(categoria?.nombre ?? '')
   const [porcentaje, setPorcentaje] = useState(String(categoria?.porcentaje ?? ''))
   const [color, setColor] = useState(categoria?.color ?? '#6366f1')
   const [icono, setIcono] = useState(categoria?.icono ?? '💰')
   const [error, setError] = useState('')
 
+  const pct = parseFloat(porcentaje)
+  const totalSinActual = categoria ? totalActual - (categoria.porcentaje ?? 0) : totalActual
+  const restante = Number.isFinite(pct) ? 100 - totalSinActual - pct : 100 - totalSinActual
+
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
 
-    const pct = parseFloat(porcentaje)
     if (!nombre.trim()) {
       setError('El nombre es requerido')
       return
     }
     if (isNaN(pct) || pct <= 0 || pct > 100) {
       setError('El porcentaje debe ser entre 0.1 y 100')
+      return
+    }
+
+    if (totalSinActual + pct > 100) {
+      setError(`El total no puede superar 100%. Te quedarían ${(100 - totalSinActual).toFixed(1)}% disponibles.`)
       return
     }
 
@@ -66,6 +75,13 @@ export function FormCategoria({ categoria, coloresPreset, onGuardar, onCancelar 
           step="0.1"
           required
         />
+        {porcentaje && !isNaN(pct) && (
+          <p className={`text-xs ${restante >= 0 ? 'text-muted-foreground' : 'text-destructive'}`}>
+            {restante >= 0
+              ? `Quedan ${restante.toFixed(1)}% por asignar al resto de categorías.`
+              : `Te pasas en ${Math.abs(restante).toFixed(1)}%.`}
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">

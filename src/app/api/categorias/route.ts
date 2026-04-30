@@ -31,6 +31,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
+  const totalActual = await db.query.categorias.findMany({
+    where: eq(categorias.usuario_id, auth.userId),
+  })
+  const suma = totalActual.reduce((acc, c) => acc + c.porcentaje, 0) + parsed.data.porcentaje
+  if (suma > 100) {
+    return NextResponse.json({ error: 'El total de porcentajes no puede superar 100%' }, { status: 400 })
+  }
+
   const [nueva] = await db
     .insert(categorias)
     .values({ ...parsed.data, usuario_id: auth.userId })

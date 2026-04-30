@@ -636,6 +636,7 @@ export default function DashboardPage() {
               <FormCategoria
                 categoria={editandoCategoria}
                 coloresPreset={COLORES_PRESET}
+                totalActual={categorias.reduce((sum, c) => sum + c.porcentaje, 0)}
                 onGuardar={handleGuardarCategoria}
                 onCancelar={() => {
                   setDialogCategoriaOpen(false)

@@ -21,6 +21,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
   }
 
+  const todas = await db.query.categorias.findMany({
+    where: eq(categorias.usuario_id, auth.userId),
+  })
+  const actual = todas.find((c) => c.id === parseInt(id))
+  const sumaSinActual = todas.reduce((acc, c) => acc + (c.id === parseInt(id) ? 0 : c.porcentaje), 0)
+  if (sumaSinActual + parsed.data.porcentaje > 100) {
+    return NextResponse.json({ error: 'El total de porcentajes no puede superar 100%' }, { status: 400 })
+  }
+
   const [actualizada] = await db
     .update(categorias)
     .set({ ...parsed.data, updated_at: sql`(datetime('now'))` })
