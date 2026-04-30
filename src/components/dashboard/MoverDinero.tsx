@@ -105,7 +105,7 @@ export function MoverDinero({ registroId, snapshots, ingresoBruto, onGuardado }:
           return {
             id: snap.id,
             monto_calculado: nuevoMonto,
-            porcentaje: Math.round((nuevoMonto / ingresoBruto) * 10000) / 100,
+            porcentaje: snap.porcentaje,
           }
         }
         if (snap.categoria_nombre === destino) {
@@ -114,7 +114,7 @@ export function MoverDinero({ registroId, snapshots, ingresoBruto, onGuardado }:
           return {
             id: snap.id,
             monto_calculado: nuevoMonto,
-            porcentaje: Math.round((nuevoMonto / ingresoBruto) * 10000) / 100,
+            porcentaje: snap.porcentaje,
           }
         }
         // Las demás no cambian

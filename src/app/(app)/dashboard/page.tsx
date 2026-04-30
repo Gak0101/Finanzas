@@ -8,16 +8,29 @@ import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Progress } from '@/components/ui/progress'
 import { DonutChart } from '@/components/dashboard/DonutChart'
 // Editado: 2026-04-08 — Import del componente MoverDinero para transferencias con deuda
 import { MoverDinero } from '@/components/dashboard/MoverDinero'
+import { FormCategoria } from '@/components/categorias/FormCategoria'
 import Link from 'next/link'
 import type { RegistroMensual, SnapshotCategoria, Hucha, Aportacion, Categoria, Desviacion } from '@/lib/db/schema'
 
 const MESES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+]
+
+const COLORES_PRESET = [
+  '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
+  '#3b82f6', '#8b5cf6', '#ec4899', '#6366f1', '#06b6d4',
+  '#84cc16', '#f59e0b',
 ]
 
 // Formatea un número como moneda en euros
@@ -78,6 +91,8 @@ export default function DashboardPage() {
   const [pendientes, setPendientes] = useState<PendientesData | null>(null)
   const [analisis, setAnalisis] = useState<AnalisisData | null>(null)
   const [mostrarAnalisis, setMostrarAnalisis] = useState(false)
+  const [editandoCategoria, setEditandoCategoria] = useState<Categoria | null>(null)
+  const [dialogCategoriaOpen, setDialogCategoriaOpen] = useState(false)
 
   // Carga datos principales: ingresos, huchas, categorías
   function cargarDatos() {
@@ -270,6 +285,47 @@ export default function DashboardPage() {
       const err = await res.json().catch(() => ({}))
       toast.error(err.error || 'Error al saldar la deuda de esa categoría')
     }
+  }
+
+  function handleEditarCategoria(cat: Categoria) {
+    setEditandoCategoria(cat)
+    setDialogCategoriaOpen(true)
+  }
+
+  async function handleGuardarCategoria(datos: { nombre: string; porcentaje: number; color: string; icono: string }) {
+    if (!editandoCategoria) return
+
+    const res = await fetch(`/api/categorias/${editandoCategoria.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...datos, orden: editandoCategoria.orden ?? categorias.length }),
+    })
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      toast.error(err.error || 'Error al guardar la categoría')
+      return
+    }
+
+    toast.success('Categoría actualizada')
+    setDialogCategoriaOpen(false)
+    setEditandoCategoria(null)
+
+    // Recalcular automáticamente el mes que se está viendo para que
+    // el usuario no tenga que buscar otro botón.
+    if (registroActual) {
+      const resRegenerar = await fetch(`/api/ingresos/${registroActual.id}/regenerar`, {
+        method: 'POST',
+      })
+
+      if (resRegenerar.ok) {
+        toast.success('Mes actual actualizado con los nuevos porcentajes')
+      } else {
+        toast.error('Se guardó la categoría, pero no se pudo actualizar el mes actual')
+      }
+    }
+
+    cargarDatos()
   }
 
   // Editado: 2026-03-30 — Eliminar una desviación
@@ -559,6 +615,23 @@ export default function DashboardPage() {
             </Card>
           )}
 
+          <Dialog open={dialogCategoriaOpen} onOpenChange={setDialogCategoriaOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Editar categoría</DialogTitle>
+              </DialogHeader>
+              <FormCategoria
+                categoria={editandoCategoria}
+                coloresPreset={COLORES_PRESET}
+                onGuardar={handleGuardarCategoria}
+                onCancelar={() => {
+                  setDialogCategoriaOpen(false)
+                  setEditandoCategoria(null)
+                }}
+              />
+            </DialogContent>
+          </Dialog>
+
           {/* Editado: 2026-04-08 — Tarjetas por categoría + botón Mover dinero */}
           <div>
             <div className="flex items-center justify-between mb-3">
@@ -611,6 +684,18 @@ export default function DashboardPage() {
                           </div>
                         )
                       })()}
+                      <div className="mt-3 flex justify-end">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const cat = categorias.find((c) => c.nombre === snap.categoria_nombre)
+                            if (cat) handleEditarCategoria(cat)
+                          }}
+                        >
+                          Editar %
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 ))}
