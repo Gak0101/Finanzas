@@ -278,7 +278,15 @@ export default function DashboardPage() {
     })
 
     if (res.ok) {
-      toast.success(`Deuda de ${categoria} saldada`)
+      const resRegenerar = await fetch(`/api/ingresos/${registroActual.id}/regenerar`, {
+        method: 'POST',
+      })
+
+      if (resRegenerar.ok) {
+        toast.success(`Deuda de ${categoria} saldada y mes reajustado`)
+      } else {
+        toast.success(`Deuda de ${categoria} saldada`)
+      }
       cargarDatos()
       fetch(`/api/desviaciones?registro_id=${registroActual.id}`)
         .then((r) => r.json())
