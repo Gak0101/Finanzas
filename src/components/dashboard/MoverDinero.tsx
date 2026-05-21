@@ -31,6 +31,7 @@ interface Props {
   snapshots: SnapshotCategoria[]
   ingresoBruto: number
   onGuardado: () => void
+  soloPendiente?: boolean
 }
 
 // Formatea un número como moneda en euros
@@ -42,7 +43,13 @@ function formatEuro(val: number) {
   }).format(val)
 }
 
-export function MoverDinero({ registroId, snapshots, ingresoBruto, onGuardado }: Props) {
+export function MoverDinero({
+  registroId,
+  snapshots,
+  ingresoBruto,
+  onGuardado,
+  soloPendiente = false,
+}: Props) {
   const [open, setOpen] = useState(false)
   const [origen, setOrigen] = useState('')      // De dónde saco el dinero (ej: Ahorro)
   const [destino, setDestino] = useState('')     // A dónde lo meto (ej: Gastos fijos)
@@ -93,6 +100,15 @@ export function MoverDinero({ registroId, snapshots, ingresoBruto, onGuardado }:
       if (!resDesv.ok) {
         const err = await resDesv.json()
         toast.error(err.error || 'Error al registrar movimiento')
+        setGuardando(false)
+        return
+      }
+
+      if (soloPendiente) {
+        toast.success(`Deuda pendiente registrada: ${formatEuro(montoNum)} de ${origen} a ${destino}`)
+        resetForm()
+        setOpen(false)
+        onGuardado()
         setGuardando(false)
         return
       }

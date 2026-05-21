@@ -115,6 +115,7 @@ export default function DashboardPage() {
   }, [])
 
   const registroActual = registros.find((r) => r.anio === anio && r.mes === mes)
+  const registroBasePendiente = registros[0] ?? null
   const huchasActivas = huchas.filter((h) => h.activa && h.saldo_actual < h.objetivo)
 
   // Editado: 2026-03-30 — Cargar desviaciones del mes cuando cambia el registro
@@ -423,6 +424,26 @@ export default function DashboardPage() {
             </Button>
           </div>
         </div>
+      )}
+
+      {!registroActual && registroBasePendiente && (
+        <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800">
+          <CardHeader>
+            <CardTitle className="text-base text-amber-800 dark:text-amber-200">No hay nómina para este mes</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm text-amber-800/80 dark:text-amber-200/80">
+              Puedes registrar una deuda pendiente ahora. Quedará guardada y se aplicará automáticamente cuando metas la próxima nómina.
+            </p>
+            <MoverDinero
+              registroId={registroBasePendiente.id}
+              snapshots={registroBasePendiente.snapshots}
+              ingresoBruto={registroBasePendiente.ingreso_bruto}
+              onGuardado={handleDesviacionGuardada}
+              soloPendiente
+            />
+          </CardContent>
+        </Card>
       )}
 
       {registroActual ? (
