@@ -100,8 +100,18 @@ export default function IngresosPage() {
 
     setGuardando(true)
 
-    const url = editandoId ? `/api/ingresos/${editandoId}` : '/api/ingresos'
-    const method = editandoId ? 'PUT' : 'POST'
+    const sumandoARegistro = !editandoId && registroExistente
+    const url = editandoId
+      ? `/api/ingresos/${editandoId}`
+      : sumandoARegistro
+      ? `/api/ingresos/${registroExistente.id}`
+      : '/api/ingresos'
+    const method = editandoId || sumandoARegistro ? 'PUT' : 'POST'
+    const notasActualizadas = sumandoARegistro
+      ? [registroExistente.notas, notas ? `Ingreso adicional: ${notas}` : `Ingreso adicional: ${formatEuro(importe)}`]
+          .filter(Boolean)
+          .join('\n')
+      : notas || undefined
 
     const res = await fetch(url, {
       method,
@@ -109,13 +119,19 @@ export default function IngresosPage() {
       body: JSON.stringify({
         anio,
         mes,
-        ingreso_bruto: importe,
-        notas: notas || undefined,
+        ingreso_bruto: sumandoARegistro ? registroExistente.ingreso_bruto + importe : importe,
+        notas: notasActualizadas,
       }),
     })
 
     if (res.ok) {
-      toast.success(editandoId ? 'Ingreso actualizado' : 'Ingreso registrado')
+      toast.success(
+        editandoId
+          ? 'Ingreso actualizado'
+          : sumandoARegistro
+          ? 'Ingreso añadido al mes'
+          : 'Ingreso registrado'
+      )
       setEditandoId(null)
       setIngresoBruto('')
       setNotas('')
@@ -192,18 +208,24 @@ export default function IngresosPage() {
             </div>
 
             {registroExistente && !editandoId && (
-              <div className="bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded p-3 text-sm text-yellow-800 dark:text-yellow-200">
+              <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded p-3 text-sm text-blue-800 dark:text-blue-200">
                 Ya existe un registro para {MESES[mes - 1]} {anio}.
-                Pulsa en "Editar" en la lista inferior para modificarlo.
+                Si guardas este formulario, se sumará al total de ese mes sin saldar deudas pendientes.
               </div>
             )}
 
             <div className="flex gap-2">
               <Button
                 type="submit"
-                disabled={guardando || (!!registroExistente && !editandoId)}
+                disabled={guardando}
               >
-                {guardando ? 'Guardando...' : editandoId ? 'Actualizar' : 'Registrar ingreso'}
+                {guardando
+                  ? 'Guardando...'
+                  : editandoId
+                  ? 'Actualizar'
+                  : registroExistente
+                  ? 'Sumar ingreso al mes'
+                  : 'Registrar ingreso'}
               </Button>
               {editandoId && (
                 <Button

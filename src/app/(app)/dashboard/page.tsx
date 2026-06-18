@@ -33,6 +33,8 @@ const COLORES_PRESET = [
   '#84cc16', '#f59e0b',
 ]
 
+const FUENTE_EXTERNA = '__externo__'
+
 // Formatea un número como moneda en euros
 function formatEuro(val: number) {
   return new Intl.NumberFormat('es-ES', {
@@ -93,6 +95,9 @@ export default function DashboardPage() {
   const [mostrarAnalisis, setMostrarAnalisis] = useState(false)
   const [editandoCategoria, setEditandoCategoria] = useState<Categoria | null>(null)
   const [dialogCategoriaOpen, setDialogCategoriaOpen] = useState(false)
+  const [categoriaDeudaPago, setCategoriaDeudaPago] = useState<string | null>(null)
+  const [categoriaPagoDesde, setCategoriaPagoDesde] = useState('')
+  const [saldandoCategoria, setSaldandoCategoria] = useState(false)
 
   // Carga datos principales: ingresos, huchas, categorías
   function cargarDatos() {
@@ -235,6 +240,10 @@ export default function DashboardPage() {
   ).filter((item) => item.prestado > 0 || item.recibido > 0)
     .sort((a, b) => b.prestado - a.prestado)
 
+  const deudaSeleccionada = categoriaDeudaPago && pendientes
+    ? pendientes.resumen[categoriaDeudaPago]
+    : null
+
   // Editado: 2026-03-30 — Carga análisis inteligente
   function cargarAnalisis() {
     fetch('/api/desviaciones/analisis')
@@ -272,25 +281,37 @@ export default function DashboardPage() {
     }
   }
 
-  async function handleSaldarCategoria(categoria: string) {
-    if (!registroActual) return
+  function abrirPagoDeuda(categoria: string) {
+    setCategoriaDeudaPago(categoria)
+    setCategoriaPagoDesde('')
+  }
+
+  async function handleSaldarCategoria() {
+    if (!registroActual || !categoriaDeudaPago) return
+    if (!categoriaPagoDesde) {
+      toast.error('Elige de qué categoría sale el dinero')
+      return
+    }
+
+    setSaldandoCategoria(true)
 
     const res = await fetch('/api/desviaciones/saldar-categoria', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ categoria_origen: categoria, registro_id: registroActual.id }),
+      body: JSON.stringify({
+        categoria_origen: categoriaDeudaPago,
+        categoria_pago: categoriaPagoDesde,
+        registro_id: registroActual.id,
+      }),
     })
 
     if (res.ok) {
-      const resRegenerar = await fetch(`/api/ingresos/${registroActual.id}/regenerar`, {
-        method: 'POST',
-      })
-
-      if (resRegenerar.ok) {
-        toast.success(`Deuda de ${categoria} saldada y mes reajustado`)
-      } else {
-        toast.success(`Deuda de ${categoria} saldada`)
-      }
+      const data = await res.json().catch(() => ({}))
+      toast.success(
+        `Pagados ${formatEuro(data.total_pagado ?? 0)} a ${categoriaDeudaPago} desde ${data.categoria_pago ?? categoriaPagoDesde}`
+      )
+      setCategoriaDeudaPago(null)
+      setCategoriaPagoDesde('')
       cargarDatos()
       fetch(`/api/desviaciones?registro_id=${registroActual.id}`)
         .then((r) => r.json())
@@ -299,6 +320,7 @@ export default function DashboardPage() {
       const err = await res.json().catch(() => ({}))
       toast.error(err.error || 'Error al saldar la deuda de esa categoría')
     }
+    setSaldandoCategoria(false)
   }
 
   function handleEditarCategoria(cat: Categoria) {
@@ -589,7 +611,7 @@ export default function DashboardPage() {
               </CardHeader>
               <CardContent className="space-y-2">
                 <p className="text-sm text-red-700/80 dark:text-red-200/80">
-                  Saldar una categoría marca como pagadas todas sus deudas pendientes.
+                  Las deudas no se pagan automáticamente al registrar ingresos. Elige manualmente desde qué categoría sale el dinero.
                 </p>
                 {Object.entries(pendientes.resumen).map(([cat, info]) => (
                   <div
@@ -604,8 +626,8 @@ export default function DashboardPage() {
                     </div>
                     <div className="flex items-center gap-3">
                       <p className="font-semibold text-red-600 dark:text-red-400">{formatEuro(info.total)}</p>
-                      <Button size="sm" variant="outline" onClick={() => handleSaldarCategoria(cat)}>
-                        Saldar deuda
+                      <Button size="sm" variant="outline" onClick={() => abrirPagoDeuda(cat)}>
+                        Pagar manualmente
                       </Button>
                     </div>
                   </div>
@@ -613,6 +635,71 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
           )}
+
+          <Dialog
+            open={!!categoriaDeudaPago}
+            onOpenChange={(open) => {
+              if (!open) {
+                setCategoriaDeudaPago(null)
+                setCategoriaPagoDesde('')
+              }
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Pagar deuda pendiente</DialogTitle>
+              </DialogHeader>
+              {categoriaDeudaPago && deudaSeleccionada && (
+                <div className="space-y-4">
+                  <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+                    <p className="font-medium">
+                      Pagar {formatEuro(deudaSeleccionada.total)} a {categoriaDeudaPago}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Se sumará a {categoriaDeudaPago}. Si eliges una categoría, se restará de ahí; si eliges metálico, entrará como dinero externo.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">El dinero sale de</label>
+                    <select
+                      className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                      value={categoriaPagoDesde}
+                      onChange={(e) => setCategoriaPagoDesde(e.target.value)}
+                    >
+                      <option value="">Selecciona una categoría</option>
+                      <option value={FUENTE_EXTERNA}>Metálico / fuera de categorías</option>
+                      {registroActual.snapshots
+                        .filter((snap) => snap.categoria_nombre !== categoriaDeudaPago)
+                        .map((snap) => (
+                          <option key={snap.id} value={snap.categoria_nombre}>
+                            {snap.icono ?? '💰'} {snap.categoria_nombre} - {formatEuro(snap.monto_calculado)}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setCategoriaDeudaPago(null)
+                        setCategoriaPagoDesde('')
+                      }}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button
+                      onClick={handleSaldarCategoria}
+                      disabled={saldandoCategoria || !categoriaPagoDesde}
+                    >
+                      {saldandoCategoria ? 'Pagando...' : 'Pagar deuda'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
 
           {resumenDeudaPorCategoria.length > 0 && (
             <Card>
