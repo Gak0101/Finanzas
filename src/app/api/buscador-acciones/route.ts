@@ -9,6 +9,7 @@ import { db } from '@/lib/db'
 import { configuraciones_fuentes_inversion } from '@/lib/db/schema'
 import {
   generateResearchResult,
+  type LynchCategoryKey,
   type ResearchEngine,
   type ResearchInput,
   type ResearchLead,
@@ -377,6 +378,143 @@ function localFallback(input: ResearchInput, providerNote: string, engine: Resea
     engine,
     providerNote,
   } satisfies ResearchResult
+}
+
+function metricValue(snapshot: FundamentalSnapshot, key: string) {
+  return snapshot.metrics.find((metric) => metric.key === key && metric.status === 'verified')
+}
+
+function metricEvidence(snapshot: FundamentalSnapshot) {
+  const preferredKeys = [
+    'revenue',
+    'revenue-growth',
+    'eps',
+    'eps-growth',
+    'free-cash-flow',
+    'operating-cash-flow',
+    'pe',
+    'ps',
+    'net-margin',
+  ]
+  return preferredKeys
+    .map((key) => metricValue(snapshot, key))
+    .filter((metric): metric is NonNullable<typeof metric> => Boolean(metric))
+    .slice(0, 4)
+    .map((metric) => `${metric.label}: ${metric.value}${metric.period ? ` (${metric.period})` : ''}.`)
+}
+
+function metricRisks(snapshot: FundamentalSnapshot) {
+  const requiredForReview = [
+    ['revenue-growth', 'crecimiento de ventas comparable'],
+    ['eps-growth', 'crecimiento del BPA comparable'],
+    ['free-cash-flow', 'flujo de caja libre'],
+    ['debt', 'deuda'],
+    ['pe', 'PER'],
+  ] as const
+  const missing = requiredForReview
+    .filter(([key]) => !metricValue(snapshot, key))
+    .map(([, label]) => label)
+  const risks = missing.length
+    ? [`Falta verificar: ${missing.join(', ')}.`]
+    : []
+  risks.push(...snapshot.warnings.slice(0, 2))
+  risks.push('La clasificación es automática y provisional; hay que contrastar la historia del negocio en una fuente primaria.')
+  return risks.slice(0, 4)
+}
+
+function fallbackCategory(snapshot: FundamentalSnapshot): { category: LynchCategoryKey; reason: string } {
+  const revenueGrowth = metricValue(snapshot, 'revenue-growth')?.numericValue
+  const epsGrowth = metricValue(snapshot, 'eps-growth')?.numericValue
+  if (revenueGrowth !== undefined && epsGrowth !== undefined && revenueGrowth >= 15 && epsGrowth >= 15) {
+    return {
+      category: 'fast-grower',
+      reason: `Etiqueta automática por crecimiento verificado de ventas (${metricValue(snapshot, 'revenue-growth')?.value}) y BPA (${metricValue(snapshot, 'eps-growth')?.value}); no es una recomendación ni sustituye la revisión del negocio.`,
+    }
+  }
+  if (revenueGrowth !== undefined && revenueGrowth < 5) {
+    return {
+      category: 'slow-grower',
+      reason: `Etiqueta automática por crecimiento de ventas verificado moderado (${metricValue(snapshot, 'revenue-growth')?.value}); falta contrastar la evolución histórica y el dividendo.`,
+    }
+  }
+  return {
+    category: 'stalwart',
+    reason: revenueGrowth !== undefined
+      ? `Etiqueta provisional por crecimiento de ventas verificado de ${metricValue(snapshot, 'revenue-growth')?.value}; faltan contexto competitivo y una serie histórica más amplia.`
+      : 'Etiqueta provisional: no hay crecimiento comparable suficiente para clasificar con seguridad; revisar manualmente antes de extraer una conclusión.',
+  }
+}
+
+function dataDrivenFallback(
+  input: ResearchInput,
+  provider: AiProviderConfig,
+  context: ResearchContext,
+  providerNote: string,
+): ResearchResult {
+  const leads = context.fundamentals
+    .filter((snapshot) => snapshot.identityVerified && snapshot.metrics.some((metric) => metric.status === 'verified'))
+    .slice(0, 5)
+    .flatMap((snapshot, index) => {
+      const sources = sourceListForCandidate([], snapshot, context)
+      if (!sources.length) return []
+      const { category, reason } = fallbackCategory(snapshot)
+      const evidence = metricEvidence(snapshot)
+      const risks = metricRisks(snapshot)
+      const scorecard = buildResearchScorecard(snapshot, {
+        category,
+        categoryReason: reason,
+        evidence,
+        risks,
+      }, {
+        webSources: context.webSources.map((source) => ({ label: source.title, url: source.url })),
+        newsSources: context.news.map((source) => ({ label: source.title, url: source.url })),
+      })
+      if (scorecard.verdict === 'sin-datos') return []
+      return [{
+        id: `data-${snapshot.symbol.toLowerCase().replace(/[^a-z0-9]+/g, '-') || index}`,
+        title: `${snapshot.company} (${snapshot.symbol})`,
+        subtitle: `${snapshot.company} · ${snapshot.symbol} · ${snapshot.exchange}`,
+        category,
+        fit: scorecard.score,
+        thesis: 'Cribado determinista construido con las métricas verificadas de las fuentes configuradas. La interpretación del negocio y la valoración relativa siguen pendientes de revisión.',
+        evidence: evidence.length ? evidence : ['Hay métricas verificadas disponibles; revisa el detalle y su periodo antes de interpretarlas.'],
+        risks,
+        firstSource: sources[0]?.label ?? 'Fuente financiera configurada',
+        stage: scorecard.verdict === 'investigar' ? 'Preselección' : 'Revisión',
+        ticker: snapshot.symbol,
+        company: snapshot.company,
+        exchange: snapshot.exchange,
+        sourceUrls: sources,
+        dataAsOf: snapshot.dataAsOf,
+        categoryReason: reason,
+        scorecard,
+      } satisfies ResearchLead]
+    })
+
+  if (!leads.length) return localFallback(input, providerNote)
+  const sourceNote = context.sourcesUsed.length ? ` · fuentes: ${context.sourcesUsed.join(' · ')}` : ''
+  const warningNote = context.warnings.length ? ` · avisos: ${context.warnings.slice(0, 4).join(' · ')}` : ''
+  return {
+    title: `Cribado con datos verificables para ${input.query.trim() || 'empresas cotizadas'}`,
+    summary: 'La IA no devolvió una respuesta utilizable, así que se muestran únicamente empresas identificadas y métricas obtenidas de las fuentes configuradas. No se ha rellenado ningún dato ausente.',
+    methodNote: 'Fallback determinista: identidad, métricas, periodos y enlaces proceden de las APIs disponibles. La categoría y la tesis son etiquetas provisionales para ordenar la revisión, no recomendaciones.',
+    questions: [
+      `¿Puedes explicar el negocio de ${input.query.trim() || 'la empresa'} en dos minutos sin usar palabras de moda?`,
+      '¿Qué métrica verificada debería mantenerse o mejorar para que la historia siga en pie?',
+      '¿Qué dato falta todavía sobre deuda, dilución o valoración?',
+    ],
+    nextStep: 'Abre cada fuente primaria, confirma los periodos y completa la historia del negocio antes de tomar una decisión.',
+    leads,
+    engine: 'local-fallback',
+    generatedAt: new Date().toISOString(),
+    providerNote: `${provider.label} · ${provider.model} · datos de APIs sin texto IA${sourceNote}${warningNote} · ${providerNote}`,
+    screening: {
+      companiesFound: context.fundamentals.filter((snapshot) => snapshot.identityVerified).length,
+      candidatesReturned: leads.length,
+      candidatesDiscarded: 0,
+      note: 'La IA no pudo redactar el informe; se conserva el cribado solo cuando hay identidad, métricas y fuentes verificables.',
+    },
+  }
 }
 
 type FirecrawlResult = {
@@ -823,6 +961,41 @@ async function gatherResearchContext(
   }
 }
 
+function promptResearchContext(context: ResearchContext) {
+  return {
+    web: context.webSources.slice(0, 4).map((source) => ({
+      titulo: source.title,
+      descripcion: source.description.slice(0, 600),
+      contenido: source.content?.slice(0, 1400),
+      url: source.url,
+    })),
+    mercadoFinnhub: context.market.slice(0, 5),
+    noticias: context.news.slice(0, 8).map((source) => ({
+      titulo: source.title,
+      descripcion: source.description.slice(0, 500),
+      fecha: source.publishedAt,
+      fuente: source.source,
+      url: source.url,
+    })),
+    fundamentales: context.fundamentals.slice(0, 5).map((snapshot) => ({
+      empresa: snapshot.company,
+      ticker: snapshot.symbol,
+      mercado: snapshot.exchange,
+      datosHasta: snapshot.dataAsOf,
+      metricas: snapshot.metrics.filter((metric) => metric.status === 'verified').slice(0, 20).map((metric) => ({
+        clave: metric.key,
+        nombre: metric.label,
+        valor: metric.value,
+        periodo: metric.period ?? 'no indicado',
+        fuentes: metric.sourceUrls.slice(0, 2),
+      })),
+      fuentes: snapshot.sources.slice(0, 6),
+      avisos: snapshot.warnings.slice(0, 4),
+    })),
+    limitaciones: context.warnings.slice(0, 8),
+  }
+}
+
 function normalizeSymbol(value: string) {
   const normalized = value.trim().toUpperCase().replace(/[^A-Z0-9.:-]/g, '')
   return normalized.length >= 1 && normalized.length <= 20 ? normalized : null
@@ -1033,27 +1206,7 @@ export async function POST(request: Request) {
     empresasVerificadas: researchContext.fundamentals
       .filter((snapshot) => snapshot.identityVerified)
       .map((snapshot) => ({ ticker: snapshot.symbol, empresa: snapshot.company, mercado: snapshot.exchange })),
-    fuentesGratuitas: {
-      web: researchContext.webSources,
-      mercadoFinnhub: researchContext.market,
-      noticiasNewsApi: researchContext.news,
-      fundamentales: researchContext.fundamentals.map((snapshot) => ({
-        empresa: snapshot.company,
-        ticker: snapshot.symbol,
-        mercado: snapshot.exchange,
-        datosHasta: snapshot.dataAsOf,
-        metricas: snapshot.metrics.filter((metric) => metric.status === 'verified').map((metric) => ({
-          clave: metric.key,
-          nombre: metric.label,
-          valor: metric.value,
-          periodo: metric.period ?? 'no indicado',
-          fuentes: metric.sourceUrls,
-        })),
-        fuentes: snapshot.sources,
-        avisos: snapshot.warnings,
-      })),
-      limitaciones: researchContext.warnings,
-    },
+    fuentesGratuitas: promptResearchContext(researchContext),
   })
   const jsonFormat = {
     type: 'json_schema',
@@ -1174,14 +1327,22 @@ export async function POST(request: Request) {
         ...researchContext,
         fundamentals: enrichedFundamentals.snapshots,
       }
-      return NextResponse.json(toResearchResult(validated.data, successfulProvider, enrichedContext, {
+      const result = toResearchResult(validated.data, successfulProvider, enrichedContext, {
         unresolved: enrichedFundamentals.unresolved,
         companiesFound: enrichedContext.fundamentals.filter((snapshot) => snapshot.identityVerified).length,
-      }))
+      })
+      return NextResponse.json(result.leads.length
+        ? result
+        : dataDrivenFallback(input, successfulProvider, enrichedContext, 'La IA respondió, pero sus candidatos no pasaron el filtro de identidad, métricas y fuentes.'))
     }
 
-    return NextResponse.json(localFallback(input, lastFailure))
+    return NextResponse.json(dataDrivenFallback(input, provider, researchContext, lastFailure))
   } catch {
-    return NextResponse.json(localFallback(input, `No se pudo conectar con ${provider.label} · ${provider.model}; se muestra el marco local.`))
+    return NextResponse.json(dataDrivenFallback(
+      input,
+      provider,
+      researchContext,
+      `No se pudo completar la respuesta de ${provider.label} · ${provider.model}; se conservan los datos verificables disponibles.`,
+    ))
   }
 }
