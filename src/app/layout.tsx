@@ -10,7 +10,7 @@ const geist = Geist({
 
 export const metadata: Metadata = {
   title: 'Finanzas Personales',
-  description: 'Gestión de finanzas personales',
+  description: 'Gestión de finanzas personales e inversiones',
 }
 
 export default function RootLayout({
@@ -19,8 +19,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="es">
-      <body className={`${geist.variable} antialiased`}>
+    <html lang="es" className="dark">
+      <body className={`${geist.variable} bg-background text-foreground font-sans antialiased`}>
         {children}
         <Toaster richColors position="top-right" />
       </body>

@@ -1,0 +1,1 @@
+ALTER TABLE `inversiones_posiciones` ADD `fecha_apertura` text;

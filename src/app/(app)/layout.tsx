@@ -8,10 +8,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!session) redirect('/login')
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-background text-foreground" data-app-shell>
       <Sidebar />
-      <main className="flex-1 pb-20 md:pb-0">
-        <div className="container max-w-5xl mx-auto px-4 py-6">
+      <main className="min-w-0 flex-1 pb-28 md:pb-0">
+        <div className="container mx-auto w-full max-w-[1600px] px-4 py-6" data-page-content>
           {children}
         </div>
       </main>

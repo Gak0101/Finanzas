@@ -1,0 +1,513 @@
+'use client'
+
+import { type FormEvent, useMemo, useState } from 'react'
+import {
+  ArrowRight,
+  BookOpenCheck,
+  BrainCircuit,
+  Check,
+  ChevronDown,
+  CircleAlert,
+  CircleCheck,
+  ExternalLink,
+  FileSearch,
+  FlaskConical,
+  Lightbulb,
+  ListChecks,
+  Search,
+  ShieldAlert,
+  Sparkles,
+  Target,
+  TrendingUp,
+} from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import {
+  createInitialResult,
+  generateResearchResult,
+  getCategory,
+  LYNCH_CATEGORIES,
+  RESEARCH_CHECKLIST,
+  SEARCH_MODES,
+  type LynchCategoryKey,
+  type ResearchInput,
+  type ResearchResult,
+  type SearchMode,
+} from '@/lib/buscador-acciones/lynchFramework'
+
+const MODE_ICONS: Record<SearchMode, typeof Search> = {
+  boring: FlaskConical,
+  ipo: TrendingUp,
+  everyday: Lightbulb,
+  growth: Target,
+}
+
+const INPUT_CLASS =
+  'w-full rounded-md border border-[#d9d8d1] bg-white px-3 py-2.5 text-sm text-[#16202b] outline-none transition placeholder:text-[#9aa5ae] focus:border-[#7a8b59] focus:ring-2 focus:ring-[#c8f56a]/40'
+
+function formatHorizon(value: ResearchInput['horizon']) {
+  return value === '10+' ? '10 años o más' : `${value.replace('-', '–')} años`
+}
+
+function formatResearchTimestamp(value: string) {
+  if (!value) return 'sin ejecutar'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'fecha no disponible'
+  return new Intl.DateTimeFormat('es-ES', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function engineLabel(engine: ResearchResult['engine']) {
+  if (engine === 'openai-web') return 'IA + búsqueda web'
+  if (engine === 'local-fallback') return 'Marco local · proveedor no disponible'
+  return 'Marco local · sin datos actuales'
+}
+
+function StepNumber({ children }: { children: number }) {
+  return (
+    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#c8f56a] text-xs font-bold text-[#16202b]">
+      {children}
+    </span>
+  )
+}
+
+type StockFinderProps = {
+  embedded?: boolean
+}
+
+export function StockFinder({ embedded = false }: StockFinderProps = {}) {
+  const [query, setQuery] = useState('')
+  const [mode, setMode] = useState<SearchMode>('boring')
+  const [horizon, setHorizon] = useState<ResearchInput['horizon']>('5-10')
+  const [risk, setRisk] = useState<ResearchInput['risk']>('moderado')
+  const [isRunning, setIsRunning] = useState(false)
+  const [guideOpen, setGuideOpen] = useState(false)
+  const [activeCategory, setActiveCategory] = useState<LynchCategoryKey | 'all'>('all')
+  const [result, setResult] = useState(createInitialResult)
+  const [selectedLeadId, setSelectedLeadId] = useState(result.leads[0]?.id ?? '')
+  const [lastRunHorizon, setLastRunHorizon] = useState<ResearchInput['horizon']>('5-10')
+  const [requestError, setRequestError] = useState<string | null>(null)
+
+  const selectedMode = SEARCH_MODES.find((item) => item.key === mode) ?? SEARCH_MODES[0]
+  const selectedLead = result.leads.find((lead) => lead.id === selectedLeadId) ?? result.leads[0]
+
+  const visibleLeads = useMemo(() => {
+    if (activeCategory === 'all') return result.leads
+    return result.leads.filter((lead) => lead.category === activeCategory)
+  }, [activeCategory, result.leads])
+
+  async function runResearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (isRunning) return
+
+    setIsRunning(true)
+    setRequestError(null)
+    try {
+      const response = await fetch('/api/buscador-acciones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, mode, horizon, risk }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload || typeof payload !== 'object' || !Array.isArray((payload as { leads?: unknown }).leads)) {
+        throw new Error('La investigación no devolvió una ficha válida')
+      }
+
+      const nextResult = payload as ResearchResult
+      setResult(nextResult)
+      setSelectedLeadId(nextResult.leads[0]?.id ?? '')
+      setActiveCategory('all')
+      setLastRunHorizon(horizon)
+      window.requestAnimationFrame(() => {
+        document.getElementById('resultados-acciones')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+    } catch {
+      const nextResult = generateResearchResult({ query, mode, horizon, risk })
+      setResult({
+        ...nextResult,
+        engine: 'local-fallback',
+        providerNote: 'No se pudo consultar el endpoint; se muestra una hipótesis local sin datos actuales.',
+      })
+      setRequestError('No se pudo consultar el servicio IA. Se muestra un marco local para que puedas continuar sin inventar datos actuales.')
+      setSelectedLeadId(nextResult.leads[0]?.id ?? '')
+      setActiveCategory('all')
+      setLastRunHorizon(horizon)
+      window.requestAnimationFrame(() => {
+        document.getElementById('resultados-acciones')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+    } finally {
+      setIsRunning(false)
+    }
+  }
+
+  function usePrompt(prompt: string, promptMode: SearchMode) {
+    setQuery(prompt)
+    setMode(promptMode)
+  }
+
+  return (
+    <div className={embedded ? 'min-h-0 bg-transparent text-[#f7f5ef]' : '-mx-4 -my-6 min-h-[calc(100vh-4rem)] bg-[#0d1118] text-[#f7f5ef]'}>
+      <div className={embedded ? 'mx-auto max-w-[1600px] px-0 py-2 sm:py-4' : 'mx-auto max-w-[1600px] px-4 py-7 sm:px-6 sm:py-9'}>
+        <header className="flex flex-col gap-5 border-b border-white/10 pb-7 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-3xl">
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#c8f56a]">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#c8f56a]/30 bg-[#c8f56a]/10 px-2.5 py-1">
+                <BrainCircuit className="h-3.5 w-3.5" /> Asistente IA · Lynch
+              </span>
+              <span className="text-white/35">·</span>
+              <span className="text-white/50">Laboratorio de investigación</span>
+            </div>
+            <h1 className="max-w-2xl text-4xl font-semibold tracking-[-0.06em] text-[#f7f5ef] sm:text-5xl">
+              Buscador de acciones
+            </h1>
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-[#aab4be] sm:text-base">
+              Convierte una observación —un negocio aburrido, un producto que ves crecer o una nueva cotizada— en una hipótesis que puedas investigar con calma.
+            </p>
+          </div>
+
+          <div className="flex max-w-sm items-start gap-3 rounded-lg border border-[#e7a35e]/30 bg-[#e7a35e]/10 p-3 text-xs leading-5 text-[#f0c996]">
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-[#e7a35e]" />
+            <p>
+              Una 10-bagger es un resultado posible y retrospectivo, no una predicción. Aquí se generan pistas de estudio, nunca órdenes de compra.
+            </p>
+          </div>
+        </header>
+
+        <main>
+          <section className="mt-7 grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(320px,.65fr)]">
+            <form onSubmit={runResearch} className="rounded-xl bg-[#f7f5ef] p-5 text-[#16202b] shadow-[0_18px_45px_rgba(0,0,0,.16)] sm:p-7">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#78828b]">01 / Dale una pista</p>
+                  <h2 className="text-2xl font-semibold tracking-[-0.05em]">¿Qué has visto que merece una pregunta?</h2>
+                  <p className="mt-2 max-w-xl text-sm leading-6 text-[#75808d]">
+                    Escribe una empresa, un ticker o una observación. El asistente la transforma en un universo de búsqueda y una lista de comprobaciones.
+                  </p>
+                </div>
+                <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[#e8eee0] px-2.5 py-1 text-[10px] font-semibold text-[#58702d]">
+                  <Sparkles className="h-3.5 w-3.5" /> Motor local · sin datos en vivo
+                </span>
+              </div>
+
+              <div className="mt-6 grid gap-2">
+                <label htmlFor="stock-clue" className="text-xs font-semibold text-[#16202b]">
+                  Tu pista de inversión
+                </label>
+                <textarea
+                  id="stock-clue"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={selectedMode.prompt}
+                  rows={3}
+                  className={`${INPUT_CLASS} resize-y`}
+                />
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {SEARCH_MODES.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => usePrompt(item.prompt, item.key)}
+                      className="rounded-full border border-[#d9d8d1] px-2.5 py-1 text-[10px] text-[#697580] transition hover:border-[#9baa78] hover:bg-[#eef3e7] hover:text-[#34421e]"
+                    >
+                      {item.prompt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-2">
+                <span className="text-xs font-semibold text-[#16202b]">Qué quieres rastrear</span>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {SEARCH_MODES.map((item) => {
+                    const Icon = MODE_ICONS[item.key]
+                    const active = mode === item.key
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => setMode(item.key)}
+                        aria-pressed={active}
+                        className={`flex min-h-[76px] items-start gap-3 rounded-lg border p-3 text-left transition ${
+                          active
+                            ? 'border-[#879b5a] bg-[#eef3e7] shadow-[inset_0_0_0_1px_#879b5a]'
+                            : 'border-[#deddd6] bg-white hover:border-[#b8c3a0] hover:bg-[#fbfcf8]'
+                        }`}
+                      >
+                        <span className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md ${active ? 'bg-[#16202b] text-[#c8f56a]' : 'bg-[#eef0eb] text-[#78828b]'}`}>
+                          <Icon className="h-4 w-4" />
+                        </span>
+                        <span>
+                          <span className="block text-xs font-semibold text-[#16202b]">{item.label}</span>
+                          <span className="mt-1 block text-[10px] leading-4 text-[#78828b]">{item.description}</span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <label className="grid gap-2 text-xs font-semibold text-[#16202b]" htmlFor="stock-horizon">
+                  Horizonte de estudio
+                  <span className="relative">
+                    <select id="stock-horizon" value={horizon} onChange={(event) => setHorizon(event.target.value as ResearchInput['horizon'])} className={`${INPUT_CLASS} appearance-none pr-9 font-normal`}>
+                      <option value="3-5">3–5 años</option>
+                      <option value="5-10">5–10 años</option>
+                      <option value="10+">10 años o más</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[#89939b]" />
+                  </span>
+                </label>
+                <label className="grid gap-2 text-xs font-semibold text-[#16202b]" htmlFor="stock-risk">
+                  Tolerancia a la incertidumbre
+                  <span className="relative">
+                    <select id="stock-risk" value={risk} onChange={(event) => setRisk(event.target.value as ResearchInput['risk'])} className={`${INPUT_CLASS} appearance-none pr-9 font-normal`}>
+                      <option value="prudente">Prudente · evidencia primero</option>
+                      <option value="moderado">Moderada · equilibrio</option>
+                      <option value="alto">Alta · hipótesis temprana</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-[#89939b]" />
+                  </span>
+                </label>
+              </div>
+
+              <div className="mt-6 flex flex-col gap-3 border-t border-[#deddd6] pt-5 sm:flex-row sm:items-center sm:justify-between">
+                <p className="max-w-md text-[10px] leading-4 text-[#89939b]">
+                  La primera pasada ordena el pensamiento. Los datos, las fuentes y la valoración se verifican después.
+                </p>
+                <p className="max-w-md text-[10px] leading-4 text-[#89939b]">La consulta IA solo usa la pista y fuentes públicas; no envía tu cartera ni tus datos bancarios.</p>
+                <Button type="submit" disabled={isRunning} className="h-10 bg-[#16202b] px-5 text-xs font-semibold text-white hover:bg-[#263545]">
+                  {isRunning ? <><Search className="animate-pulse" /> Investigando la pista…</> : <><Sparkles /> Generar hipótesis</>}
+                </Button>
+              </div>
+            </form>
+
+            <aside className="rounded-xl border border-white/10 bg-[#151e28] p-5 sm:p-7">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#c8f56a]">02 / El profesor</p>
+                  <h2 className="text-2xl font-semibold tracking-[-0.05em]">Lynch como guía</h2>
+                </div>
+                <BookOpenCheck className="h-5 w-5 text-[#c8f56a]" />
+              </div>
+              <p className="mt-3 text-sm leading-6 text-[#aab4be]">
+                La IA sigue una secuencia sencilla: entender el negocio, clasificarlo, comprobar los números y saber qué puede salir mal.
+              </p>
+
+              <div className="mt-6 grid gap-4">
+                {[
+                  ['La historia', '¿Qué vende y por qué vuelve el cliente?'],
+                  ['La categoría', '¿Es fast grower, cíclica, turnaround o algo distinto?'],
+                  ['Los números', '¿Ventas, caja y deuda cuentan la misma historia?'],
+                  ['La tesis', '¿Qué tendría que ocurrir para acercarse a 10×?'],
+                ].map(([title, description], index) => (
+                  <div key={title} className="flex gap-3">
+                    <StepNumber>{index + 1}</StepNumber>
+                    <div>
+                      <p className="text-xs font-semibold text-[#f7f5ef]">{title}</p>
+                      <p className="mt-1 text-[11px] leading-5 text-[#8997a3]">{description}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <button type="button" onClick={() => setGuideOpen((open) => !open)} className="mt-7 flex w-full items-center justify-between border-t border-white/10 pt-4 text-left text-xs font-semibold text-[#d7dfd1] hover:text-[#c8f56a]">
+                <span className="inline-flex items-center gap-2"><ListChecks className="h-4 w-4" /> Ver las seis categorías de Lynch</span>
+                <ChevronDown className={`h-4 w-4 transition-transform ${guideOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {guideOpen && (
+                <div className="mt-4 grid gap-2">
+                  {LYNCH_CATEGORIES.map((category) => (
+                    <div key={category.key} className="rounded-lg border border-white/10 bg-white/[.03] p-3">
+                      <div className="flex items-center gap-2">
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: category.color }} />
+                        <p className="text-[11px] font-semibold text-[#f7f5ef]">{category.label}</p>
+                      </div>
+                      <p className="mt-1 text-[10px] leading-4 text-[#8997a3]">{category.description}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </aside>
+          </section>
+
+          <section id="resultados-acciones" className="mt-5 scroll-mt-6 rounded-xl bg-[#f7f5ef] p-5 text-[#16202b] shadow-[0_18px_45px_rgba(0,0,0,.16)] sm:p-7">
+            <div className="flex flex-col gap-4 border-b border-[#deddd6] pb-5 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#78828b]">
+                  <span>03 / Resultado de la primera pasada</span>
+                  <span className="rounded-full bg-[#e8eee0] px-2 py-1 text-[#58702d]">{formatHorizon(lastRunHorizon)}</span>
+                  <span className={`rounded-full px-2 py-1 ${result.engine === 'openai-web' ? 'bg-[#dfe9ff] text-[#40558a]' : 'bg-[#f0eee8] text-[#78828b]'}`}>{engineLabel(result.engine)}</span>
+                </div>
+                <h2 className="max-w-3xl text-2xl font-semibold tracking-[-0.05em]">{result.title}</h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-[#75808d]">{result.summary}</p>
+              </div>
+              <div className="max-w-xs rounded-lg border border-[#e7a35e]/40 bg-[#fff7e9] p-3 text-[10px] leading-4 text-[#83571f]">
+                <div className="flex items-center gap-1.5 font-bold uppercase tracking-[0.12em]"><CircleAlert className="h-3.5 w-3.5" /> Encaje, no probabilidad</div>
+                <p className="mt-1">El porcentaje indica ajuste al marco de lectura, no la posibilidad de multiplicar el capital.</p>
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-col gap-3 rounded-lg border border-[#dfe3d9] bg-[#eef3e7] p-3.5 text-xs leading-5 text-[#4d5f33] sm:flex-row sm:items-start">
+              <BrainCircuit className="mt-0.5 h-4 w-4 shrink-0 text-[#6e8c3a]" />
+              <p><strong className="font-semibold">Cómo lo está leyendo el marco:</strong> {result.methodNote}</p>
+              <p className="text-[10px] text-[#71815b]">Consulta generada: {formatResearchTimestamp(result.generatedAt)}{result.providerNote ? ` · ${result.providerNote}` : ''}</p>
+            </div>
+
+            {requestError && (
+              <div role="status" className="mt-4 flex items-start gap-2 rounded-lg border border-[#e7a35e]/40 bg-[#fff7e9] p-3.5 text-[11px] leading-5 text-[#83571f]">
+                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{requestError}</span>
+              </div>
+            )}
+
+            <div className="mt-6 flex gap-2 overflow-x-auto pb-1">
+              <button type="button" onClick={() => setActiveCategory('all')} className={`whitespace-nowrap rounded-full border px-3 py-1.5 text-[10px] font-semibold transition ${activeCategory === 'all' ? 'border-[#16202b] bg-[#16202b] text-white' : 'border-[#d9d8d1] text-[#78828b] hover:border-[#899b67]'}`}>
+                Todas ({result.leads.length})
+              </button>
+              {LYNCH_CATEGORIES.map((category) => {
+                const count = result.leads.filter((lead) => lead.category === category.key).length
+                if (!count) return null
+                return (
+                  <button key={category.key} type="button" onClick={() => setActiveCategory(category.key)} className={`whitespace-nowrap rounded-full border px-3 py-1.5 text-[10px] font-semibold transition ${activeCategory === category.key ? 'border-[#16202b] bg-[#16202b] text-white' : 'border-[#d9d8d1] text-[#78828b] hover:border-[#899b67]'}`}>
+                    {category.label} ({count})
+                  </button>
+                )
+              })}
+            </div>
+
+            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(300px,.65fr)]">
+              <div className="grid gap-3 md:grid-cols-2">
+                {visibleLeads.map((lead) => {
+                  const category = getCategory(lead.category)
+                  const selected = lead.id === selectedLead?.id
+                  const ticker = lead.ticker && !['N/A', '—', '-'].includes(lead.ticker) ? lead.ticker : null
+                  return (
+                    <button key={lead.id} type="button" onClick={() => setSelectedLeadId(lead.id)} aria-pressed={selected} className={`flex flex-col rounded-lg border p-4 text-left transition ${selected ? 'border-[#879b5a] bg-[#fbfcf8] shadow-[0_0_0_1px_#879b5a]' : 'border-[#deddd6] bg-white hover:border-[#b8c3a0] hover:bg-[#fbfcf8]'}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <span className="inline-flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[#89939b]">
+                            <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: category.color }} /> {lead.stage}
+                          </span>
+                          <h3 className="mt-2 text-base font-semibold tracking-[-0.03em] text-[#16202b]">{lead.title}</h3>
+                          <p className="mt-1 text-[10px] font-medium text-[#78828b]">{lead.subtitle}</p>
+                        </div>
+                        <ArrowRight className={`mt-1 h-4 w-4 shrink-0 ${selected ? 'text-[#58702d]' : 'text-[#b0b8b2]'}`} />
+                      </div>
+                      <div className="mt-4 flex flex-wrap items-center gap-2 text-[10px]">
+                        <span className="rounded-full px-2 py-1 font-semibold" style={{ backgroundColor: `${category.color}30`, color: '#4d5f33' }}>{category.label}</span>
+                        {ticker ? <span className="rounded-full border border-[#d9d8d1] px-2 py-1 font-semibold text-[#52606c]">{ticker}{lead.exchange ? ` · ${lead.exchange}` : ''}</span> : <span className="rounded-full border border-dashed border-[#c8c9c1] px-2 py-1 text-[#89939b]">Pista de búsqueda</span>}
+                        <span className="ml-auto font-semibold text-[#63707b]">Encaje <strong className="text-[#16202b]">{lead.fit}/100</strong></span>
+                      </div>
+                      <div className="mt-2 h-1 overflow-hidden rounded-full bg-[#e8e8e2]"><div className="h-full rounded-full bg-[#879b5a]" style={{ width: `${lead.fit}%` }} /></div>
+                      <p className="mt-4 text-xs leading-5 text-[#586571]">{lead.thesis}</p>
+                      <div className="mt-auto flex items-center gap-2 border-t border-[#ecebe5] pt-3 text-[10px] font-medium text-[#78828b]"><FileSearch className="h-3.5 w-3.5" /> Primera fuente: {lead.firstSource}</div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {selectedLead && (
+                <aside className="flex flex-col rounded-lg bg-[#16202b] p-5 text-[#f7f5ef]">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#c8f56a]">Ficha de lectura</p>
+                    <span className="rounded-full border border-white/15 px-2 py-1 text-[9px] text-[#aab4be]">No es señal</span>
+                  </div>
+                  <h3 className="mt-4 text-xl font-semibold tracking-[-0.04em]">{selectedLead.title}</h3>
+                  <p className="mt-1 text-xs text-[#8997a3]">{selectedLead.subtitle}</p>
+                  {selectedLead.dataAsOf && <p className="mt-2 text-[10px] text-[#8997a3]">Datos declarados por la búsqueda: {selectedLead.dataAsOf}</p>}
+
+                  <div className="mt-5 rounded-lg border border-white/10 bg-white/[.04] p-3.5">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#aab4be]">La historia que habría que probar</p>
+                    <p className="mt-2 text-xs leading-5 text-[#e0e6df]">{selectedLead.thesis}</p>
+                  </div>
+
+                  <div className="mt-5">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#aab4be]">Tres comprobaciones iniciales</p>
+                    <ul className="mt-3 grid gap-3">
+                      {selectedLead.evidence.map((item) => <li key={item} className="flex gap-2 text-xs leading-5 text-[#d5ddd5]"><CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#c8f56a]" />{item}</li>)}
+                    </ul>
+                  </div>
+
+                  <div className="mt-5 rounded-lg border border-[#e58b8d]/20 bg-[#e58b8d]/10 p-3.5">
+                    <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#f0b1b2]"><CircleAlert className="h-3.5 w-3.5" /> Lo que puede romperla</p>
+                    <ul className="mt-2 grid gap-1.5 text-xs leading-5 text-[#edcccc]">{selectedLead.risks.map((riskItem) => <li key={riskItem}>· {riskItem}</li>)}</ul>
+                  </div>
+
+                  <div className="mt-auto pt-5">
+                    <p className="text-[10px] text-[#8997a3]">Primera fuente recomendada</p>
+                    <p className="mt-1 text-xs font-semibold text-[#f7f5ef]">{selectedLead.firstSource}</p>
+                    <div className="mt-4 grid gap-2">
+                      {(selectedLead.sourceUrls?.length ? selectedLead.sourceUrls : [
+                        { label: 'Buscar documentos EDGAR', url: 'https://www.sec.gov/search-filings' },
+                        { label: 'Guía SEC para IPO', url: 'https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/investor-bulletins-17' },
+                      ]).map((source) => (
+                        <a key={source.url} href={source.url} target="_blank" rel="noreferrer" className="inline-flex items-center justify-between gap-2 rounded-md border border-white/15 px-3 py-2 text-[10px] font-semibold text-[#d5ddd5] transition hover:border-[#c8f56a]/60 hover:text-[#c8f56a]">
+                          <span className="truncate">{source.label}</span><ExternalLink className="h-3 w-3 shrink-0" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                </aside>
+              )}
+            </div>
+
+            <div className="mt-6 grid gap-4 border-t border-[#deddd6] pt-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(300px,.9fr)]">
+              <div>
+                <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#78828b]">04 / Preguntas del profesor</p>
+                <h3 className="text-lg font-semibold tracking-[-0.04em]">Antes de buscar un ticker, responde esto</h3>
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  {result.questions.map((question, index) => <div key={question} className="flex gap-2.5 rounded-lg border border-[#deddd6] bg-white p-3 text-xs leading-5 text-[#586571]"><span className="font-bold text-[#879b5a]">0{index + 1}</span><span>{question}</span></div>)}
+                </div>
+              </div>
+              <div className="rounded-lg border border-[#dfe3d9] bg-[#eef3e7] p-5">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#58702d]">Siguiente paso</p>
+                <p className="mt-3 text-sm font-semibold leading-6 text-[#34421e]">{result.nextStep}</p>
+                <div className="mt-4 flex items-center gap-2 text-[10px] leading-4 text-[#63734d]"><ArrowRight className="h-3.5 w-3.5" /> La paciencia también forma parte del método.</div>
+              </div>
+            </div>
+          </section>
+
+          <section className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,.72fr)]">
+            <div className="rounded-xl border border-white/10 bg-[#151e28] p-5 sm:p-7">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#c8f56a]">Checklist vivo</p>
+                  <h2 className="text-2xl font-semibold tracking-[-0.05em]">La IA te acompaña, no te sustituye</h2>
+                </div>
+                <ListChecks className="h-5 w-5 text-[#c8f56a]" />
+              </div>
+              <div className="mt-6 grid gap-3 md:grid-cols-2">
+                {RESEARCH_CHECKLIST.map((item, index) => (
+                  <div key={item.title} className="flex gap-3 rounded-lg border border-white/10 bg-white/[.03] p-3.5">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-[#c8f56a]/40 text-[10px] font-bold text-[#c8f56a]">{index + 1}</span>
+                    <div><p className="text-xs font-semibold text-[#f7f5ef]">{item.title}</p><p className="mt-1 text-[10px] leading-4 text-[#8997a3]">{item.description}</p></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-[#c8f56a] p-5 text-[#16202b] sm:p-7">
+              <div className="flex items-start justify-between gap-4"><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#58702d]">Lectura base</p><h2 className="text-2xl font-semibold tracking-[-0.05em]">Un paso por delante de Wall Street</h2></div><BookOpenCheck className="h-5 w-5 text-[#58702d]" /></div>
+              <p className="mt-4 text-sm leading-6 text-[#34421e]">El libro es el marco pedagógico: observar primero, investigar después y mantener una tesis que pueda ser falsada.</p>
+              <div className="mt-6 grid gap-2">
+                <a href="https://www.simonandschuster.com/books/One-Up-On-Wall-Street/Peter-Lynch/9780743200400" target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-lg border border-[#58702d]/20 bg-white/30 px-3 py-2.5 text-xs font-semibold text-[#34421e] transition hover:bg-white/60"><span className="inline-flex items-center gap-2"><BookOpenCheck className="h-4 w-4" /> Página oficial del libro</span><ExternalLink className="h-3.5 w-3.5" /></a>
+                <a href="https://www.sec.gov/search-filings" target="_blank" rel="noreferrer" className="flex items-center justify-between rounded-lg border border-[#58702d]/20 bg-white/30 px-3 py-2.5 text-xs font-semibold text-[#34421e] transition hover:bg-white/60"><span className="inline-flex items-center gap-2"><FileSearch className="h-4 w-4" /> Buscar documentos EDGAR</span><ExternalLink className="h-3.5 w-3.5" /></a>
+              </div>
+              <p className="mt-5 text-[10px] leading-4 text-[#58702d]">La app no reproduce el texto del libro: convierte sus ideas generales en preguntas de investigación propias.</p>
+            </div>
+          </section>
+        </main>
+
+        <footer className="flex flex-col gap-2 border-t border-white/10 py-6 text-[10px] leading-5 text-[#788692] sm:flex-row sm:items-center sm:justify-between">
+          <span>FIN · Buscador de acciones · hipótesis educativas, no asesoramiento financiero</span>
+          <span className="inline-flex items-center gap-1.5"><Check className="h-3.5 w-3.5 text-[#c8f56a]" /> Fuentes primarias antes de cualquier decisión</span>
+        </footer>
+      </div>
+    </div>
+  )
+}

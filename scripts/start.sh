@@ -1,24 +1,40 @@
 #!/bin/sh
-set -e
+set -eu
 
-# [2026-02-26] El script corre como root para poder arreglar permisos del volumen
-# Luego usa su-exec para ejecutar la app como usuario nextjs (seguridad)
+DATA_DIR=/app/data
+DB_PATH="${DATABASE_URL:-$DATA_DIR/finanzas.db}"
 
-# Asegurar que el directorio data existe y es escribible por nextjs
-mkdir -p /app/data
-chown nextjs:nodejs /app/data
+# La base debe vivir en el volumen de /app/data. Así se evita arrancar con una
+# SQLite efímera dentro de la capa del contenedor por una variable mal puesta.
+case "$DB_PATH" in
+  /app/data/*|./data/*|data/*) ;;
+  *)
+    echo "DATABASE_URL debe apuntar a /app/data/finanzas.db en producción (recibido: $DB_PATH)" >&2
+    exit 1
+    ;;
+esac
 
-echo "Running database migrations..."
-# Ejecutar migraciones como usuario nextjs
+export DATABASE_URL="$DB_PATH"
+
+# Asegurar que el volumen y una base creada en un despliegue anterior sean
+# escribibles por nextjs. No se borra ni se recrea ningún dato.
+mkdir -p "$DATA_DIR"
+chown -R nextjs:nodejs "$DATA_DIR"
+chmod -R u+rwX "$DATA_DIR"
+
+echo "Running database migrations on $DATABASE_URL..."
 su-exec nextjs node /app/scripts/migrate.mjs
 
-# [2026-02-26] Auto-seed: crear usuario admin si ADMIN_USER y ADMIN_PASSWORD están definidos
-# Solo se ejecuta si las variables de entorno están configuradas en Coolify (Runtime only)
-if [ -n "$ADMIN_USER" ] && [ -n "$ADMIN_PASSWORD" ]; then
+# Crear/actualizar el usuario inicial solo cuando Coolify proporciona ambas
+# variables. Si se proporciona una sola, fallar explícitamente.
+if [ -n "${ADMIN_USER:-}" ] || [ -n "${ADMIN_PASSWORD:-}" ]; then
+  if [ -z "${ADMIN_USER:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; then
+    echo "ADMIN_USER y ADMIN_PASSWORD deben configurarse juntos" >&2
+    exit 1
+  fi
   echo "Running seed (creating/updating admin user)..."
   su-exec nextjs node /app/scripts/seed.mjs "$ADMIN_USER" "$ADMIN_PASSWORD"
 fi
 
 echo "Starting Next.js server..."
-# Ejecutar servidor como usuario nextjs (drop privileges)
 exec su-exec nextjs node /app/server.js

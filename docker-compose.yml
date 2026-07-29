@@ -1,18 +1,29 @@
-version: '3.8'
-
 services:
   finanzas:
-    build: .
+    build:
+      context: .
     ports:
-      - "3000:3000"
+      # Coolify expone el puerto interno 3000; el puerto del host es opcional.
+      - "${FINANZAS_HOST_PORT:-3000}:3000"
     environment:
-      - DATABASE_URL=/app/data/finanzas.db
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
-      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      DATABASE_URL: /app/data/finanzas.db
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Configura NEXTAUTH_SECRET}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:?Configura NEXTAUTH_URL con la URL pública}
+      PORT: "3000"
+      HOSTNAME: 0.0.0.0
+      NEXT_TELEMETRY_DISABLED: "1"
+      ADMIN_USER: ${ADMIN_USER:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
     volumes:
-      # CRÍTICO: Persiste el SQLite entre reinicios
+      # CRÍTICO: persiste SQLite entre reinicios y redeploys.
       - finanzas_data:/app/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
 
 volumes:
   finanzas_data:

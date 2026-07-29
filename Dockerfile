@@ -1,22 +1,20 @@
 # ── Base ──────────────────────────────────────────────────────────────────────
 FROM node:20-alpine AS base
-# Dependencias del sistema para compilar better-sqlite3 (addon nativo)
+# Dependencias del sistema para compilar better-sqlite3 (addon nativo).
 RUN apk add --no-cache libc6-compat python3 make g++
 WORKDIR /app
 
 # ── Dependencias ──────────────────────────────────────────────────────────────
 FROM base AS deps
-# [2026-02-26] Forzar NODE_ENV=development para que npm ci instale devDependencies
-# (typescript, tailwindcss, etc.) necesarias para el build.
-# Coolify inyecta NODE_ENV=production a build-time, lo que causa que se salten.
+# El build de Next necesita las devDependencies (TypeScript, Tailwind, etc.).
+# --include=dev lo hace explícito aunque Coolify inyecte NODE_ENV=production.
 ENV NODE_ENV=development
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm ci --include=dev
 
 # ── Builder ───────────────────────────────────────────────────────────────────
 FROM base AS builder
 WORKDIR /app
-# [2026-02-26] Forzar NODE_ENV=development para que next build encuentre typescript
 ENV NODE_ENV=development
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
@@ -27,9 +25,7 @@ ENV NEXTAUTH_SECRET=build-time-secret
 ENV NEXTAUTH_URL=http://localhost:3000
 ENV DATABASE_URL=./data/finanzas.db
 
-# [2026-02-26] Crear directorio data para que SQLite no falle durante el build
-# (Next.js pre-renderiza rutas API y necesita acceder a la BD)
-# Se establece NODE_ENV=production para el build de Next.js (las deps ya están instaladas)
+# Crear el directorio de build; el volumen persistente real se monta en runtime.
 RUN mkdir -p data && NODE_ENV=production npm run build
 
 # ── Runner ────────────────────────────────────────────────────────────────────
@@ -39,9 +35,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# [2026-02-26] Dependencias de sistema para better-sqlite3 en runtime
-# su-exec para ejecutar la app como usuario no-root desde start.sh
-RUN apk add --no-cache libc6-compat su-exec
+# Dependencias de runtime para better-sqlite3 y su-exec para bajar privilegios.
+RUN apk add --no-cache libc6-compat libstdc++ su-exec
 
 # Usuario no-root por seguridad
 RUN addgroup --system --gid 1001 nodejs && \
@@ -52,28 +47,34 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# [2026-02-26] Scripts de inicio, migraciones y seed - copiados desde builder
-COPY --from=builder /app/scripts/migrate.mjs ./scripts/migrate.mjs
-COPY --from=builder /app/scripts/seed.mjs ./scripts/seed.mjs
-COPY --from=builder /app/scripts/start.sh ./scripts/start.sh
+# El standalone contiene el servidor Next; estos archivos quedan fuera del
+# tracing de Next y se copian explícitamente para el bootstrap de producción.
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate.mjs ./scripts/migrate.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/seed.mjs ./scripts/seed.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/start.sh ./scripts/start.sh
 
-# [2026-02-26] Copiar node_modules necesarios para migrate.mjs (drizzle-orm, better-sqlite3)
-# El output standalone de Next.js no los incluye porque solo se usan en el script de migración
-COPY --from=builder /app/node_modules ./node_modules
+# migrate.mjs y seed.mjs necesitan Drizzle, better-sqlite3 y bcryptjs. Se copia
+# el árbol instalado para que el arranque y el servidor compartan las mismas
+# versiones y el addon nativo compilado para Alpine.
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 
-# Migraciones de Drizzle
+# Drizzle busca las migraciones relativas a /app/scripts/migrate.mjs.
 COPY --from=builder --chown=nextjs:nodejs /app/src/lib/db/migrations ./src/lib/db/migrations
 
-# Directorio para SQLite (volumen persistente se monta aquí)
+# Directorio para SQLite (Coolify debe montar el volumen persistente aquí).
 RUN mkdir -p /app/data && chown nextjs:nodejs /app/data
 
 RUN chmod +x ./scripts/start.sh
 
-# [2026-02-26] No se usa USER nextjs aquí - start.sh maneja los permisos del volumen
-# como root y luego ejecuta la app como nextjs via su-exec
+# start.sh comienza como root para preparar un volumen creado por Docker y
+# ejecuta migraciones/servidor como nextjs.
 
 EXPOSE 3000
+ENV DATABASE_URL=/app/data/finanzas.db
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:' + (process.env.PORT || '3000') + '/login').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
 
 CMD ["./scripts/start.sh"]

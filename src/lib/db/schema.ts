@@ -93,12 +93,93 @@ export const desviaciones = sqliteTable('desviaciones', {
   created_at: text('created_at').default(sql`(datetime('now'))`),
 })
 
+// ─── INVERSIONES / POSICIONES ───────────────────────────────────────────────
+// Fuente activa de posiciones y precios de referencia dentro de la app.
+// Los campos de origen solo conservan trazabilidad de la importación inicial.
+export const inversiones_posiciones = sqliteTable(
+  'inversiones_posiciones',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    usuario_id: integer('usuario_id').notNull().references(() => usuarios.id),
+    custodia: text('custodia').notNull(),
+    broker: text('broker'),
+    activo: text('activo').notNull(),
+    tipo: text('tipo').notNull(),
+    ticker: text('ticker').notNull(),
+    price_ticker: text('price_ticker'),
+    crypto_id: text('crypto_id'),
+    cantidad: real('cantidad').notNull(),
+    precio_compra: real('precio_compra'),
+    coste: real('coste'),
+    precio_actual: real('precio_actual'),
+    valor_actual: real('valor_actual'),
+    pnl: real('pnl'),
+    pnl_pct: real('pnl_pct'),
+    peso: real('peso'),
+    fuente: text('fuente'),
+    estado_fuente: text('estado_fuente').notNull().default('SNAPSHOT'),
+    ultimo_valido: real('ultimo_valido'),
+    fallback_map: real('fallback_map'),
+    proveedor: text('proveedor'),
+    fuente_url: text('fuente_url'),
+    nota: text('nota'),
+    snapshot_at: text('snapshot_at'),
+    fecha_apertura: text('fecha_apertura'),
+    hoja_origen: text('hoja_origen').notNull().default('Portfolio Nuevo'),
+    fila_origen: integer('fila_origen'),
+    incluido_resumen: integer('incluido_resumen', { mode: 'boolean' }).notNull().default(true),
+    divisa: text('divisa').notNull().default('EUR'),
+    sector: text('sector'),
+    market_symbol: text('market_symbol'),
+    created_at: text('created_at').default(sql`(datetime('now'))`),
+    updated_at: text('updated_at').default(sql`(datetime('now'))`),
+  },
+  (t) => [uniqueIndex('unique_inversion_usuario_activo_custodia').on(t.usuario_id, t.activo, t.custodia)]
+)
+
+// Archivo histórico de la importación inicial. La aplicación ya no consulta
+// ni actualiza estas filas durante el funcionamiento normal.
+export const inversiones_excel_filas = sqliteTable(
+  'inversiones_excel_filas',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    usuario_id: integer('usuario_id').notNull().references(() => usuarios.id),
+    hoja: text('hoja').notNull(),
+    fila: integer('fila').notNull(),
+    tipo: text('tipo').notNull().default('fila'),
+    datos: text('datos').notNull(),
+    imported_at: text('imported_at').notNull(),
+  },
+  (t) => [uniqueIndex('unique_inversion_excel_usuario_hoja_fila').on(t.usuario_id, t.hoja, t.fila)]
+)
+
+// ─── INVERSIONES / OPERACIONES ──────────────────────────────────────────────
+// Registro de compras, ventas, dividendos, aportaciones y traspasos.
+export const inversiones_operaciones = sqliteTable('inversiones_operaciones', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  usuario_id: integer('usuario_id').notNull().references(() => usuarios.id),
+  fecha: text('fecha').notNull(),
+  tipo: text('tipo').notNull(),
+  activo: text('activo').notNull(),
+  ticker: text('ticker').notNull(),
+  tipo_activo: text('tipo_activo').notNull().default('Otro'),
+  custodia: text('custodia').notNull(),
+  cantidad: real('cantidad').notNull(),
+  precio_unitario: real('precio_unitario').notNull(),
+  importe: real('importe').notNull(),
+  notas: text('notas'),
+  created_at: text('created_at').default(sql`(datetime('now'))`),
+})
+
 // ─── RELACIONES ──────────────────────────────────────────────────────────────
 export const usuariosRelations = relations(usuarios, ({ many }) => ({
   categorias: many(categorias),
   registros_mensuales: many(registros_mensuales),
   huchas: many(huchas),
   desviaciones: many(desviaciones), // Editado: 2026-03-30 — relación con desviaciones
+  inversiones_posiciones: many(inversiones_posiciones),
+  inversiones_operaciones: many(inversiones_operaciones),
+  inversiones_excel_filas: many(inversiones_excel_filas),
 }))
 
 export const categoriasRelations = relations(categorias, ({ one }) => ({
@@ -140,6 +221,27 @@ export const desviacionesRelations = relations(desviaciones, ({ one }) => ({
   }),
 }))
 
+export const inversionesPosicionesRelations = relations(inversiones_posiciones, ({ one }) => ({
+  usuario: one(usuarios, {
+    fields: [inversiones_posiciones.usuario_id],
+    references: [usuarios.id],
+  }),
+}))
+
+export const inversionesOperacionesRelations = relations(inversiones_operaciones, ({ one }) => ({
+  usuario: one(usuarios, {
+    fields: [inversiones_operaciones.usuario_id],
+    references: [usuarios.id],
+  }),
+}))
+
+export const inversionesExcelFilasRelations = relations(inversiones_excel_filas, ({ one }) => ({
+  usuario: one(usuarios, {
+    fields: [inversiones_excel_filas.usuario_id],
+    references: [usuarios.id],
+  }),
+}))
+
 // Tipos inferidos de Drizzle
 export type Usuario = typeof usuarios.$inferSelect
 export type NuevoUsuario = typeof usuarios.$inferInsert
@@ -154,3 +256,9 @@ export type Aportacion = typeof aportaciones.$inferSelect
 export type NuevaAportacion = typeof aportaciones.$inferInsert
 export type Desviacion = typeof desviaciones.$inferSelect        // Editado: 2026-03-30
 export type NuevaDesviacion = typeof desviaciones.$inferInsert   // Editado: 2026-03-30
+export type InversionPosicion = typeof inversiones_posiciones.$inferSelect
+export type NuevaInversionPosicion = typeof inversiones_posiciones.$inferInsert
+export type InversionOperacion = typeof inversiones_operaciones.$inferSelect
+export type NuevaInversionOperacion = typeof inversiones_operaciones.$inferInsert
+export type InversionExcelFila = typeof inversiones_excel_filas.$inferSelect
+export type NuevaInversionExcelFila = typeof inversiones_excel_filas.$inferInsert

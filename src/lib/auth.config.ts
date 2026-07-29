@@ -2,6 +2,9 @@ import type { NextAuthConfig } from 'next-auth'
 
 // Configuración base compatible con Edge Runtime (sin imports de Node.js)
 export const authConfig: NextAuthConfig = {
+  // Coolify termina TLS en su proxy y reenvía el host público a Next.js.
+  // Auth.js debe aceptar ese host para que login y sesión funcionen en VPS.
+  trustHost: true,
   session: {
     strategy: 'jwt',
   },
