@@ -503,7 +503,10 @@ function dataDrivenFallback(
 
   const sourceNote = context.sourcesUsed.length ? ` · fuentes: ${context.sourcesUsed.join(' · ')}` : ''
   const warningNote = context.warnings.length ? ` · avisos: ${context.warnings.slice(0, 4).join(' · ')}` : ''
-  if (!leads.length) return localFallback(input, `${providerNote}${sourceNote}${warningNote}`)
+  const discoveryTrace = !leads.length
+    ? ` · diagnóstico: web=${context.webSources.length}, tablas=${extractWebCandidateRecords(context.webSources).length}, entidades=${extractFirecrawlEntities(context.webSources).length}, snapshots=${context.fundamentals.length}`
+    : ''
+  if (!leads.length) return localFallback(input, `${providerNote}${sourceNote}${warningNote}${discoveryTrace}`)
   return {
     title: `Cribado con datos verificables para ${input.query.trim() || 'empresas cotizadas'}`,
     summary: 'La IA no devolvió una respuesta utilizable, así que se muestran únicamente empresas identificadas y métricas obtenidas de las fuentes configuradas. No se ha rellenado ningún dato ausente.',
