@@ -706,13 +706,28 @@ async function hydrateFirecrawlResults(
     return {
       ...source,
       description: `${source.description} ${markdown.replace(/\s+/g, ' ').slice(0, 900)}`.slice(0, 1600),
-      content: markdown.slice(0, 7000),
+      content: discoveryMarkdownWindow(markdown),
     }
   }
 
   const hydrated = await Promise.all(results.slice(0, 6).map((source) => scrape(source).catch(() => source)))
   const byUrl = new Map(hydrated.map((source) => [source.url, source]))
   return results.map((source) => byUrl.get(source.url) ?? source)
+}
+
+function discoveryMarkdownWindow(markdown: string) {
+  if (markdown.length <= 12_000) return markdown
+  const tableMarkers = [
+    /\|\s*Company\s*\(Ticker\)/i,
+    /\|\s*Date\s*\|\s*(?:Symbol|Ticker)/i,
+    /\|\s*(?:Symbol|Ticker)\s*\|/i,
+  ]
+  const tableStart = tableMarkers
+    .map((marker) => markdown.search(marker))
+    .filter((index) => index >= 0)
+    .sort((left, right) => left - right)[0]
+  if (tableStart === undefined) return markdown.slice(0, 12_000)
+  return `${markdown.slice(0, 5_000)}\n\n${markdown.slice(tableStart, tableStart + 18_000)}`
 }
 
 function discoverySeedSources(mode: ResearchInput['mode']): FirecrawlResult[] {
@@ -1187,7 +1202,7 @@ async function gatherResearchContext(
   }
   const fundamentals = hasUsableFundamentals
     ? finnhubContextSource.fundamentals
-    : await discoverFundamentalsFromWeb(row, webSources, finnhubContextSource.fundamentals)
+    : await discoverFundamentalsFromWeb(row, webSources, finnhubContextSource.fundamentals, openDiscovery)
   const finnhubContext = { ...finnhubContextSource, fundamentals }
   const market = fundamentals.map((snapshot): FinnhubResult => {
     const priceMetric = snapshot.metrics.find((metric) => metric.key === 'price')
@@ -1305,12 +1320,15 @@ async function discoverFundamentalsFromWeb(
   row: typeof configuraciones_fuentes_inversion.$inferSelect | undefined,
   webSources: FirecrawlResult[],
   existing: FundamentalSnapshot[],
+  openDiscovery = false,
 ) {
   const credentials = sourceCredentials(row)
   if (!credentials.finnhubToken || !webSources.length) return existing
   const known = new Set(existing.map((snapshot) => symbolKey(snapshot.symbol)))
   const records = extractWebCandidateRecords(webSources)
-  const fallbackEntities = extractFirecrawlEntities(webSources).map((entity) => ({ entity, record: undefined }))
+  const fallbackEntities = openDiscovery
+    ? []
+    : extractFirecrawlEntities(webSources).map((entity) => ({ entity, record: undefined }))
   const entities = [...records.map((record) => ({ entity: record.entity, record })), ...fallbackEntities]
     .filter(({ entity }, index, all) => !known.has(symbolKey(entity.symbol)) && all.findIndex((item) => symbolKey(item.entity.symbol) === symbolKey(entity.symbol)) === index)
     .slice(0, 3)
@@ -1552,7 +1570,7 @@ export async function POST(request: Request) {
     return NextResponse.json(localFallback(input, 'Tu Firecrawl no devolvió resultados web; no se activó ninguna búsqueda de pago.'))
   }
 
-  const openDiscovery = Boolean(entityQuery) && !researchContext.fundamentals.some((snapshot) => snapshot.identityVerified)
+  const openDiscovery = Boolean(entityQuery) && isOpenDiscoveryQuery(entityQuery, input.mode)
   const activeSystemPrompt = systemPrompt(input.tier, openDiscovery)
   const userPrompt = JSON.stringify({
     pista: input.query || 'Exploración abierta: encuentra candidatos que encajen con este modo.',
@@ -1676,8 +1694,14 @@ export async function POST(request: Request) {
       const successfulProvider = attempt > 0 && fallbackModel !== provider.model
         ? { ...provider, model: fallbackModel }
         : provider
+      const allowedDiscoverySymbols = openDiscovery
+        ? new Set(researchContext.fundamentals.filter((snapshot) => snapshot.identityVerified).map((snapshot) => symbolKey(snapshot.symbol)))
+        : null
+      const candidatesForResult = allowedDiscoverySymbols
+        ? validated.data.candidates.filter((candidate) => allowedDiscoverySymbols.has(symbolKey(normalizeSymbol(candidate.ticker) ?? '')))
+        : validated.data.candidates
       const enrichedFundamentals = await enrichCandidateFundamentals(
-        validated.data.candidates,
+        candidatesForResult,
         sourceSettings,
         researchContext.fundamentals,
       )
@@ -1685,7 +1709,7 @@ export async function POST(request: Request) {
         ...researchContext,
         fundamentals: enrichedFundamentals.snapshots,
       }
-      const result = toResearchResult(validated.data, successfulProvider, enrichedContext, {
+      const result = toResearchResult({ ...validated.data, candidates: candidatesForResult }, successfulProvider, enrichedContext, {
         unresolved: enrichedFundamentals.unresolved,
         companiesFound: enrichedContext.fundamentals.filter((snapshot) => snapshot.identityVerified).length,
       })
