@@ -495,9 +495,9 @@ function dataDrivenFallback(
       } satisfies ResearchLead]
     })
 
-  if (!leads.length) return localFallback(input, providerNote)
   const sourceNote = context.sourcesUsed.length ? ` · fuentes: ${context.sourcesUsed.join(' · ')}` : ''
   const warningNote = context.warnings.length ? ` · avisos: ${context.warnings.slice(0, 4).join(' · ')}` : ''
+  if (!leads.length) return localFallback(input, `${providerNote}${sourceNote}${warningNote}`)
   return {
     title: `Cribado con datos verificables para ${input.query.trim() || 'empresas cotizadas'}`,
     summary: 'La IA no devolvió una respuesta utilizable, así que se muestran únicamente empresas identificadas y métricas obtenidas de las fuentes configuradas. No se ha rellenado ningún dato ausente.',
@@ -1178,7 +1178,13 @@ async function discoverFundamentalsFromWeb(
   const discovered = await Promise.all(entities.map(async (entity) => {
     try {
       const verified = await resolveFinnhubEntity(entity, credentials.finnhubToken as string)
-      return verified ? collectFundamentals(verified, credentials) : null
+      if (verified) return collectFundamentals(verified, credentials)
+      // Finnhub puede tardar en incorporar un ticker recién listado en su
+      // buscador, aunque sus endpoints de cotización/fundamentales ya lo
+      // conozcan. En ese caso exigimos al menos una métrica real antes de
+      // considerar válida la identidad descubierta en la fuente web.
+      const direct = await collectFundamentals(entity, credentials)
+      return direct.metrics.some((metric) => metric.status === 'verified') ? direct : null
     } catch {
       return null
     }
@@ -1227,6 +1233,8 @@ async function enrichCandidateFundamentals(
         }, credentials.finnhubToken as string)
       }
       if (!verifiedEntity) {
+        const direct = await collectFundamentals(entity, credentials)
+        if (direct.metrics.some((metric) => metric.status === 'verified')) return direct
         unresolved.push(candidate.ticker)
         return null
       }
