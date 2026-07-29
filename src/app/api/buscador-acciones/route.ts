@@ -725,6 +725,19 @@ function extractFirecrawlEntities(sources: FirecrawlResult[]): FinnhubMatch[] {
     const tablePattern = /\|\s*[^|]{1,50}\s*\|\s*\[([A-Z][A-Z0-9.-]{1,11})\]\([^)]*\/stocks\/[^)]*\)\s*\|\s*([^|]{2,140})\s*\|/gi
     for (const match of text.matchAll(tablePattern)) add(match[1], match[2])
 
+    // Muchos screener gratuitos (por ejemplo, listados editoriales) enlazan
+    // el ticker con una ruta propia y no con `/stocks/`. Conservamos solo el
+    // nombre de la primera celda y el ticker que aparece junto al enlace.
+    const linkedTickerPattern = /\|\s*([^|]{2,180}?)\s*\[([A-Z][A-Z0-9.-]{1,11})\]\([^)]*\)/gi
+    for (const match of text.matchAll(linkedTickerPattern)) {
+      const company = match[1]
+        .replace(/\([^)]*$/g, '')
+        .replace(/\b(?:quick quote|cotización)\s*$/i, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+      add(match[2], company)
+    }
+
     const exchangePattern = /(?:NASDAQ|NYSE|AMEX|LSE|XETRA|EURONEXT)\s*[:\-]?\s*([A-Z][A-Z0-9.-]{1,11})\b/gi
     for (const match of text.matchAll(exchangePattern)) add(match[1], source.title, 'Firecrawl · mercado')
 
