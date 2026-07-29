@@ -73,6 +73,35 @@ el proveedor, la URL y la fecha del último dato usado.
 La cartera actual alimenta el resumen. Las posiciones históricas se conservan
 fuera del total para evitar duplicar activos.
 
+### Buscador de inversiones con IA
+
+Sin una clave configurada, el buscador utiliza únicamente el marco local y lo
+indica expresamente en la interfaz. No presenta esos resultados como datos
+actuales.
+
+Para activar OpenRouter:
+
+```bash
+BUSCADOR_ACCIONES_PROVIDER=openrouter
+OPENROUTER_API_KEY=tu-clave
+OPENROUTER_MODEL=openrouter/free
+OPENROUTER_SITE_URL=http://localhost:3000
+```
+
+La clave se mantiene siempre en `.env.local` o en las variables secretas de
+Coolify. El modelo gratuito es adecuado para pruebas y uso personal moderado,
+pero mantiene límites de peticiones. La búsqueda web puede consumir créditos
+independientemente del coste del modelo.
+
+Desde Configuración se pueden elegir como máximo dos modelos: uno principal
+para pruebas y tareas gratuitas, y otro avanzado opcional para investigación
+web y análisis de cartera. En OpenRouter, el modelo principal debe ser
+`openrouter/free` o una variante cuyo identificador termine en `:free`.
+
+La búsqueda web ampliada usa la instancia Firecrawl configurada por el usuario
+mediante `POST /v2/search`; la app no activa automáticamente la búsqueda web de
+pago de OpenRouter.
+
 ---
 
 ## Despliegue en Coolify (VPS)
@@ -87,9 +116,14 @@ operando solo con la app.
 |----------|-------|
 | `DATABASE_URL` | `/app/data/finanzas.db` |
 | `NEXTAUTH_SECRET` | Genera con: `openssl rand -base64 32` |
+| `APP_ENCRYPTION_KEY` | Opcional: clave dedicada para cifrar credenciales guardadas |
 | `NEXTAUTH_URL` | `https://tudominio.com` |
 | `PORT` | `3000` |
 | `HOSTNAME` | `0.0.0.0` |
+| `BUSCADOR_ACCIONES_PROVIDER` | `openrouter` |
+| `OPENROUTER_API_KEY` | Clave secreta creada en OpenRouter |
+| `OPENROUTER_MODEL` | `openrouter/free` para pruebas o un modelo fijado |
+| `OPENROUTER_SITE_URL` | URL pública de la aplicación |
 
 ### Volumen persistente
 

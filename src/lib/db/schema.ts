@@ -9,6 +9,50 @@ export const usuarios = sqliteTable('usuarios', {
   created_at: text('created_at').default(sql`(datetime('now'))`),
 })
 
+// ─── CONFIGURACIÓN IA POR USUARIO ───────────────────────────────────────────
+// La clave se cifra antes de persistirse y nunca se devuelve al cliente.
+export const configuraciones_ia = sqliteTable(
+  'configuraciones_ia',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    usuario_id: integer('usuario_id').notNull().references(() => usuarios.id),
+    proveedor: text('proveedor').notNull().default('openrouter'),
+    api_key_cifrada: text('api_key_cifrada').notNull(),
+    modelo: text('modelo').notNull().default('openrouter/free'),
+    modelo_busqueda_gratuita: text('modelo_busqueda_gratuita'),
+    modelo_busqueda_premium: text('modelo_busqueda_premium'),
+    modelo_analisis_cartera: text('modelo_analisis_cartera'),
+    ultimo_test_at: text('ultimo_test_at'),
+    ultimo_test_ok: integer('ultimo_test_ok', { mode: 'boolean' }),
+    created_at: text('created_at').default(sql`(datetime('now'))`),
+    updated_at: text('updated_at').default(sql`(datetime('now'))`),
+  },
+  (t) => [uniqueIndex('unique_configuracion_ia_usuario').on(t.usuario_id)]
+)
+
+// ─── FUENTES DE INVESTIGACIÓN POR USUARIO ──────────────────────────────────
+// Las credenciales son opcionales y se cifran antes de persistirse.
+// El modo premium nunca se activa implícitamente.
+export const configuraciones_fuentes_inversion = sqliteTable(
+  'configuraciones_fuentes_inversion',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    usuario_id: integer('usuario_id').notNull().references(() => usuarios.id),
+    fiscal_api_key_cifrada: text('fiscal_api_key_cifrada'),
+    finnhub_token_cifrado: text('finnhub_token_cifrado'),
+    alpha_vantage_api_key_cifrada: text('alpha_vantage_api_key_cifrada'),
+    sec_contact_email: text('sec_contact_email'),
+    financial_datasets_api_key_cifrada: text('financial_datasets_api_key_cifrada'),
+    newsapi_key_cifrada: text('newsapi_key_cifrada'),
+    firecrawl_base_url: text('firecrawl_base_url'),
+    firecrawl_api_key_cifrada: text('firecrawl_api_key_cifrada'),
+    permitir_busqueda_web_pago: integer('permitir_busqueda_web_pago', { mode: 'boolean' }).notNull().default(false),
+    created_at: text('created_at').default(sql`(datetime('now'))`),
+    updated_at: text('updated_at').default(sql`(datetime('now'))`),
+  },
+  (t) => [uniqueIndex('unique_fuentes_inversion_usuario').on(t.usuario_id)]
+)
+
 // ─── CATEGORIAS ──────────────────────────────────────────────────────────────
 export const categorias = sqliteTable('categorias', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -172,7 +216,7 @@ export const inversiones_operaciones = sqliteTable('inversiones_operaciones', {
 })
 
 // ─── RELACIONES ──────────────────────────────────────────────────────────────
-export const usuariosRelations = relations(usuarios, ({ many }) => ({
+export const usuariosRelations = relations(usuarios, ({ many, one }) => ({
   categorias: many(categorias),
   registros_mensuales: many(registros_mensuales),
   huchas: many(huchas),
@@ -180,10 +224,20 @@ export const usuariosRelations = relations(usuarios, ({ many }) => ({
   inversiones_posiciones: many(inversiones_posiciones),
   inversiones_operaciones: many(inversiones_operaciones),
   inversiones_excel_filas: many(inversiones_excel_filas),
+  configuracion_ia: one(configuraciones_ia),
+  configuracion_fuentes_inversion: one(configuraciones_fuentes_inversion),
 }))
 
 export const categoriasRelations = relations(categorias, ({ one }) => ({
   usuario: one(usuarios, { fields: [categorias.usuario_id], references: [usuarios.id] }),
+}))
+
+export const configuracionesIaRelations = relations(configuraciones_ia, ({ one }) => ({
+  usuario: one(usuarios, { fields: [configuraciones_ia.usuario_id], references: [usuarios.id] }),
+}))
+
+export const configuracionesFuentesInversionRelations = relations(configuraciones_fuentes_inversion, ({ one }) => ({
+  usuario: one(usuarios, { fields: [configuraciones_fuentes_inversion.usuario_id], references: [usuarios.id] }),
 }))
 
 // Editado: 2026-03-30 — añadida relación con desviaciones
@@ -262,3 +316,7 @@ export type InversionOperacion = typeof inversiones_operaciones.$inferSelect
 export type NuevaInversionOperacion = typeof inversiones_operaciones.$inferInsert
 export type InversionExcelFila = typeof inversiones_excel_filas.$inferSelect
 export type NuevaInversionExcelFila = typeof inversiones_excel_filas.$inferInsert
+export type ConfiguracionIa = typeof configuraciones_ia.$inferSelect
+export type NuevaConfiguracionIa = typeof configuraciones_ia.$inferInsert
+export type ConfiguracionFuentesInversion = typeof configuraciones_fuentes_inversion.$inferSelect
+export type NuevaConfiguracionFuentesInversion = typeof configuraciones_fuentes_inversion.$inferInsert

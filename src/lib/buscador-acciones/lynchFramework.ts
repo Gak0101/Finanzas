@@ -31,7 +31,7 @@ export type ResearchSource = {
   url: string
 }
 
-export type ResearchEngine = 'local' | 'openai-web' | 'local-fallback'
+export type ResearchEngine = 'local' | 'openrouter-free' | 'openai-firecrawl' | 'openrouter-firecrawl' | 'local-fallback'
 
 export type ResearchInput = {
   query: string

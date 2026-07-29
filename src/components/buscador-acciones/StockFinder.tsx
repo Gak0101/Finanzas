@@ -1,6 +1,6 @@
 'use client'
 
-import { type FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import {
   ArrowRight,
   BookOpenCheck,
@@ -12,6 +12,7 @@ import {
   ExternalLink,
   FileSearch,
   FlaskConical,
+  Leaf,
   Lightbulb,
   ListChecks,
   Search,
@@ -61,9 +62,15 @@ function formatResearchTimestamp(value: string) {
 }
 
 function engineLabel(engine: ResearchResult['engine']) {
-  if (engine === 'openai-web') return 'IA + búsqueda web'
+  if (engine === 'openrouter-free') return 'IA gratuita · fuentes propias'
+  if (engine === 'openrouter-firecrawl') return 'OpenRouter + tu Firecrawl'
+  if (engine === 'openai-firecrawl') return 'OpenAI + tu Firecrawl'
   if (engine === 'local-fallback') return 'Marco local · proveedor no disponible'
   return 'Marco local · sin datos actuales'
+}
+
+function isLiveEngine(engine: ResearchResult['engine']) {
+  return engine === 'openrouter-firecrawl' || engine === 'openai-firecrawl'
 }
 
 function StepNumber({ children }: { children: number }) {
@@ -78,6 +85,8 @@ type StockFinderProps = {
   embedded?: boolean
 }
 
+type ResearchTier = 'free' | 'premium'
+
 export function StockFinder({ embedded = false }: StockFinderProps = {}) {
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<SearchMode>('boring')
@@ -90,6 +99,21 @@ export function StockFinder({ embedded = false }: StockFinderProps = {}) {
   const [selectedLeadId, setSelectedLeadId] = useState(result.leads[0]?.id ?? '')
   const [lastRunHorizon, setLastRunHorizon] = useState<ResearchInput['horizon']>('5-10')
   const [requestError, setRequestError] = useState<string | null>(null)
+  const [researchTier, setResearchTier] = useState<ResearchTier>('free')
+  const [webSearchReady, setWebSearchReady] = useState(false)
+  const [freeSourcesReady, setFreeSourcesReady] = useState(false)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    fetch('/api/configuracion/fuentes-inversion', { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        setWebSearchReady(payload?.premiumReady === true)
+        setFreeSourcesReady(payload?.freeSourcesReady === true)
+      })
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [])
 
   const selectedMode = SEARCH_MODES.find((item) => item.key === mode) ?? SEARCH_MODES[0]
   const selectedLead = result.leads.find((lead) => lead.id === selectedLeadId) ?? result.leads[0]
@@ -109,11 +133,14 @@ export function StockFinder({ embedded = false }: StockFinderProps = {}) {
       const response = await fetch('/api/buscador-acciones', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, mode, horizon, risk }),
+        body: JSON.stringify({ query, mode, horizon, risk, tier: researchTier }),
       })
       const payload = await response.json().catch(() => null)
       if (!response.ok || !payload || typeof payload !== 'object' || !Array.isArray((payload as { leads?: unknown }).leads)) {
-        throw new Error('La investigación no devolvió una ficha válida')
+        const providerError = payload && typeof payload === 'object' && typeof (payload as { error?: unknown }).error === 'string'
+          ? (payload as { error: string }).error
+          : 'La investigación no devolvió una ficha válida'
+        throw new Error(providerError)
       }
 
       const nextResult = payload as ResearchResult
@@ -124,14 +151,14 @@ export function StockFinder({ embedded = false }: StockFinderProps = {}) {
       window.requestAnimationFrame(() => {
         document.getElementById('resultados-acciones')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       })
-    } catch {
+    } catch (error) {
       const nextResult = generateResearchResult({ query, mode, horizon, risk })
       setResult({
         ...nextResult,
         engine: 'local-fallback',
         providerNote: 'No se pudo consultar el endpoint; se muestra una hipótesis local sin datos actuales.',
       })
-      setRequestError('No se pudo consultar el servicio IA. Se muestra un marco local para que puedas continuar sin inventar datos actuales.')
+      setRequestError(error instanceof Error ? error.message : 'No se pudo consultar el servicio IA. Se muestra un marco local sin datos actuales.')
       setSelectedLeadId(nextResult.leads[0]?.id ?? '')
       setActiveCategory('all')
       setLastRunHorizon(horizon)
@@ -187,8 +214,8 @@ export function StockFinder({ embedded = false }: StockFinderProps = {}) {
                     Escribe una empresa, un ticker o una observación. El asistente la transforma en un universo de búsqueda y una lista de comprobaciones.
                   </p>
                 </div>
-                <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[#e8eee0] px-2.5 py-1 text-[10px] font-semibold text-[#58702d]">
-                  <Sparkles className="h-3.5 w-3.5" /> Motor local · sin datos en vivo
+                <span className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold ${isLiveEngine(result.engine) ? 'bg-[#dfe9ff] text-[#40558a]' : 'bg-[#e8eee0] text-[#58702d]'}`}>
+                  <Sparkles className="h-3.5 w-3.5" /> {engineLabel(result.engine)}
                 </span>
               </div>
 
@@ -274,14 +301,46 @@ export function StockFinder({ embedded = false }: StockFinderProps = {}) {
                 </label>
               </div>
 
-              <div className="mt-6 flex flex-col gap-3 border-t border-[#deddd6] pt-5 sm:flex-row sm:items-center sm:justify-between">
-                <p className="max-w-md text-[10px] leading-4 text-[#89939b]">
-                  La primera pasada ordena el pensamiento. Los datos, las fuentes y la valoración se verifican después.
-                </p>
-                <p className="max-w-md text-[10px] leading-4 text-[#89939b]">La consulta IA solo usa la pista y fuentes públicas; no envía tu cartera ni tus datos bancarios.</p>
-                <Button type="submit" disabled={isRunning} className="h-10 bg-[#16202b] px-5 text-xs font-semibold text-white hover:bg-[#263545]">
-                  {isRunning ? <><Search className="animate-pulse" /> Investigando la pista…</> : <><Sparkles /> Generar hipótesis</>}
-                </Button>
+              <div className="mt-6 border-t border-[#deddd6] pt-5">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <p className="text-[10px] leading-4 text-[#89939b]">La primera pasada ordena el pensamiento. Los datos, las fuentes y la valoración se verifican después.</p>
+                  <p className="text-[10px] leading-4 text-[#89939b]">La consulta solo usa la pista y fuentes públicas; no envía tu cartera ni tus datos bancarios.</p>
+                </div>
+                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <span className="mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.12em] text-[#78828b]">Fuentes de búsqueda</span>
+                    <div role="group" aria-label="Modo de fuentes" className="inline-flex rounded-lg border border-[#d9d8d1] bg-white p-1">
+                      <button
+                        type="button"
+                        onClick={() => setResearchTier('free')}
+                        aria-pressed={researchTier === 'free'}
+                        className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[10px] font-semibold transition ${researchTier === 'free' ? 'bg-[#e8eee0] text-[#40551d]' : 'text-[#78828b] hover:text-[#34421e]'}`}
+                      >
+                        <Leaf className="h-3.5 w-3.5" /> Gratis · fuentes
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => webSearchReady && setResearchTier('premium')}
+                        aria-pressed={researchTier === 'premium'}
+                        aria-disabled={!webSearchReady}
+                        className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-[10px] font-semibold transition ${researchTier === 'premium' ? 'bg-[#16202b] text-[#c8f56a]' : webSearchReady ? 'text-[#78828b] hover:text-[#16202b]' : 'cursor-not-allowed text-[#b2b7b5]'}`}
+                      >
+                        <BrainCircuit className="h-3.5 w-3.5" /> Análisis avanzado
+                      </button>
+                    </div>
+                    <p className="mt-1.5 max-w-sm text-[10px] leading-4 text-[#71815b]">
+                      {researchTier === 'premium'
+                        ? 'Firecrawl propio sigue siendo gratuito; este modo solo cambia al modelo avanzado que hayas configurado.'
+                        : freeSourcesReady
+                          ? 'Usa OpenRouter gratuito y combina Firecrawl propio, Finnhub y NewsAPI sin activar búsquedas de pago.'
+                          : 'Usa OpenRouter gratuito. Añade Firecrawl, Finnhub o NewsAPI en Configuración para ampliar el contexto.'}
+                    </p>
+                    {!webSearchReady && <a href="/configuracion#fuentes-inversion" className="mt-1.5 block text-[10px] font-medium text-[#6b7f42] hover:underline">Configurar Firecrawl propio · gratis</a>}
+                  </div>
+                  <Button type="submit" disabled={isRunning} className="h-10 bg-[#16202b] px-5 text-xs font-semibold text-white hover:bg-[#263545]">
+                    {isRunning ? <><Search className="animate-pulse" /> Investigando la pista…</> : <><Sparkles /> Generar hipótesis</>}
+                  </Button>
+                </div>
               </div>
             </form>
 
@@ -341,7 +400,7 @@ export function StockFinder({ embedded = false }: StockFinderProps = {}) {
                 <div className="mb-2 flex flex-wrap items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#78828b]">
                   <span>03 / Resultado de la primera pasada</span>
                   <span className="rounded-full bg-[#e8eee0] px-2 py-1 text-[#58702d]">{formatHorizon(lastRunHorizon)}</span>
-                  <span className={`rounded-full px-2 py-1 ${result.engine === 'openai-web' ? 'bg-[#dfe9ff] text-[#40558a]' : 'bg-[#f0eee8] text-[#78828b]'}`}>{engineLabel(result.engine)}</span>
+                  <span className={`rounded-full px-2 py-1 ${isLiveEngine(result.engine) ? 'bg-[#dfe9ff] text-[#40558a]' : 'bg-[#f0eee8] text-[#78828b]'}`}>{engineLabel(result.engine)}</span>
                 </div>
                 <h2 className="max-w-3xl text-2xl font-semibold tracking-[-0.05em]">{result.title}</h2>
                 <p className="mt-2 max-w-3xl text-sm leading-6 text-[#75808d]">{result.summary}</p>
