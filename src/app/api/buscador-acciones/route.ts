@@ -1438,10 +1438,13 @@ function toResearchResult(
 
   const sourceNote = context.sourcesUsed.length ? ` · fuentes: ${context.sourcesUsed.join(' · ')}` : ''
   const warningNote = context.warnings.length ? ` · avisos: ${context.warnings.slice(0, 4).join(' · ')}` : ''
+  const methodNote = leads.length
+    ? `La app ha validado la identidad de los tickers mostrados y conserva únicamente métricas con una fuente trazable. La cobertura indica cuánto falta por completar; las proyecciones editoriales y los datos web no sustituyen los estados financieros oficiales. ${raw.methodNote}`
+    : raw.methodNote
   return {
     title: raw.title,
     summary: raw.summary,
-    methodNote: raw.methodNote,
+    methodNote,
     questions: raw.questions,
     nextStep: raw.nextStep,
     leads,
