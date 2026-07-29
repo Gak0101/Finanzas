@@ -732,6 +732,24 @@ function discoverySeedSources(mode: ResearchInput['mode']): FirecrawlResult[] {
   }))
 }
 
+function isOpenDiscoveryQuery(query: string, mode: ResearchInput['mode']) {
+  if (mode === 'ipo') return true
+  const normalized = query.trim()
+  const tokenCount = normalized ? normalized.split(/\s+/).length : 0
+  return tokenCount >= 3 || /\b(nuev|nadie|pinta|oportun|empresa|cotiz|small|growth|stock|acción|acciones|sector|producto|aburr|servicio|distribu|recién)\b/i.test(normalized)
+}
+
+async function discoverWebSources(
+  row: typeof configuraciones_fuentes_inversion.$inferSelect,
+  query: string,
+  mode: ResearchInput['mode'],
+) {
+  const seededSources = await hydrateFirecrawlResults(row, discoverySeedSources(mode))
+  const hasSeedEvidence = extractWebCandidateRecords(seededSources).length > 0 || extractFirecrawlEntities(seededSources).length > 0
+  if (hasSeedEvidence) return seededSources
+  return searchWithFirecrawl(row, query)
+}
+
 function extractFirecrawlEntities(sources: FirecrawlResult[]): FinnhubMatch[] {
   const entities: FinnhubMatch[] = []
   const seen = new Set<string>()
@@ -1140,9 +1158,12 @@ async function gatherResearchContext(
 ): Promise<ResearchContext> {
   if (!row) return { webSources: [], news: [], market: [], fundamentals: [], sourcesUsed: [], warnings: [] }
 
+  const openDiscovery = isOpenDiscoveryQuery(entityQuery, mode)
   const tasks = [
     row.firecrawl_base_url
-      ? searchWithFirecrawl(row, webQuery)
+      ? openDiscovery
+        ? discoverWebSources(row, webQuery, mode)
+        : searchWithFirecrawl(row, webQuery)
       : Promise.resolve([] as FirecrawlResult[]),
     row.finnhub_token_cifrado && (entityQuery.trim() || mode === 'ipo')
       ? searchWithFinnhub(row, entityQuery, mode)
@@ -1159,7 +1180,7 @@ async function gatherResearchContext(
     ? marketResult.value
     : { market: [], news: [], fundamentals: [], warnings: [] }
   const hasUsableFundamentals = finnhubContextSource.fundamentals.some((snapshot) => snapshot.identityVerified && snapshot.metrics.some((metric) => metric.status === 'verified'))
-  if (row.firecrawl_base_url && !hasUsableFundamentals) {
+  if (row.firecrawl_base_url && openDiscovery && !hasUsableFundamentals && !webSources.some((source) => (source.content ?? '').trim())) {
     const knownUrls = new Set(webSources.map((source) => source.url))
     const seededSources = await hydrateFirecrawlResults(row, discoverySeedSources(mode).filter((source) => !knownUrls.has(source.url)))
     webSources = [...webSources, ...seededSources]
