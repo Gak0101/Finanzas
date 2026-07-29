@@ -146,6 +146,11 @@ export function StockFinder({ embedded = false }: StockFinderProps = {}) {
   const selectedScorecard = selectedLead?.scorecard
   const availableMetrics = selectedScorecard?.metrics.filter((metric) => metric.status !== 'missing') ?? []
   const visibleMetrics = showAllMetrics ? availableMetrics : availableMetrics.slice(0, 8)
+  const noLeadsCopy = result.screening?.companiesFound
+    ? 'Hay empresas identificadas, pero ninguna ha reunido todavía suficientes métricas y fuentes para entrar en el informe. Revisa los descartes y prueba una empresa concreta si quieres profundizar.'
+    : query.trim()
+      ? 'La pista no ha producido una empresa cotizada verificable en esta pasada. Prueba con un ticker, una empresa o un sector más concreto; la app no rellenará el resultado con nombres inventados.'
+      : 'Escribe una empresa, un ticker o una pista temática para iniciar el cribado.'
 
   const visibleLeads = useMemo(() => {
     if (activeCategory === 'all') return result.leads
@@ -495,7 +500,7 @@ export function StockFinder({ embedded = false }: StockFinderProps = {}) {
                   <div className="md:col-span-2 rounded-lg border border-dashed border-[#c9c9c1] bg-white p-6 text-center">
                     <Database className="mx-auto h-6 w-6 text-[#879b5a]" />
                     <h3 className="mt-3 text-base font-semibold text-[#16202b]">Ninguna empresa ha pasado el filtro</h3>
-                    <p className="mx-auto mt-2 max-w-lg text-xs leading-5 text-[#78828b]">La aplicación ha preferido no mostrar una idea sin ticker validado, métricas suficientes o fuentes trazables. Prueba con un ticker concreto o completa Finnhub/SEC en Configuración.</p>
+                    <p className="mx-auto mt-2 max-w-lg text-xs leading-5 text-[#78828b]">{noLeadsCopy}</p>
                   </div>
                 )}
                 {visibleLeads.map((lead) => {

@@ -495,15 +495,15 @@ export function generateResearchResult(input: ResearchInput): ResearchResult {
     : ' a partir de una observación cotidiana'
 
   const title = query
-    ? `Sin datos verificables para ${query}`
+    ? `Sin candidatos verificables para ${query}`
     : 'Aún no hay informe'
 
   const summary = query
-    ? `No se han podido verificar suficientes datos actuales para ${query}. La aplicación no convierte el fallo del proveedor en una oportunidad ni rellena los huecos con una hipótesis.`
+    ? `La búsqueda se ha ejecutado, pero todavía no ha convertido ${query} en una empresa cotizada con identidad, métricas y fuentes suficientes. La aplicación no rellena los huecos con una hipótesis.`
     : 'Escribe una consulta para iniciar un cribado con datos de mercado, estados financieros y fuentes trazables.'
 
   const methodNote = query
-    ? 'No se han verificado datos financieros actuales; se muestra un estado de no disponibilidad, no una ficha bursátil.'
+    ? 'No hay una ficha bursátil verificable que mostrar en esta pasada. Prueba una pista más concreta o revisa las fuentes que han respondido antes de sacar conclusiones.'
     : 'Todavía no se ha ejecutado ninguna consulta.'
 
   const questions = [
@@ -513,7 +513,9 @@ export function generateResearchResult(input: ResearchInput): ResearchResult {
     `¿La valoración deja margen para un horizonte de ${input.horizon.replace('-', '–')} años?`,
   ]
 
-  const nextStep = 'Configura o revisa Finnhub, SEC/EDGAR y Firecrawl en Configuración antes de volver a buscar.'
+  const nextStep = query
+    ? 'Prueba con un ticker, una empresa o un sector más concreto; si buscas descubrimiento abierto, amplía la pista y vuelve a verificar las fuentes.'
+    : 'Escribe una empresa, un ticker o una pista temática para iniciar el cribado.'
 
   return {
     title,
@@ -528,7 +530,9 @@ export function generateResearchResult(input: ResearchInput): ResearchResult {
       companiesFound: 0,
       candidatesReturned: 0,
       candidatesDiscarded: 0,
-      note: 'No se ha generado ningún candidato porque faltan datos verificables.',
+      note: query
+        ? 'La consulta terminó sin candidatos que superaran el filtro de identidad, métricas y fuentes.'
+        : 'El informe aparecerá después de una búsqueda real.',
     },
   }
 }

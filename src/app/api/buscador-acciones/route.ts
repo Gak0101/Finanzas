@@ -547,6 +547,13 @@ type FinnhubResult = {
   sourceUrl: string
 }
 
+type FinnhubMatch = {
+  symbol: string
+  company: string
+  exchange: string
+  type: string
+}
+
 type FinnhubContext = {
   market: FinnhubResult[]
   news: NewsApiResult[]
@@ -806,7 +813,8 @@ async function searchWithNewsApi(
 
 async function searchWithFinnhub(
   row: typeof configuraciones_fuentes_inversion.$inferSelect,
-  query: string
+  query: string,
+  mode: ResearchInput['mode'],
 ): Promise<FinnhubContext> {
   if (!row.finnhub_token_cifrado || !query.trim()) return { market: [], news: [], fundamentals: [], warnings: [] }
 
@@ -822,7 +830,7 @@ async function searchWithFinnhub(
 
   const searchPayload = await searchResponse.json().catch(() => null) as { result?: unknown } | null
   const rawMatches = Array.isArray(searchPayload?.result) ? searchPayload.result : []
-  const matches = rawMatches.flatMap((item) => {
+  let matches: FinnhubMatch[] = rawMatches.flatMap((item) => {
     if (!item || typeof item !== 'object') return []
     const match = item as { symbol?: unknown; description?: unknown; displaySymbol?: unknown; type?: unknown; exchange?: unknown }
     if (typeof match.symbol !== 'string' || typeof match.description !== 'string') return []
@@ -835,6 +843,43 @@ async function searchWithFinnhub(
       type,
     }]
   }).slice(0, 3)
+
+  const discoveryWarnings: string[] = []
+  if (!matches.length && mode === 'ipo') {
+    try {
+      const from = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
+      const to = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000)
+      const ipoUrl = new URL('https://finnhub.io/api/v1/calendar/ipo')
+      ipoUrl.searchParams.set('from', from.toISOString().slice(0, 10))
+      ipoUrl.searchParams.set('to', to.toISOString().slice(0, 10))
+      ipoUrl.searchParams.set('token', apiKey)
+      const ipoResponse = await fetch(ipoUrl, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(12_000),
+      })
+      if (!ipoResponse.ok) throw new Error(`Finnhub respondió HTTP ${ipoResponse.status}`)
+      const ipoPayload = await ipoResponse.json().catch(() => null) as { ipoCalendar?: unknown } | null
+      const ipoRows = Array.isArray(ipoPayload?.ipoCalendar) ? ipoPayload.ipoCalendar : []
+      matches = ipoRows.flatMap((item) => {
+        if (!item || typeof item !== 'object') return []
+        const rowData = item as { symbol?: unknown; name?: unknown; exchange?: unknown; date?: unknown }
+        if (typeof rowData.symbol !== 'string' || typeof rowData.name !== 'string') return []
+        return [{
+          symbol: rowData.symbol.trim(),
+          company: rowData.name.trim(),
+          exchange: typeof rowData.exchange === 'string' && rowData.exchange.trim() ? rowData.exchange.trim() : 'Finnhub IPO calendar',
+          type: 'Common Stock',
+          date: typeof rowData.date === 'string' ? rowData.date : '',
+        }]
+      })
+        .filter((match) => match.symbol && match.company)
+        .sort((left, right) => right.date.localeCompare(left.date))
+        .slice(0, 5)
+        .map(({ date: _date, ...match }) => match)
+    } catch {
+      discoveryWarnings.push('Finnhub no devolvió el calendario de nuevas cotizadas')
+    }
+  }
 
   let fiscalApiKey: string | undefined
   try {
@@ -901,14 +946,15 @@ async function searchWithFinnhub(
     market,
     news,
     fundamentals,
-    warnings: fundamentals.flatMap((snapshot) => snapshot.warnings),
+    warnings: [...discoveryWarnings, ...fundamentals.flatMap((snapshot) => snapshot.warnings)],
   }
 }
 
 async function gatherResearchContext(
   row: typeof configuraciones_fuentes_inversion.$inferSelect | undefined,
   webQuery: string,
-  entityQuery: string
+  entityQuery: string,
+  mode: ResearchInput['mode'],
 ): Promise<ResearchContext> {
   if (!row) return { webSources: [], news: [], market: [], fundamentals: [], sourcesUsed: [], warnings: [] }
 
@@ -916,8 +962,8 @@ async function gatherResearchContext(
     row.firecrawl_base_url
       ? searchWithFirecrawl(row, webQuery)
       : Promise.resolve([] as FirecrawlResult[]),
-    row.finnhub_token_cifrado && entityQuery.trim()
-      ? searchWithFinnhub(row, entityQuery)
+    row.finnhub_token_cifrado && (entityQuery.trim() || mode === 'ipo')
+      ? searchWithFinnhub(row, entityQuery, mode)
       : Promise.resolve({ market: [], news: [], fundamentals: [], warnings: [] } as FinnhubContext),
     row.newsapi_key_cifrada && entityQuery.trim()
       ? searchWithNewsApi(row, entityQuery)
@@ -1055,7 +1101,18 @@ async function enrichCandidateFundamentals(
 
   const resolved = await Promise.all(entities.map(async ({ candidate, entity }) => {
     try {
-      const verifiedEntity = await resolveFinnhubEntity(entity, credentials.finnhubToken as string)
+      let verifiedEntity = await resolveFinnhubEntity(entity, credentials.finnhubToken as string)
+      // Los modelos pueden devolver el ticker de otra plaza o una variante de
+      // formato. Si el nombre de la empresa sí está claro, dejamos que Finnhub
+      // lo resuelva por nombre antes de descartar el candidato.
+      if (!verifiedEntity && candidate.company.trim()) {
+        verifiedEntity = await resolveFinnhubEntity({
+          symbol: '',
+          company: candidate.company,
+          exchange: candidate.exchange,
+          type: 'Common Stock',
+        }, credentials.finnhubToken as string)
+      }
       if (!verifiedEntity) {
         unresolved.push(candidate.ticker)
         return null
@@ -1202,7 +1259,7 @@ export async function POST(request: Request) {
     growth: 'small cap listed companies with verifiable revenue and earnings growth',
   }[input.mode]
   const researchQuery = `${entityQuery || 'empresas cotizadas para investigar'} ${modeHint} investment stocks ticker annual report recent results`
-  const researchContext = await gatherResearchContext(sourceSettings, researchQuery, entityQuery)
+  const researchContext = await gatherResearchContext(sourceSettings, researchQuery, entityQuery, input.mode)
   if (input.tier === 'premium' && !researchContext.webSources.length) {
     return NextResponse.json(localFallback(input, 'Tu Firecrawl no devolvió resultados web; no se activó ninguna búsqueda de pago.'))
   }
