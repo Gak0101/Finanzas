@@ -1155,7 +1155,7 @@ async function gatherResearchContext(
   const finnhubContextSource = marketResult.status === 'fulfilled'
     ? marketResult.value
     : { market: [], news: [], fundamentals: [], warnings: [] }
-  if (row.firecrawl_base_url && !finnhubContextSource.fundamentals.length && !extractWebCandidateRecords(webSources).length) {
+  if (row.firecrawl_base_url && !finnhubContextSource.fundamentals.length) {
     const knownUrls = new Set(webSources.map((source) => source.url))
     const seededSources = await hydrateFirecrawlResults(row, discoverySeedSources(mode).filter((source) => !knownUrls.has(source.url)))
     webSources = [...webSources, ...seededSources]
