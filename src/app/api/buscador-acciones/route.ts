@@ -421,6 +421,18 @@ type ResearchContext = {
   warnings: string[]
 }
 
+function firecrawlBasePath(url: URL) {
+  const path = url.pathname.replace(/\/+$/, '')
+  // La configuración histórica de la instancia se guardó con `/v0`, pero
+  // el proxy público expone actualmente las rutas versionadas desde la raíz.
+  return path.replace(/\/v[012]$/, '')
+}
+
+function appendUrlPath(root: string, suffix: string) {
+  const cleanRoot = root.replace(/\/+$/, '')
+  return `${cleanRoot}/${suffix.replace(/^\/+/, '')}` || `/${suffix.replace(/^\/+/, '')}`
+}
+
 function firecrawlSearchUrl(baseUrl: string) {
   const url = new URL(baseUrl)
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('Protocolo Firecrawl no válido')
@@ -428,9 +440,7 @@ function firecrawlSearchUrl(baseUrl: string) {
   const path = url.pathname.replace(/\/+$/, '')
   url.pathname = path.endsWith('/v2/search')
     ? path
-    : path.endsWith('/v2')
-      ? `${path}/search`
-      : `${path}/v2/search`
+    : appendUrlPath(firecrawlBasePath(url), 'v2/search')
   return url.toString()
 }
 
@@ -439,7 +449,7 @@ function firecrawlScrapeUrl(baseUrl: string) {
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('Protocolo Firecrawl no válido')
   if (url.username || url.password) throw new Error('La URL de Firecrawl no debe incluir credenciales')
   const path = url.pathname.replace(/\/+$/, '')
-  url.pathname = path.endsWith('/v1') ? `${path}/scrape` : `${path}/v1/scrape`
+  url.pathname = path.endsWith('/scrape') ? path : appendUrlPath(firecrawlBasePath(url), 'v1/scrape')
   return url.toString()
 }
 
