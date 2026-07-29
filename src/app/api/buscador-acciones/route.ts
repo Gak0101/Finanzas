@@ -1158,12 +1158,13 @@ async function gatherResearchContext(
   const finnhubContextSource = marketResult.status === 'fulfilled'
     ? marketResult.value
     : { market: [], news: [], fundamentals: [], warnings: [] }
-  if (row.firecrawl_base_url && !finnhubContextSource.fundamentals.length) {
+  const hasUsableFundamentals = finnhubContextSource.fundamentals.some((snapshot) => snapshot.identityVerified && snapshot.metrics.some((metric) => metric.status === 'verified'))
+  if (row.firecrawl_base_url && !hasUsableFundamentals) {
     const knownUrls = new Set(webSources.map((source) => source.url))
     const seededSources = await hydrateFirecrawlResults(row, discoverySeedSources(mode).filter((source) => !knownUrls.has(source.url)))
     webSources = [...webSources, ...seededSources]
   }
-  const fundamentals = finnhubContextSource.fundamentals.length
+  const fundamentals = hasUsableFundamentals
     ? finnhubContextSource.fundamentals
     : await discoverFundamentalsFromWeb(row, webSources, finnhubContextSource.fundamentals)
   const finnhubContext = { ...finnhubContextSource, fundamentals }
