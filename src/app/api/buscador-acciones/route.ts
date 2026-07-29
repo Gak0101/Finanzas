@@ -11,9 +11,18 @@ import {
   generateResearchResult,
   type ResearchEngine,
   type ResearchInput,
+  type ResearchLead,
   type ResearchResult,
   type ResearchSource,
 } from '@/lib/buscador-acciones/lynchFramework'
+import {
+  buildResearchScorecard,
+  collectFundamentals,
+  mergeFundamentalSnapshots,
+  resolveFinnhubEntity,
+  type FundamentalSnapshot,
+  type ResearchEntity,
+} from '@/lib/buscador-acciones/researchData'
 
 export const runtime = 'nodejs'
 
@@ -34,10 +43,11 @@ const candidateSchema = z.object({
   category: z.enum(['slow-grower', 'stalwart', 'fast-grower', 'cyclical', 'turnaround', 'asset-play']),
   fit: z.number().int().min(0).max(100),
   thesis: z.string().min(1).max(2000),
-  evidence: z.array(z.string().min(1).max(600)).min(2).max(4),
-  risks: z.array(z.string().min(1).max(600)).min(2).max(4),
+  evidence: z.array(z.string().min(1).max(600)).min(1).max(4),
+  risks: z.array(z.string().min(1).max(600)).min(1).max(4),
   firstSource: z.string().min(1).max(400),
   stage: z.enum(['Universo', 'Preselección', 'Revisión']),
+  categoryReason: z.string().max(800).optional().default(''),
   sourceUrls: z.array(z.object({
     label: z.string().min(1).max(240),
     url: z.string().url(),
@@ -49,9 +59,9 @@ const aiResultSchema = z.object({
   title: z.string().min(1).max(500),
   summary: z.string().min(1).max(2000),
   methodNote: z.string().min(1).max(1500),
-  questions: z.array(z.string().min(1).max(600)).min(3).max(5),
+  questions: z.array(z.string().min(1).max(600)).min(1).max(5),
   nextStep: z.string().min(1).max(1000),
-  candidates: z.array(candidateSchema).min(1).max(5),
+  candidates: z.array(candidateSchema).max(5),
 })
 
 const RESPONSE_SCHEMA = {
@@ -81,6 +91,7 @@ const RESPONSE_SCHEMA = {
           risks: { type: 'array', items: { type: 'string' } },
           firstSource: { type: 'string' },
           stage: { type: 'string', enum: ['Universo', 'Preselección', 'Revisión'] },
+          categoryReason: { type: 'string' },
           sourceUrls: {
             type: 'array',
             items: {
@@ -102,15 +113,20 @@ const RESPONSE_SCHEMA = {
   required: ['title', 'summary', 'methodNote', 'questions', 'nextStep', 'candidates'],
 } as const
 
-const BASE_SYSTEM_PROMPT = `Eres un asistente de investigación bursátil para una aplicación educativa en español.
+const BASE_SYSTEM_PROMPT = `Eres un analista de investigación bursátil para una aplicación educativa en español.
 
-Tu marco pedagógico está inspirado en las ideas generales de "Un paso por delante de Wall Street" de Peter Lynch: observar negocios entendibles, clasificar la empresa en una de seis categorías (slow grower, stalwart, fast grower, cyclical, turnaround o asset play), comprobar la historia con los números, pagar una valoración razonable y definir qué invalidaría la tesis.
+El marco está inspirado en ideas generales de "Un paso por delante de Wall Street" de Peter Lynch: entender la historia del negocio, clasificarlo en una de seis categorías (slow grower, stalwart, fast grower, cyclical, turnaround o asset play), comprobar ventas/beneficio/caja/deuda/acciones, revisar la valoración y escribir qué invalidaría la tesis.
 
 Reglas obligatorias:
 - No eres asesor financiero. Nunca digas comprar, vender, mantener, entrada, precio objetivo ni asignes una probabilidad de conseguir 10x.
-- Devuelve candidatos para investigar, no recomendaciones. El campo fit es solo encaje con el marco de lectura, no probabilidad ni puntuación de rentabilidad.
-- Señala la fecha de los datos como texto y recuerda que la cotización y la tesis pueden cambiar.
-- No copies texto del libro. Aplícalo como checklist de razonamiento propio.
+- Devuelve empresas para investigar, no recomendaciones. El campo fit es solo encaje cualitativo con el marco, no rentabilidad esperada.
+- Los DATOS FINANCIEROS VERIFICADOS son los que aparecen en FUENTES Y MÉTRICAS. No inventes cifras, fechas, múltiplos, crecimiento, ticker ni URLs.
+- Si falta una métrica, dilo explícitamente en evidence o risks; no la rellenes con una estimación mental.
+- Diferencia siempre hechos (con fuente y periodo) de interpretación (tesis, categoría y riesgos).
+- El ticker, empresa y mercado deben salir de EMPRESAS VERIFICADAS o de una fuente web del contexto; si no puedes verificar la identidad, no devuelvas ese candidato.
+- El campo fit no es una puntuación de calidad: la aplicación lo sustituirá por su propio scorecard determinista. No lo uses para sugerir rentabilidad.
+- Señala la fecha de los datos y recuerda que la cotización y la tesis pueden cambiar.
+- No copies texto del libro. Aplícalo como protocolo de razonamiento propio.
 - Responde exclusivamente con el JSON solicitado, sin markdown.`
 
 const JSON_OUTPUT_CONTRACT = `La respuesta debe ser exclusivamente un objeto JSON válido con esta estructura exacta:
@@ -127,6 +143,7 @@ const JSON_OUTPUT_CONTRACT = `La respuesta debe ser exclusivamente un objeto JSO
     "title": "título breve",
     "subtitle": "subtítulo breve",
     "category": "slow-grower | stalwart | fast-grower | cyclical | turnaround | asset-play",
+    "categoryReason": "por qué la categoría encaja, separando interpretación de hechos",
     "fit": 0,
     "thesis": "tesis",
     "evidence": ["comprobación 1", "comprobación 2"],
@@ -147,6 +164,8 @@ function systemPrompt(tier: 'free' | 'premium') {
 - Firecrawl es una instancia propia de la app y no implica una búsqueda web de pago. El posible coste depende únicamente del modelo avanzado configurado.
 - Busca empresas cotizadas reales y actuales. Para IPO usa únicamente ofertas o empresas con información pública verificable; no presentes oportunidades pre-IPO privadas.
 - Usa exclusivamente los resultados web proporcionados por la instancia Firecrawl de la app. Prioriza SEC/EDGAR, reguladores, informes anuales, resultados y relaciones con inversores. Usa prensa financiera solo para contexto.
+- Usa la tabla de métricas que acompaña a la consulta para separar datos comprobados de preguntas pendientes. Si una empresa no tiene métricas suficientes, devuélvela como Revisión o no la incluyas.
+- Devuelve como máximo cinco empresas verificables y prioriza las que tengan ventas/BPA comparables, caja/deuda, acciones y al menos un múltiplo. Si no hay empresas verificables, devuelve una lista vacía antes que inventar una.
 - Cada candidato debe tener al menos una URL pública y concreta que permita verificar la afirmación. Si no puedes verificar el ticker o la fuente, no lo incluyas.`
   }
 
@@ -155,9 +174,10 @@ function systemPrompt(tier: 'free' | 'premium') {
 MODO GRATUITO:
 - No tienes búsqueda web de pago. Puedes usar únicamente el CONTEXTO DE FUENTES GRATUITAS que acompaña a la consulta: Firecrawl propio, Finnhub, NewsAPI y enlaces públicos.
 - Los precios, noticias y resultados de las APIs pueden estar limitados o retrasados. Cita la fecha del contexto y no presentes un dato ausente como comprobado.
-- Puedes proponer empresas cotizadas conocidas como hipótesis educativas, pero marca dataAsOf como "No verificado en tiempo real".
+- Puedes proponer empresas cotizadas conocidas para ampliar el universo, pero marca dataAsOf como "No verificado en tiempo real" si no hay métricas de una fuente.
+- Para una respuesta útil, selecciona primero empresas que aparezcan en EMPRESAS VERIFICADAS; una empresa conocida fuera de esa lista no es un resultado válido.
 - Incluye enlaces oficiales generales para que el usuario pueda iniciar la comprobación manual. No inventes URLs, cifras, noticias ni fechas.
-- Explica en methodNote que la propuesta usa IA gratuita, fuentes gratuitas y necesita verificación posterior.
+- Explica en methodNote que la salida es un informe de cribado, qué métricas están verificadas y qué debe confirmarse después.
 - Devuelve exactamente este contrato JSON, sin añadir ni omitir campos:
 {
   "title": "texto",
@@ -182,7 +202,7 @@ MODO GRATUITO:
     "dataAsOf": "No verificado en tiempo real"
   }]
 }
-fit debe ser un entero entre 0 y 100; stage solo puede ser Universo, Preselección o Revisión; devuelve entre 1 y 5 candidatos.`
+fit debe ser un entero entre 0 y 100; stage solo puede ser Universo, Preselección o Revisión; devuelve entre 0 y 5 candidatos. Si no hay una empresa verificable, devuelve candidates vacío.`
 }
 
 type AiProviderConfig = {
@@ -324,8 +344,10 @@ function repairSourceUrls(payload: unknown, context: ResearchContext) {
     ...context.webSources.map((source) => ({ label: source.title, url: source.url })),
     ...context.news.map((source) => ({ label: source.title, url: source.url })),
     ...context.market.map((source) => ({ label: `Finnhub · ${source.symbol}`, url: source.sourceUrl })),
+    ...context.fundamentals.flatMap((snapshot) => snapshot.sources),
     { label: 'Buscar documentos SEC EDGAR', url: 'https://www.sec.gov/search-filings' },
   ].map(safeSource).filter((source): source is ResearchSource => source !== null)
+  const allowedUrls = new Set(fallbackSources.map((source) => source.url))
 
   return {
     ...record,
@@ -337,7 +359,8 @@ function repairSourceUrls(payload: unknown, context: ResearchContext) {
           if (!source || typeof source !== 'object') return null
           const value = source as { label?: unknown; url?: unknown }
           if (typeof value.label !== 'string' || typeof value.url !== 'string') return null
-          return safeSource({ label: value.label, url: value.url })
+          const safe = safeSource({ label: value.label, url: value.url })
+          return safe && allowedUrls.has(safe.url) ? safe : null
         }).filter((source): source is ResearchSource => source !== null)
         : []
       return {
@@ -360,6 +383,7 @@ type FirecrawlResult = {
   title: string
   description: string
   url: string
+  content?: string
 }
 
 type NewsApiResult = {
@@ -384,12 +408,15 @@ type FinnhubResult = {
 type FinnhubContext = {
   market: FinnhubResult[]
   news: NewsApiResult[]
+  fundamentals: FundamentalSnapshot[]
+  warnings: string[]
 }
 
 type ResearchContext = {
   webSources: FirecrawlResult[]
   news: NewsApiResult[]
   market: FinnhubResult[]
+  fundamentals: FundamentalSnapshot[]
   sourcesUsed: string[]
   warnings: string[]
 }
@@ -470,8 +497,9 @@ function scrapeSearchResults(payload: unknown): FirecrawlResult[] {
     if (!source) continue
     results.push({
       title: source.label,
-      description: '',
+      description: markdown.replace(/\s+/g, ' ').slice(0, 500),
       url: source.url,
+      content: markdown.slice(0, 1400),
     })
     if (results.length >= 6) break
   }
@@ -490,21 +518,33 @@ async function searchWithFirecrawl(
 
   const headers = {
     'Content-Type': 'application/json',
+    Accept: 'application/json',
     ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
   }
-  const response = await fetch(firecrawlSearchUrl(row.firecrawl_base_url), {
+  const request = async (url: string, body: unknown, timeout: number, requestHeaders = headers) => fetch(url, {
     method: 'POST',
-    headers,
-    body: JSON.stringify({
-      query,
-      limit: 6,
-      sources: ['web'],
-      country: 'ES',
-      timeout: 25_000,
-    }),
+    headers: requestHeaders,
+    body: JSON.stringify(body),
     cache: 'no-store',
-    signal: AbortSignal.timeout(30_000),
+    signal: AbortSignal.timeout(timeout),
   })
+  const searchBody = {
+    query,
+    limit: 6,
+    sources: ['web'],
+    country: 'ES',
+    timeout: 25_000,
+    scrapeOptions: { formats: [{ type: 'markdown' }] },
+  }
+  let response = await request(firecrawlSearchUrl(row.firecrawl_base_url), searchBody, 30_000)
+  if ((response.status === 401 || response.status === 403) && apiKey) {
+    // La instancia propia puede estar configurada sin autenticación. La clave
+    // guardada no debe impedir que el conector gratuito pruebe el endpoint.
+    response = await request(firecrawlSearchUrl(row.firecrawl_base_url), searchBody, 30_000, {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    })
+  }
   if (response.ok) {
     const payload = await response.json().catch(() => null) as {
       data?: { web?: unknown[] } | unknown[]
@@ -533,6 +573,7 @@ async function searchWithFirecrawl(
         title: safe.label,
         description: description.slice(0, 1600),
         url: safe.url,
+        content: typeof result.markdown === 'string' ? result.markdown.slice(0, 7000) : undefined,
       }]
     }).slice(0, 6)
   }
@@ -542,13 +583,13 @@ async function searchWithFirecrawl(
   }
 
   const searchPage = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`
-  const scrapeResponse = await fetch(firecrawlScrapeUrl(row.firecrawl_base_url), {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ url: searchPage, formats: ['markdown'] }),
-    cache: 'no-store',
-    signal: AbortSignal.timeout(30_000),
-  })
+  let scrapeResponse = await request(firecrawlScrapeUrl(row.firecrawl_base_url), { url: searchPage, formats: ['markdown'] }, 30_000)
+  if ((scrapeResponse.status === 401 || scrapeResponse.status === 403) && apiKey) {
+    scrapeResponse = await request(firecrawlScrapeUrl(row.firecrawl_base_url), { url: searchPage, formats: ['markdown'] }, 30_000, {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    })
+  }
   if (!scrapeResponse.ok) throw new Error(`Firecrawl respondió HTTP ${scrapeResponse.status}`)
 
   return scrapeSearchResults(await scrapeResponse.json().catch(() => null))
@@ -579,6 +620,12 @@ async function searchWithNewsApi(
     articles?: unknown
   } | null
   if (!response.ok || payload?.status === 'error') {
+    if (response.status === 429 || /too many|limit|quota/i.test(typeof payload?.message === 'string' ? payload.message : '')) {
+      throw new Error('NewsAPI ha alcanzado el límite gratuito')
+    }
+    if (response.status === 426) {
+      throw new Error('NewsAPI requiere un plan compatible con producción')
+    }
     throw new Error(typeof payload?.message === 'string' ? payload.message : `NewsAPI respondió HTTP ${response.status}`)
   }
 
@@ -609,7 +656,7 @@ async function searchWithFinnhub(
   row: typeof configuraciones_fuentes_inversion.$inferSelect,
   query: string
 ): Promise<FinnhubContext> {
-  if (!row.finnhub_token_cifrado || !query.trim()) return { market: [], news: [] }
+  if (!row.finnhub_token_cifrado || !query.trim()) return { market: [], news: [], fundamentals: [], warnings: [] }
 
   const apiKey = decryptSecret(row.finnhub_token_cifrado)
   const searchUrl = new URL('https://finnhub.io/api/v1/search')
@@ -625,40 +672,30 @@ async function searchWithFinnhub(
   const rawMatches = Array.isArray(searchPayload?.result) ? searchPayload.result : []
   const matches = rawMatches.flatMap((item) => {
     if (!item || typeof item !== 'object') return []
-    const match = item as { symbol?: unknown; description?: unknown; displaySymbol?: unknown; type?: unknown }
+    const match = item as { symbol?: unknown; description?: unknown; displaySymbol?: unknown; type?: unknown; exchange?: unknown }
     if (typeof match.symbol !== 'string' || typeof match.description !== 'string') return []
     const type = typeof match.type === 'string' ? match.type : 'Cotizada'
     if (!['Common Stock', 'ETP', 'ADR', 'REIT'].includes(type)) return []
     return [{
       symbol: match.displaySymbol && typeof match.displaySymbol === 'string' ? match.displaySymbol : match.symbol,
       company: match.description,
-      exchange: 'Finnhub',
+      exchange: typeof match.exchange === 'string' && match.exchange.trim() ? match.exchange : 'Finnhub',
       type,
     }]
   }).slice(0, 3)
 
-  const marketPromise = Promise.all(matches.map(async (match): Promise<FinnhubResult> => {
-    const quoteUrl = new URL('https://finnhub.io/api/v1/quote')
-    quoteUrl.searchParams.set('symbol', match.symbol)
-    quoteUrl.searchParams.set('token', apiKey)
-    const quoteResponse = await fetch(quoteUrl, {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(12_000),
-    }).catch(() => null)
-    const quote = quoteResponse?.ok
-      ? await quoteResponse.json().catch(() => null) as { c?: unknown; dp?: unknown; t?: unknown } | null
-      : null
-    const price = typeof quote?.c === 'number' && quote.c > 0 ? quote.c : null
-    const changePercent = typeof quote?.dp === 'number' ? quote.dp : null
-    const timestamp = typeof quote?.t === 'number' && quote.t > 0 ? quote.t * 1000 : Date.now()
-    return {
-      ...match,
-      price,
-      changePercent,
-      dataAsOf: new Date(timestamp).toISOString(),
-      sourceUrl: 'https://finnhub.io/docs/api/quote',
-    }
-  }))
+  let fiscalApiKey: string | undefined
+  try {
+    fiscalApiKey = row.fiscal_api_key_cifrada ? decryptSecret(row.fiscal_api_key_cifrada) : undefined
+  } catch {
+    fiscalApiKey = undefined
+  }
+
+  const fundamentalsPromise = Promise.all(matches.map((match) => collectFundamentals(match, {
+    finnhubToken: apiKey,
+    secContactEmail: row.sec_contact_email ?? undefined,
+    fiscalApiKey,
+  })))
 
   const newsPromise = matches[0]
     ? (async () => {
@@ -694,8 +731,26 @@ async function searchWithFinnhub(
     })()
     : Promise.resolve([] as NewsApiResult[])
 
-  const [market, news] = await Promise.all([marketPromise, newsPromise])
-  return { market, news }
+  const [fundamentals, news] = await Promise.all([fundamentalsPromise, newsPromise])
+  const market = fundamentals.map((snapshot): FinnhubResult => {
+    const priceMetric = snapshot.metrics.find((metric) => metric.key === 'price')
+    return {
+      symbol: snapshot.symbol,
+      company: snapshot.company,
+      exchange: snapshot.exchange,
+      type: matches.find((match) => match.symbol === snapshot.symbol)?.type ?? 'Cotizada',
+      price: snapshot.price ?? priceMetric?.numericValue ?? null,
+      changePercent: snapshot.changePercent ?? null,
+      dataAsOf: snapshot.dataAsOf,
+      sourceUrl: priceMetric?.sourceUrls[0]?.url ?? 'https://finnhub.io/docs/api/quote',
+    }
+  })
+  return {
+    market,
+    news,
+    fundamentals,
+    warnings: fundamentals.flatMap((snapshot) => snapshot.warnings),
+  }
 }
 
 async function gatherResearchContext(
@@ -703,7 +758,7 @@ async function gatherResearchContext(
   webQuery: string,
   entityQuery: string
 ): Promise<ResearchContext> {
-  if (!row) return { webSources: [], news: [], market: [], sourcesUsed: [], warnings: [] }
+  if (!row) return { webSources: [], news: [], market: [], fundamentals: [], sourcesUsed: [], warnings: [] }
 
   const tasks = [
     row.firecrawl_base_url
@@ -711,7 +766,7 @@ async function gatherResearchContext(
       : Promise.resolve([] as FirecrawlResult[]),
     row.finnhub_token_cifrado && entityQuery.trim()
       ? searchWithFinnhub(row, entityQuery)
-      : Promise.resolve({ market: [], news: [] } as FinnhubContext),
+      : Promise.resolve({ market: [], news: [], fundamentals: [], warnings: [] } as FinnhubContext),
     row.newsapi_key_cifrada && entityQuery.trim()
       ? searchWithNewsApi(row, entityQuery)
       : Promise.resolve([] as NewsApiResult[]),
@@ -720,52 +775,187 @@ async function gatherResearchContext(
   const [webResult, marketResult, newsResult] = await Promise.allSettled(tasks)
   const warnings: string[] = []
   const webSources = webResult.status === 'fulfilled' ? webResult.value : []
-  const finnhubContext = marketResult.status === 'fulfilled' ? marketResult.value : { market: [], news: [] }
+  const finnhubContext = marketResult.status === 'fulfilled'
+    ? marketResult.value
+    : { market: [], news: [], fundamentals: [], warnings: [] }
   const market = finnhubContext.market
   const newsApiNews = newsResult.status === 'fulfilled' ? newsResult.value : []
   const news = [...finnhubContext.news, ...newsApiNews]
-  if (webResult.status === 'rejected') warnings.push('Firecrawl no respondió')
-  if (marketResult.status === 'rejected') warnings.push('Finnhub no respondió')
-  if (newsResult.status === 'rejected') warnings.push('NewsAPI no respondió')
+  const sourceFailure = (label: string, reason: unknown) => {
+    const message = reason instanceof Error ? reason.message : ''
+    if (/429|l[ií]mite|quota|too many/i.test(message)) return `${label} ha alcanzado su límite gratuito`
+    if (/401|403|autoriz|credencial|clave/i.test(message)) return `${label} rechazó la credencial configurada`
+    if (/404|405/i.test(message)) return `${label} no ofrece el endpoint configurado`
+    return `${label} no respondió`
+  }
+  if (webResult.status === 'rejected') warnings.push(sourceFailure('Firecrawl', webResult.reason))
+  if (marketResult.status === 'rejected') warnings.push(sourceFailure('Finnhub', marketResult.reason))
+  if (newsResult.status === 'rejected') warnings.push(sourceFailure('NewsAPI', newsResult.reason))
+  warnings.push(...finnhubContext.warnings)
+
+  const fiscalReady = finnhubContext.fundamentals.some((snapshot) => snapshot.sources.some((source) => source.url.includes('fiscal.ai')))
+  const secReady = finnhubContext.fundamentals.some((snapshot) => snapshot.sources.some((source) => source.url.includes('sec.gov')))
 
   return {
     webSources,
     news,
     market,
+    fundamentals: finnhubContext.fundamentals,
     sourcesUsed: [
       webSources.length ? 'Firecrawl propio' : '',
       market.length ? 'Finnhub' : '',
       finnhubContext.news.length ? 'Finnhub noticias' : '',
       newsApiNews.length ? 'NewsAPI' : '',
+      secReady ? 'SEC EDGAR' : '',
+      fiscalReady ? 'Fiscal.ai' : '',
     ].filter(Boolean),
     warnings,
   }
 }
 
-function toResearchResult(raw: z.infer<typeof aiResultSchema>, provider: AiProviderConfig, sourcesUsed: string[], warnings: string[]): ResearchResult {
-  const leads = raw.candidates.map((candidate, index) => {
+function normalizeSymbol(value: string) {
+  const normalized = value.trim().toUpperCase().replace(/[^A-Z0-9.:-]/g, '')
+  return normalized.length >= 1 && normalized.length <= 20 ? normalized : null
+}
+
+function symbolKey(value: string) {
+  return normalizeSymbol(value)?.split(':').at(-1) ?? ''
+}
+
+function sourceCredentials(row: typeof configuraciones_fuentes_inversion.$inferSelect | undefined) {
+  if (!row) return {}
+  let finnhubToken: string | undefined
+  let fiscalApiKey: string | undefined
+  try {
+    finnhubToken = row.finnhub_token_cifrado ? decryptSecret(row.finnhub_token_cifrado) : undefined
+  } catch {
+    finnhubToken = undefined
+  }
+  try {
+    fiscalApiKey = row.fiscal_api_key_cifrada ? decryptSecret(row.fiscal_api_key_cifrada) : undefined
+  } catch {
+    fiscalApiKey = undefined
+  }
+  return {
+    finnhubToken,
+    fiscalApiKey,
+    secContactEmail: row.sec_contact_email ?? undefined,
+  }
+}
+
+async function enrichCandidateFundamentals(
+  candidates: Array<z.infer<typeof candidateSchema>>,
+  row: typeof configuraciones_fuentes_inversion.$inferSelect | undefined,
+  existing: FundamentalSnapshot[],
+) {
+  const known = new Set(existing.filter((snapshot) => snapshot.identityVerified).map((snapshot) => symbolKey(snapshot.symbol)))
+  const entities: Array<{ candidate: z.infer<typeof candidateSchema>; entity: ResearchEntity }> = candidates.flatMap((candidate) => {
+    const symbol = normalizeSymbol(candidate.ticker)
+    if (!symbol || ['N/A', 'NA', 'UNKNOWN', 'NONE'].includes(symbol) || known.has(symbolKey(symbol))) return []
+    return [{ candidate, entity: {
+      symbol,
+      company: candidate.company,
+      exchange: candidate.exchange,
+      type: 'Common Stock',
+    } }]
+  }).slice(0, 5)
+
+  const credentials = sourceCredentials(row)
+  const unresolved: string[] = []
+  if (!credentials.finnhubToken) {
+    return { snapshots: existing, unresolved: candidates.map((candidate) => candidate.ticker) }
+  }
+
+  const resolved = await Promise.all(entities.map(async ({ candidate, entity }) => {
+    try {
+      const verifiedEntity = await resolveFinnhubEntity(entity, credentials.finnhubToken as string)
+      if (!verifiedEntity) {
+        unresolved.push(candidate.ticker)
+        return null
+      }
+      return collectFundamentals(verifiedEntity, credentials)
+    } catch {
+      unresolved.push(candidate.ticker)
+      return null
+    }
+  }))
+  const extra = resolved.flatMap((snapshot) => snapshot ? [snapshot] : [])
+  const alreadyKnown = new Set([...existing, ...extra].map((snapshot) => symbolKey(snapshot.symbol)))
+  for (const candidate of candidates) {
+    if (!alreadyKnown.has(symbolKey(candidate.ticker)) && !unresolved.includes(candidate.ticker)) unresolved.push(candidate.ticker)
+  }
+  return { snapshots: mergeFundamentalSnapshots([...existing, ...extra]), unresolved }
+}
+
+function sourceListForCandidate(
+  candidateSources: ResearchSource[],
+  snapshot: FundamentalSnapshot | undefined,
+  context: ResearchContext,
+) {
+  const available = [
+    ...context.webSources.map((source) => ({ label: source.title, url: source.url })),
+    ...context.news.map((source) => ({ label: source.title, url: source.url })),
+    ...context.market.map((source) => ({ label: `Finnhub · ${source.symbol}`, url: source.sourceUrl })),
+    ...context.fundamentals.flatMap((item) => item.sources),
+  ].map(safeSource).filter((source): source is ResearchSource => source !== null)
+  const allowedUrls = new Set(available.map((source) => source.url))
+  const seen = new Set<string>()
+  return [...candidateSources.filter((source) => allowedUrls.has(source.url)), ...(snapshot?.sources ?? [])].filter((source) => {
+    if (seen.has(source.url)) return false
+    seen.add(source.url)
+    return true
+  }).slice(0, 6)
+}
+
+function toResearchResult(
+  raw: z.infer<typeof aiResultSchema>,
+  provider: AiProviderConfig,
+  context: ResearchContext,
+  screening: { unresolved: string[]; companiesFound: number } = { unresolved: [], companiesFound: context.fundamentals.filter((snapshot) => snapshot.identityVerified).length },
+): ResearchResult {
+  const mappedLeads = raw.candidates.map((candidate, index) => {
     const sourceUrls = candidate.sourceUrls.map(safeSource).filter((source): source is ResearchSource => source !== null)
+    const snapshot = context.fundamentals.find((item) => symbolKey(item.symbol) === symbolKey(candidate.ticker))
+    const verifiedSources = sourceListForCandidate(sourceUrls, snapshot, context)
+    const scorecard = buildResearchScorecard(snapshot, {
+      category: candidate.category,
+      categoryReason: candidate.categoryReason,
+      evidence: candidate.evidence,
+      risks: candidate.risks,
+    }, {
+      webSources: verifiedSources,
+      newsSources: verifiedSources,
+    })
+    if (!snapshot?.identityVerified || !snapshot.metrics.length || scorecard.verdict === 'sin-datos' || !verifiedSources.length) return null
+    const stage: ResearchLead['stage'] = scorecard.verdict === 'investigar' ? 'Preselección' : 'Revisión'
     return {
       id: `ai-${candidate.ticker.toLowerCase().replace(/[^a-z0-9]+/g, '-') || index}`,
       title: candidate.title,
-      subtitle: `${candidate.company} · ${candidate.ticker} · ${candidate.exchange}`,
+      subtitle: `${snapshot.company} · ${snapshot.symbol} · ${snapshot.exchange}`,
       category: candidate.category,
-      fit: candidate.fit,
+      fit: scorecard.score,
       thesis: candidate.thesis,
       evidence: candidate.evidence,
       risks: candidate.risks,
       firstSource: candidate.firstSource,
-      stage: candidate.stage,
-      ticker: candidate.ticker,
-      company: candidate.company,
-      exchange: candidate.exchange,
-      sourceUrls,
-      dataAsOf: candidate.dataAsOf,
+      stage,
+      ticker: snapshot.symbol,
+      company: snapshot.company,
+      exchange: snapshot.exchange,
+      sourceUrls: verifiedSources,
+      dataAsOf: snapshot.dataAsOf,
+      categoryReason: candidate.categoryReason,
+      scorecard,
     }
   })
+  const leads = mappedLeads.flatMap((lead) => lead ? [lead] : [])
+  const discarded = raw.candidates.length - leads.length
+  const screeningNote = leads.length
+    ? 'Solo se muestran candidatos con ticker validado, métricas verificables y una decisión de cribado distinta de «sin datos».'
+    : 'No se ha mostrado ningún candidato: la IA no ha producido una empresa con identidad, métricas y fuentes suficientes para pasar el filtro.'
 
-  const sourceNote = sourcesUsed.length ? ` · fuentes: ${sourcesUsed.join(' · ')}` : ''
-  const warningNote = warnings.length ? ` · avisos: ${warnings.join(' · ')}` : ''
+  const sourceNote = context.sourcesUsed.length ? ` · fuentes: ${context.sourcesUsed.join(' · ')}` : ''
+  const warningNote = context.warnings.length ? ` · avisos: ${context.warnings.slice(0, 4).join(' · ')}` : ''
   return {
     title: raw.title,
     summary: raw.summary,
@@ -775,6 +965,12 @@ function toResearchResult(raw: z.infer<typeof aiResultSchema>, provider: AiProvi
     leads,
     engine: provider.engine,
     generatedAt: new Date().toISOString(),
+    screening: {
+      companiesFound: screening.companiesFound,
+      candidatesReturned: leads.length,
+      candidatesDiscarded: discarded,
+      note: screeningNote,
+    },
     providerNote: provider.engine === 'openrouter-free'
       ? `${provider.label} · ${provider.model} · sin búsqueda web de pago${sourceNote}${warningNote}`
       : `${provider.label} · ${provider.model} · Firecrawl propio${sourceNote}${warningNote}`,
@@ -824,10 +1020,28 @@ export async function POST(request: Request) {
     horizonte: input.horizon,
     tolerancia: input.risk,
     fechaDeConsulta: new Date().toISOString(),
+    empresasVerificadas: researchContext.fundamentals
+      .filter((snapshot) => snapshot.identityVerified)
+      .map((snapshot) => ({ ticker: snapshot.symbol, empresa: snapshot.company, mercado: snapshot.exchange })),
     fuentesGratuitas: {
       web: researchContext.webSources,
       mercadoFinnhub: researchContext.market,
       noticiasNewsApi: researchContext.news,
+      fundamentales: researchContext.fundamentals.map((snapshot) => ({
+        empresa: snapshot.company,
+        ticker: snapshot.symbol,
+        mercado: snapshot.exchange,
+        datosHasta: snapshot.dataAsOf,
+        metricas: snapshot.metrics.filter((metric) => metric.status === 'verified').map((metric) => ({
+          clave: metric.key,
+          nombre: metric.label,
+          valor: metric.value,
+          periodo: metric.period ?? 'no indicado',
+          fuentes: metric.sourceUrls,
+        })),
+        fuentes: snapshot.sources,
+        avisos: snapshot.warnings,
+      })),
       limitaciones: researchContext.warnings,
     },
   })
@@ -846,8 +1060,8 @@ export async function POST(request: Request) {
           { role: 'system', content: systemPrompt(input.tier) },
           { role: 'user', content: userPrompt },
         ],
-        max_tokens: 3200,
-        reasoning: { effort: 'low', exclude: true },
+        max_tokens: 2600,
+        reasoning: { effort: 'none', exclude: true },
       }
       : {
       model: provider.model,
@@ -941,7 +1155,19 @@ export async function POST(request: Request) {
       const successfulProvider = attempt > 0 && fallbackModel !== provider.model
         ? { ...provider, model: fallbackModel }
         : provider
-      return NextResponse.json(toResearchResult(validated.data, successfulProvider, researchContext.sourcesUsed, researchContext.warnings))
+      const enrichedFundamentals = await enrichCandidateFundamentals(
+        validated.data.candidates,
+        sourceSettings,
+        researchContext.fundamentals,
+      )
+      const enrichedContext: ResearchContext = {
+        ...researchContext,
+        fundamentals: enrichedFundamentals.snapshots,
+      }
+      return NextResponse.json(toResearchResult(validated.data, successfulProvider, enrichedContext, {
+        unresolved: enrichedFundamentals.unresolved,
+        companiesFound: enrichedContext.fundamentals.filter((snapshot) => snapshot.identityVerified).length,
+      }))
     }
 
     return NextResponse.json(localFallback(input, lastFailure))

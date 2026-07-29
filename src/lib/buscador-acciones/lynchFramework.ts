@@ -24,11 +24,84 @@ export type ResearchLead = {
   exchange?: string
   sourceUrls?: ResearchSource[]
   dataAsOf?: string
+  categoryReason?: string
+  scorecard?: ResearchScorecard
 }
 
 export type ResearchSource = {
   label: string
   url: string
+}
+
+export type ResearchMetricKey =
+  | 'price'
+  | 'market-cap'
+  | 'revenue'
+  | 'revenue-growth'
+  | 'net-income'
+  | 'eps'
+  | 'eps-growth'
+  | 'gross-margin'
+  | 'operating-margin'
+  | 'net-margin'
+  | 'free-cash-flow'
+  | 'operating-cash-flow'
+  | 'cash'
+  | 'debt'
+  | 'net-debt'
+  | 'shares'
+  | 'pe'
+  | 'ps'
+  | 'roe'
+  | 'roic'
+
+export type ResearchMetricStatus = 'verified' | 'partial' | 'missing'
+
+export type ResearchMetric = {
+  key: ResearchMetricKey
+  label: string
+  value: string
+  numericValue?: number
+  unit?: string
+  period?: string
+  status: ResearchMetricStatus
+  sourceUrls: ResearchSource[]
+  note?: string
+}
+
+export type ResearchCheckKey =
+  | 'story'
+  | 'category'
+  | 'growth'
+  | 'profitability'
+  | 'balance-sheet'
+  | 'valuation'
+  | 'dilution'
+  | 'risk'
+
+export type ResearchCheckStatus = 'verified' | 'partial' | 'missing'
+
+export type ResearchCheck = {
+  key: ResearchCheckKey
+  label: string
+  status: ResearchCheckStatus
+  detail: string
+  sourceUrls: ResearchSource[]
+}
+
+export type ResearchScorecard = {
+  score: number
+  coverage: number
+  dataQuality: 'complete' | 'partial' | 'insufficient'
+  verdict: 'investigar' | 'esperar' | 'sin-datos'
+  categoryReason: string
+  metrics: ResearchMetric[]
+  checks: ResearchCheck[]
+  valuation: {
+    status: 'evaluable' | 'partial' | 'not-evaluable'
+    label: string
+    note: string
+  }
 }
 
 export type ResearchEngine = 'local' | 'openrouter-free' | 'openai-firecrawl' | 'openrouter-firecrawl' | 'local-fallback'
@@ -50,6 +123,12 @@ export type ResearchResult = {
   engine: ResearchEngine
   generatedAt: string
   providerNote?: string
+  screening?: {
+    companiesFound: number
+    candidatesReturned: number
+    candidatesDiscarded: number
+    note: string
+  }
 }
 
 export const SEARCH_MODES: Array<{
@@ -331,33 +410,101 @@ export function getCategory(key: LynchCategoryKey) {
 export function createInitialResult(): ResearchResult {
   return {
     ...generateResearchResult({ query: '', mode: 'boring', horizon: '5-10', risk: 'moderado' }),
+    title: 'Aún no hay informe',
+    summary: 'Introduce una empresa, un ticker o un criterio. La aplicación no mostrará candidatos hasta comprobar identidad, datos y fuentes.',
+    methodNote: 'Todavía no se ha ejecutado ninguna consulta; no hay datos financieros verificados.',
+    questions: [],
+    nextStep: 'Escribe una empresa o ticker y pulsa «Buscar y verificar».',
     generatedAt: '',
+    screening: {
+      companiesFound: 0,
+      candidatesReturned: 0,
+      candidatesDiscarded: 0,
+      note: 'El informe aparecerá después de una búsqueda real.',
+    },
+  }
+}
+
+export function createEmptyScorecard(categoryReason = 'No hay datos financieros verificados todavía.') : ResearchScorecard {
+  const metricLabels: Array<[ResearchMetricKey, string]> = [
+    ['price', 'Precio actual'],
+    ['market-cap', 'Capitalización'],
+    ['revenue', 'Ventas'],
+    ['revenue-growth', 'Crecimiento de ventas'],
+    ['net-income', 'Beneficio neto'],
+    ['eps', 'Beneficio por acción'],
+    ['eps-growth', 'Crecimiento del BPA'],
+    ['gross-margin', 'Margen bruto'],
+    ['operating-margin', 'Margen operativo'],
+    ['net-margin', 'Margen neto'],
+    ['free-cash-flow', 'Flujo de caja libre'],
+    ['operating-cash-flow', 'Flujo de caja operativo'],
+    ['cash', 'Caja'],
+    ['debt', 'Deuda'],
+    ['net-debt', 'Deuda neta'],
+    ['shares', 'Acciones en circulación'],
+    ['pe', 'PER'],
+    ['ps', 'Precio / ventas'],
+    ['roe', 'ROE'],
+    ['roic', 'ROIC'],
+  ]
+  const metrics = metricLabels.map(([key, label]) => ({
+    key,
+    label,
+    value: 'No encontrado',
+    status: 'missing' as const,
+    sourceUrls: [],
+  }))
+  const checks: ResearchCheck[] = ([
+    ['story', 'Historia del negocio'],
+    ['category', 'Categoría Lynch'],
+    ['growth', 'Crecimiento'],
+    ['profitability', 'Rentabilidad'],
+    ['balance-sheet', 'Balance y deuda'],
+    ['valuation', 'Valoración'],
+    ['dilution', 'Acciones y dilución'],
+    ['risk', 'Riesgos e invalidación'],
+  ] as Array<[ResearchCheckKey, string]>).map(([key, label]) => ({
+    key,
+    label,
+    status: 'missing',
+    detail: 'Pendiente de datos verificables.',
+    sourceUrls: [],
+  }))
+
+  return {
+    score: 0,
+    coverage: 0,
+    dataQuality: 'insufficient',
+    verdict: 'sin-datos',
+    categoryReason,
+    metrics,
+    checks,
+    valuation: {
+      status: 'not-evaluable',
+      label: 'No evaluable',
+      note: 'Faltan múltiplos de valoración verificables.',
+    },
   }
 }
 
 export function generateResearchResult(input: ResearchInput): ResearchResult {
   const query = normalizeQuery(input.query)
-  const modeLabel = MODE_LABELS[input.mode]
   const querySuffix = query
     ? ` a partir de «${query}»`
     : ' a partir de una observación cotidiana'
 
-  const leads = LEAD_LIBRARY[input.mode].map((lead, index) => ({
-    ...lead,
-    fit: Math.max(62, Math.min(97, lead.fit - (input.risk === 'prudente' && index === 2 ? 4 : 0))),
-  }))
-
   const title = query
-    ? `Hipótesis de investigación para ${query}`
-    : `Mapa inicial de empresas ${modeLabel}`
+    ? `Sin datos verificables para ${query}`
+    : 'Aún no hay informe'
 
-  const summary = input.mode === 'ipo'
-    ? `La IA no convierte una salida a bolsa en una oportunidad por el mero hecho de ser nueva. Primero pediría prospecto, factores de riesgo, uso de fondos, dilución y varios trimestres de evidencia${querySuffix}.`
-    : `El punto de partida encaja con la búsqueda de Lynch: una historia entendible, poco ruido y una pregunta concreta sobre cómo puede crecer el beneficio${querySuffix}.`
+  const summary = query
+    ? `No se han podido verificar suficientes datos actuales para ${query}. La aplicación no convierte el fallo del proveedor en una oportunidad ni rellena los huecos con una hipótesis.`
+    : 'Escribe una consulta para iniciar un cribado con datos de mercado, estados financieros y fuentes trazables.'
 
   const methodNote = query
-    ? 'La pista se ha convertido en un universo de búsqueda; todavía no es una acción validada ni una recomendación.'
-    : 'Resultado de orientación metodológica. Para nombrar tickers hacen falta datos de mercado y documentos primarios actualizados.'
+    ? 'No se han verificado datos financieros actuales; se muestra un estado de no disponibilidad, no una ficha bursátil.'
+    : 'Todavía no se ha ejecutado ninguna consulta.'
 
   const questions = [
     `¿Puedes explicar el negocio de ${query || 'la empresa'} en dos minutos sin usar palabras de moda?`,
@@ -366,18 +513,22 @@ export function generateResearchResult(input: ResearchInput): ResearchResult {
     `¿La valoración deja margen para un horizonte de ${input.horizon.replace('-', '–')} años?`,
   ]
 
-  const nextStep = input.mode === 'ipo'
-    ? 'Abrir el prospecto y marcar riesgos, dilución y uso de fondos antes de mirar el gráfico.'
-    : 'Elegir una pista, abrir el informe anual y escribir la historia y los números en una sola página.'
+  const nextStep = 'Configura o revisa Finnhub, SEC/EDGAR y Firecrawl en Configuración antes de volver a buscar.'
 
   return {
     title,
     summary,
     methodNote,
-    leads,
+    leads: [],
     questions,
     nextStep,
     engine: 'local',
     generatedAt: new Date().toISOString(),
+    screening: {
+      companiesFound: 0,
+      candidatesReturned: 0,
+      candidatesDiscarded: 0,
+      note: 'No se ha generado ningún candidato porque faltan datos verificables.',
+    },
   }
 }
