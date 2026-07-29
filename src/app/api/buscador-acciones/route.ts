@@ -13,6 +13,7 @@ import {
   type ResearchEngine,
   type ResearchInput,
   type ResearchLead,
+  type ResearchMetric,
   type ResearchResult,
   type ResearchSource,
 } from '@/lib/buscador-acciones/lynchFramework'
@@ -390,6 +391,8 @@ function metricValue(snapshot: FundamentalSnapshot, key: string) {
 
 function metricEvidence(snapshot: FundamentalSnapshot) {
   const preferredKeys = [
+    'price',
+    'market-cap',
     'revenue',
     'revenue-growth',
     'eps',
@@ -473,14 +476,17 @@ function dataDrivenFallback(
         webSources: context.webSources.map((source) => ({ label: source.title, url: source.url })),
         newsSources: context.news.map((source) => ({ label: source.title, url: source.url })),
       })
-      if (scorecard.verdict === 'sin-datos') return []
+      if (scorecard.verdict === 'sin-datos' && !scorecard.metrics.some((metric) => metric.status === 'verified')) return []
+      const hasOnlyPartialData = scorecard.verdict === 'sin-datos'
       return [{
         id: `data-${snapshot.symbol.toLowerCase().replace(/[^a-z0-9]+/g, '-') || index}`,
         title: `${snapshot.company} (${snapshot.symbol})`,
         subtitle: `${snapshot.company} · ${snapshot.symbol} · ${snapshot.exchange}`,
         category,
         fit: scorecard.score,
-        thesis: 'Cribado determinista construido con las métricas verificadas de las fuentes configuradas. La interpretación del negocio y la valoración relativa siguen pendientes de revisión.',
+        thesis: hasOnlyPartialData
+          ? 'Candidato descubierto en una fuente pública con datos todavía parciales. Se conserva como Revisión para completar ventas, BPA, caja, deuda y valoración antes de interpretar si encaja con Lynch.'
+          : 'Cribado determinista construido con las métricas verificadas de las fuentes configuradas. La interpretación del negocio y la valoración relativa siguen pendientes de revisión.',
         evidence: evidence.length ? evidence : ['Hay métricas verificadas disponibles; revisa el detalle y su periodo antes de interpretarlas.'],
         risks,
         firstSource: sources[0]?.label ?? 'Fuente financiera configurada',
@@ -516,7 +522,7 @@ function dataDrivenFallback(
       companiesFound: context.fundamentals.filter((snapshot) => snapshot.identityVerified).length,
       candidatesReturned: leads.length,
       candidatesDiscarded: 0,
-      note: 'La IA no pudo redactar el informe; se conserva el cribado solo cuando hay identidad, métricas y fuentes verificables.',
+    note: 'La IA no pudo redactar el informe; se conserva el cribado cuando hay identidad, métricas y fuentes verificables. Los candidatos con cobertura baja quedan marcados como Revisión, no como oportunidad.',
     },
   }
 }
@@ -745,6 +751,72 @@ function extractFirecrawlEntities(sources: FirecrawlResult[]): FinnhubMatch[] {
     for (const match of text.matchAll(tickerPattern)) add(match[1], source.title, 'Firecrawl · ticker mencionado')
   }
   return entities.slice(0, 8)
+}
+
+type WebCandidateRecord = {
+  entity: FinnhubMatch
+  metrics: ResearchMetric[]
+  source: ResearchSource
+}
+
+function webNumber(value: string) {
+  const normalized = value.replace(/\\/g, '').replace(/[$€£,]/g, '').replace(/[^0-9.+-]/g, '')
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function extractWebCandidateRecords(sources: FirecrawlResult[]): WebCandidateRecord[] {
+  const records = new Map<string, WebCandidateRecord>()
+  const add = (source: FirecrawlResult, companyValue: string, symbolValue: string, cells: string[]) => {
+    const symbol = symbolValue.trim().toUpperCase().replace(/[^A-Z0-9.:-]/g, '')
+    const company = companyValue
+      .replace(/\([^)]*$/g, '')
+      .replace(/\b(?:quick quote|cotización)\s*$/i, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    const sourceUrl = safeSource({ label: `Firecrawl · ${source.title}`, url: source.url })
+    if (!symbol || !company || !sourceUrl || cells.length < 5) return
+    const metric = (
+      key: ResearchMetric['key'],
+      label: string,
+      raw: string,
+      note: string,
+    ): ResearchMetric | null => {
+      const numericValue = webNumber(raw)
+      if (numericValue === null) return null
+      return {
+        key,
+        label,
+        value: raw.replace(/\\/g, '').trim(),
+        numericValue,
+        unit: raw.includes('%') ? '%' : undefined,
+        period: 'Dato publicado por la fuente web',
+        status: 'verified',
+        sourceUrls: [sourceUrl],
+        note,
+      }
+    }
+    const metrics = [
+      metric('price', 'Precio publicado', cells[2], 'No sustituye una cotización en tiempo real.'),
+      metric('pe', 'PER forward publicado', cells[1], 'Múltiplo publicado por la fuente; no es una valoración calculada por la app.'),
+      metric('eps-growth', 'Crecimiento previsto del BPA', cells[3], 'Proyección de la fuente, no crecimiento histórico verificado.'),
+      metric('revenue-growth', 'Crecimiento previsto de ventas', cells[4], 'Proyección de la fuente, no crecimiento histórico verificado.'),
+    ].filter((item): item is ResearchMetric => item !== null)
+    if (!metrics.length) return
+    const existing = records.get(symbol)
+    records.set(symbol, {
+      entity: { symbol, company, exchange: 'Fuente web', type: 'Common Stock' },
+      metrics: existing ? [...existing.metrics, ...metrics.filter((item) => !existing.metrics.some((known) => known.key === item.key))] : metrics,
+      source: sourceUrl,
+    })
+  }
+
+  for (const source of sources) {
+    const text = `${source.title}\n${source.description}\n${source.content ?? ''}`
+    const tablePattern = /\|\s*([^|]{2,180}?)\s*\[([A-Z][A-Z0-9.-]{1,11})\]\([^)]*\)(?:<[^>]*>)?\)?\s*\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|/gi
+    for (const match of text.matchAll(tablePattern)) add(source, match[1], match[2], [match[3], match[4], match[5], match[6], match[7]])
+  }
+  return [...records.values()].slice(0, 6)
 }
 
 async function searchWithFirecrawl(
@@ -1190,21 +1262,46 @@ async function discoverFundamentalsFromWeb(
   const credentials = sourceCredentials(row)
   if (!credentials.finnhubToken || !webSources.length) return existing
   const known = new Set(existing.map((snapshot) => symbolKey(snapshot.symbol)))
-  const entities = extractFirecrawlEntities(webSources)
-    .filter((entity) => !known.has(symbolKey(entity.symbol)))
+  const records = extractWebCandidateRecords(webSources)
+  const fallbackEntities = extractFirecrawlEntities(webSources).map((entity) => ({ entity, record: undefined }))
+  const entities = [...records.map((record) => ({ entity: record.entity, record })), ...fallbackEntities]
+    .filter(({ entity }, index, all) => !known.has(symbolKey(entity.symbol)) && all.findIndex((item) => symbolKey(item.entity.symbol) === symbolKey(entity.symbol)) === index)
     .slice(0, 3)
   if (!entities.length) return existing
 
-  const discovered = await Promise.all(entities.map(async (entity) => {
+  const withWebMetrics = (snapshot: FundamentalSnapshot, record?: WebCandidateRecord) => {
+    if (!record) return snapshot
+    return {
+      ...snapshot,
+      identityVerified: snapshot.identityVerified || record.metrics.length >= 2,
+      metrics: [...snapshot.metrics, ...record.metrics.filter((metric) => !snapshot.metrics.some((knownMetric) => knownMetric.key === metric.key))],
+      sources: [...snapshot.sources, record.source],
+    }
+  }
+
+  const discovered = await Promise.all(entities.map(async ({ entity, record }) => {
     try {
       // Finnhub puede tardar en incorporar un ticker recién listado en su
       // buscador, aunque sus endpoints de cotización/fundamentales ya lo
       // conozcan. En ese caso exigimos al menos una métrica real antes de
       // considerar válida la identidad descubierta en la fuente web.
       const direct = await collectFundamentals(entity, credentials)
-      if (direct.metrics.some((metric) => metric.status === 'verified')) return direct
+      if (direct.metrics.some((metric) => metric.status === 'verified')) return withWebMetrics(direct, record)
       const verified = await resolveFinnhubEntity(entity, credentials.finnhubToken as string)
-      return verified ? collectFundamentals(verified, credentials) : null
+      if (verified) return withWebMetrics(await collectFundamentals(verified, credentials), record)
+      if (record && record.metrics.length >= 2) {
+        return {
+          symbol: entity.symbol,
+          company: entity.company,
+          exchange: entity.exchange,
+          dataAsOf: new Date().toISOString(),
+          identityVerified: true,
+          metrics: record.metrics,
+          sources: [record.source],
+          warnings: ['No hay fundamentales adicionales en Finnhub; se conservan los datos publicados por la fuente web para revisión.'],
+        } satisfies FundamentalSnapshot
+      }
+      return null
     } catch {
       return null
     }
