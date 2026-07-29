@@ -886,36 +886,41 @@ async function searchWithFinnhub(
   query: string,
   mode: ResearchInput['mode'],
 ): Promise<FinnhubContext> {
-  if (!row.finnhub_token_cifrado || !query.trim()) return { market: [], news: [], fundamentals: [], warnings: [] }
+  if (!row.finnhub_token_cifrado || (!query.trim() && mode !== 'ipo')) return { market: [], news: [], fundamentals: [], warnings: [] }
 
   const apiKey = decryptSecret(row.finnhub_token_cifrado)
-  const searchUrl = new URL('https://finnhub.io/api/v1/search')
-  searchUrl.searchParams.set('q', query.trim().slice(0, 120))
-  searchUrl.searchParams.set('token', apiKey)
-  const searchResponse = await fetch(searchUrl, {
-    cache: 'no-store',
-    signal: AbortSignal.timeout(12_000),
-  })
-  if (!searchResponse.ok) throw new Error(`Finnhub respondió HTTP ${searchResponse.status}`)
+  const genericQuery = query.split(/\s+/).filter(Boolean).length > 4
+    || /\b(nuev|nadie|pinta|oportun|empresa|cotiz|small|growth|stock|acción|acciones|sector|producto|aburr|servicio|distribu|recién)\b/i.test(query)
+  let matches: FinnhubMatch[] = []
+  if (mode !== 'ipo' && query.trim() && !genericQuery) {
+    const searchUrl = new URL('https://finnhub.io/api/v1/search')
+    searchUrl.searchParams.set('q', query.trim().slice(0, 120))
+    searchUrl.searchParams.set('token', apiKey)
+    const searchResponse = await fetch(searchUrl, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(12_000),
+    })
+    if (!searchResponse.ok) throw new Error(`Finnhub respondió HTTP ${searchResponse.status}`)
 
-  const searchPayload = await searchResponse.json().catch(() => null) as { result?: unknown } | null
-  const rawMatches = Array.isArray(searchPayload?.result) ? searchPayload.result : []
-  let matches: FinnhubMatch[] = rawMatches.flatMap((item) => {
-    if (!item || typeof item !== 'object') return []
-    const match = item as { symbol?: unknown; description?: unknown; displaySymbol?: unknown; type?: unknown; exchange?: unknown }
-    if (typeof match.symbol !== 'string' || typeof match.description !== 'string') return []
-    const type = typeof match.type === 'string' ? match.type : 'Cotizada'
-    if (!['Common Stock', 'ETP', 'ADR', 'REIT'].includes(type)) return []
-    return [{
-      symbol: match.displaySymbol && typeof match.displaySymbol === 'string' ? match.displaySymbol : match.symbol,
-      company: match.description,
-      exchange: typeof match.exchange === 'string' && match.exchange.trim() ? match.exchange : 'Finnhub',
-      type,
-    }]
-  }).slice(0, 3)
+    const searchPayload = await searchResponse.json().catch(() => null) as { result?: unknown } | null
+    const rawMatches = Array.isArray(searchPayload?.result) ? searchPayload.result : []
+    matches = rawMatches.flatMap((item) => {
+      if (!item || typeof item !== 'object') return []
+      const match = item as { symbol?: unknown; description?: unknown; displaySymbol?: unknown; type?: unknown; exchange?: unknown }
+      if (typeof match.symbol !== 'string' || typeof match.description !== 'string') return []
+      const type = typeof match.type === 'string' ? match.type : 'Cotizada'
+      if (!['Common Stock', 'ETP', 'ADR', 'REIT'].includes(type)) return []
+      return [{
+        symbol: match.displaySymbol && typeof match.displaySymbol === 'string' ? match.displaySymbol : match.symbol,
+        company: match.description,
+        exchange: typeof match.exchange === 'string' && match.exchange.trim() ? match.exchange : 'Finnhub',
+        type,
+      }]
+    }).slice(0, 3)
+  }
 
   const discoveryWarnings: string[] = []
-  if (!matches.length && mode === 'ipo') {
+  if (mode === 'ipo') {
     try {
       const from = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
       const to = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000)
@@ -944,7 +949,7 @@ async function searchWithFinnhub(
       })
         .filter((match) => match.symbol && match.company)
         .sort((left, right) => right.date.localeCompare(left.date))
-        .slice(0, 5)
+        .slice(0, 3)
         .map(({ date: _date, ...match }) => match)
     } catch {
       discoveryWarnings.push('Finnhub no devolvió el calendario de nuevas cotizadas')
@@ -999,7 +1004,9 @@ async function searchWithFinnhub(
     : Promise.resolve([] as NewsApiResult[])
 
   const [fundamentals, news] = await Promise.all([fundamentalsPromise, newsPromise])
-  const market = fundamentals.map((snapshot): FinnhubResult => {
+  const market = fundamentals
+    .filter((snapshot) => snapshot.identityVerified && snapshot.metrics.some((metric) => metric.status === 'verified'))
+    .map((snapshot): FinnhubResult => {
     const priceMetric = snapshot.metrics.find((metric) => metric.key === 'price')
     return {
       symbol: snapshot.symbol,
@@ -1011,7 +1018,7 @@ async function searchWithFinnhub(
       dataAsOf: snapshot.dataAsOf,
       sourceUrl: priceMetric?.sourceUrls[0]?.url ?? 'https://finnhub.io/docs/api/quote',
     }
-  })
+    })
   return {
     market,
     news,
@@ -1172,19 +1179,19 @@ async function discoverFundamentalsFromWeb(
   const known = new Set(existing.map((snapshot) => symbolKey(snapshot.symbol)))
   const entities = extractFirecrawlEntities(webSources)
     .filter((entity) => !known.has(symbolKey(entity.symbol)))
-    .slice(0, 5)
+    .slice(0, 3)
   if (!entities.length) return existing
 
   const discovered = await Promise.all(entities.map(async (entity) => {
     try {
-      const verified = await resolveFinnhubEntity(entity, credentials.finnhubToken as string)
-      if (verified) return collectFundamentals(verified, credentials)
       // Finnhub puede tardar en incorporar un ticker recién listado en su
       // buscador, aunque sus endpoints de cotización/fundamentales ya lo
       // conozcan. En ese caso exigimos al menos una métrica real antes de
       // considerar válida la identidad descubierta en la fuente web.
       const direct = await collectFundamentals(entity, credentials)
-      return direct.metrics.some((metric) => metric.status === 'verified') ? direct : null
+      if (direct.metrics.some((metric) => metric.status === 'verified')) return direct
+      const verified = await resolveFinnhubEntity(entity, credentials.finnhubToken as string)
+      return verified ? collectFundamentals(verified, credentials) : null
     } catch {
       return null
     }
