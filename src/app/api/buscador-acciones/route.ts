@@ -157,7 +157,7 @@ const JSON_OUTPUT_CONTRACT = `La respuesta debe ser exclusivamente un objeto JSO
 }
 Incluye entre 1 y 5 candidatos, al menos 2 elementos en evidence y risks, y no añadas texto fuera del JSON.`
 
-function systemPrompt(tier: 'free' | 'premium') {
+function systemPrompt(tier: 'free' | 'premium', openDiscovery = false) {
   if (tier === 'premium') {
     return `${BASE_SYSTEM_PROMPT}
 
@@ -170,13 +170,17 @@ function systemPrompt(tier: 'free' | 'premium') {
 - Cada candidato debe tener al menos una URL pública y concreta que permita verificar la afirmación. Si no puedes verificar el ticker o la fuente, no lo incluyas.`
   }
 
+  const discoveryRule = openDiscovery
+    ? `- Esta es una pista temática y todavía no hay EMPRESAS VERIFICADAS. Puedes proponer hasta cinco empresas cotizadas que aparezcan literalmente en los resultados de Firecrawl o que sean una inferencia claramente identificable a partir de ellos, siempre con ticker real. La aplicación volverá a verificar cada ticker con Finnhub antes de mostrarlo; si Finnhub no lo confirma, ese candidato se descarta.
+- No devuelvas una lista de empresas famosas al azar para rellenar el resultado. Si la web no aporta nombres o tickers suficientes, devuelve candidates vacío.`
+    : `- Para una consulta concreta, selecciona primero empresas que aparezcan en EMPRESAS VERIFICADAS. Una empresa conocida fuera de esa lista no es un resultado válido.`
+
   return `${BASE_SYSTEM_PROMPT}
 
 MODO GRATUITO:
 - No tienes búsqueda web de pago. Puedes usar únicamente el CONTEXTO DE FUENTES GRATUITAS que acompaña a la consulta: Firecrawl propio, Finnhub, NewsAPI y enlaces públicos.
 - Los precios, noticias y resultados de las APIs pueden estar limitados o retrasados. Cita la fecha del contexto y no presentes un dato ausente como comprobado.
-- Puedes proponer empresas cotizadas conocidas para ampliar el universo, pero marca dataAsOf como "No verificado en tiempo real" si no hay métricas de una fuente.
-- Para una respuesta útil, selecciona primero empresas que aparezcan en EMPRESAS VERIFICADAS; una empresa conocida fuera de esa lista no es un resultado válido.
+${discoveryRule}
 - Incluye enlaces oficiales generales para que el usuario pueda iniciar la comprobación manual. No inventes URLs, cifras, noticias ni fechas.
 - Explica en methodNote que la salida es un informe de cribado, qué métricas están verificadas y qué debe confirmarse después.
 - Devuelve exactamente este contrato JSON, sin añadir ni omitir campos:
@@ -1191,15 +1195,24 @@ export async function POST(request: Request) {
   }
 
   const entityQuery = input.query.trim()
-  const researchQuery = `${entityQuery || 'empresas cotizadas para investigar'} ${input.mode} inversión fuentes oficiales resultados recientes`
+  const modeHint = {
+    boring: 'small caps listed companies with boring recurring businesses and understandable economics',
+    ipo: 'recent IPOs spin-offs and newly listed public companies with verifiable financial information',
+    everyday: 'listed companies behind everyday products services and observable consumer habits',
+    growth: 'small cap listed companies with verifiable revenue and earnings growth',
+  }[input.mode]
+  const researchQuery = `${entityQuery || 'empresas cotizadas para investigar'} ${modeHint} investment stocks ticker annual report recent results`
   const researchContext = await gatherResearchContext(sourceSettings, researchQuery, entityQuery)
   if (input.tier === 'premium' && !researchContext.webSources.length) {
     return NextResponse.json(localFallback(input, 'Tu Firecrawl no devolvió resultados web; no se activó ninguna búsqueda de pago.'))
   }
 
+  const openDiscovery = Boolean(entityQuery) && !researchContext.fundamentals.some((snapshot) => snapshot.identityVerified)
+  const activeSystemPrompt = systemPrompt(input.tier, openDiscovery)
   const userPrompt = JSON.stringify({
     pista: input.query || 'Exploración abierta: encuentra candidatos que encajen con este modo.',
     modo: input.mode,
+    tipoDeBusqueda: openDiscovery ? 'descubrimiento temático: extrae candidatos de las fuentes y verifícalos después' : 'verificación de empresas identificadas',
     horizonte: input.horizon,
     tolerancia: input.risk,
     fechaDeConsulta: new Date().toISOString(),
@@ -1220,7 +1233,7 @@ export async function POST(request: Request) {
       ? {
         model: provider.model,
         messages: [
-          { role: 'system', content: systemPrompt(input.tier) },
+          { role: 'system', content: activeSystemPrompt },
           { role: 'user', content: userPrompt },
         ],
         max_tokens: 2600,
@@ -1229,7 +1242,7 @@ export async function POST(request: Request) {
       : {
       model: provider.model,
       messages: [
-        { role: 'system', content: systemPrompt(input.tier) },
+        { role: 'system', content: activeSystemPrompt },
         { role: 'user', content: userPrompt },
       ],
       tools: provider.tools,
@@ -1260,7 +1273,7 @@ export async function POST(request: Request) {
     ? {
       model: fallbackModel,
       messages: [
-        { role: 'system', content: `${systemPrompt(input.tier)}\n\n${JSON_OUTPUT_CONTRACT}` },
+        { role: 'system', content: `${activeSystemPrompt}\n\n${JSON_OUTPUT_CONTRACT}` },
         { role: 'user', content: userPrompt },
       ],
       max_tokens: 4200,
