@@ -604,10 +604,10 @@ function firecrawlScrapeUrl(baseUrl: string) {
 
 function unwrapSearchResultUrl(value: string) {
   try {
-    const url = new URL(value)
+    const url = new URL(value.startsWith('//') ? `https:${value}` : value)
     if (url.hostname.endsWith('duckduckgo.com') && url.pathname === '/l/') {
       const target = url.searchParams.get('uddg')
-      if (target) return decodeURIComponent(target)
+      if (target) return target
     }
     return url.toString()
   } catch {
@@ -665,6 +665,75 @@ function scrapeSearchResults(payload: unknown): FirecrawlResult[] {
   return results
 }
 
+async function hydrateFirecrawlResults(
+  row: typeof configuraciones_fuentes_inversion.$inferSelect,
+  results: FirecrawlResult[],
+) {
+  if (!row.firecrawl_base_url || !results.length) return results
+
+  let apiKey: string | null = null
+  if (row.firecrawl_api_key_cifrada) apiKey = decryptSecret(row.firecrawl_api_key_cifrada)
+  const headers = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+  }
+  const scrape = async (source: FirecrawlResult) => {
+    const request = (requestHeaders = headers) => fetch(firecrawlScrapeUrl(row.firecrawl_base_url as string), {
+      method: 'POST',
+      headers: requestHeaders,
+      body: JSON.stringify({ url: source.url, formats: ['markdown'] }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(18_000),
+    })
+    let response = await request()
+    if ((response.status === 401 || response.status === 403) && apiKey) {
+      response = await request({ 'Content-Type': 'application/json', Accept: 'application/json' })
+    }
+    if (!response.ok) return source
+    const payload = await response.json().catch(() => null) as { data?: { markdown?: unknown } } | null
+    const markdown = typeof payload?.data?.markdown === 'string' ? payload.data.markdown : ''
+    if (!markdown.trim()) return source
+    return {
+      ...source,
+      description: `${source.description} ${markdown.replace(/\s+/g, ' ').slice(0, 900)}`.slice(0, 1600),
+      content: markdown.slice(0, 7000),
+    }
+  }
+
+  const hydrated = await Promise.all(results.slice(0, 4).map((source) => scrape(source).catch(() => source)))
+  const byUrl = new Map(hydrated.map((source) => [source.url, source]))
+  return results.map((source) => byUrl.get(source.url) ?? source)
+}
+
+function extractFirecrawlEntities(sources: FirecrawlResult[]): FinnhubMatch[] {
+  const entities: FinnhubMatch[] = []
+  const seen = new Set<string>()
+  const add = (symbol: string, company: string, exchange = 'Firecrawl') => {
+    const normalizedSymbol = symbol.trim().toUpperCase().replace(/[^A-Z0-9.:-]/g, '')
+    const normalizedCompany = company.replace(/\s+/g, ' ').trim()
+    if (!normalizedSymbol || normalizedSymbol.length > 12 || !normalizedCompany || normalizedCompany.length < 2) return
+    if (/^(IPO|ETF|URL|HTTP|HTTPS|HTML|MARKDOWN|STOCK|COMPANY|DATE)$/i.test(normalizedSymbol)) return
+    const key = normalizedSymbol
+    if (seen.has(key)) return
+    seen.add(key)
+    entities.push({ symbol: normalizedSymbol, company: normalizedCompany.slice(0, 140), exchange, type: 'Common Stock' })
+  }
+
+  for (const source of sources) {
+    const text = `${source.title}\n${source.description}\n${source.content ?? ''}`
+    const tablePattern = /\|\s*[^|]{1,50}\s*\|\s*\[([A-Z][A-Z0-9.-]{1,11})\]\([^)]*\/stocks\/[^)]*\)\s*\|\s*([^|]{2,140})\s*\|/gi
+    for (const match of text.matchAll(tablePattern)) add(match[1], match[2])
+
+    const exchangePattern = /(?:NASDAQ|NYSE|AMEX|LSE|XETRA|EURONEXT)\s*[:\-]?\s*([A-Z][A-Z0-9.-]{1,11})\b/gi
+    for (const match of text.matchAll(exchangePattern)) add(match[1], source.title, 'Firecrawl · mercado')
+
+    const tickerPattern = /(?:ticker|símbolo|symbol)\s*[:\-]?\s*\$?([A-Z][A-Z0-9.-]{1,11})\b/gi
+    for (const match of text.matchAll(tickerPattern)) add(match[1], source.title, 'Firecrawl · ticker mencionado')
+  }
+  return entities.slice(0, 8)
+}
+
 async function searchWithFirecrawl(
   row: typeof configuraciones_fuentes_inversion.$inferSelect,
   query: string
@@ -714,7 +783,7 @@ async function searchWithFirecrawl(
         ? payload.data.web
         : []
 
-    return rawResults.flatMap((item) => {
+    const results = rawResults.flatMap((item) => {
       if (!item || typeof item !== 'object') return []
       const result = item as { title?: unknown; description?: unknown; markdown?: unknown; url?: unknown }
       if (typeof result.url !== 'string') return []
@@ -735,6 +804,7 @@ async function searchWithFirecrawl(
         content: typeof result.markdown === 'string' ? result.markdown.slice(0, 7000) : undefined,
       }]
     }).slice(0, 6)
+    return hydrateFirecrawlResults(row, results)
   }
 
   if (response.status !== 404 && response.status !== 405) {
@@ -751,7 +821,7 @@ async function searchWithFirecrawl(
   }
   if (!scrapeResponse.ok) throw new Error(`Firecrawl respondió HTTP ${scrapeResponse.status}`)
 
-  return scrapeSearchResults(await scrapeResponse.json().catch(() => null))
+  return hydrateFirecrawlResults(row, scrapeSearchResults(await scrapeResponse.json().catch(() => null)))
 }
 
 async function searchWithNewsApi(
@@ -973,10 +1043,26 @@ async function gatherResearchContext(
   const [webResult, marketResult, newsResult] = await Promise.allSettled(tasks)
   const warnings: string[] = []
   const webSources = webResult.status === 'fulfilled' ? webResult.value : []
-  const finnhubContext = marketResult.status === 'fulfilled'
+  const finnhubContextSource = marketResult.status === 'fulfilled'
     ? marketResult.value
     : { market: [], news: [], fundamentals: [], warnings: [] }
-  const market = finnhubContext.market
+  const fundamentals = finnhubContextSource.fundamentals.length
+    ? finnhubContextSource.fundamentals
+    : await discoverFundamentalsFromWeb(row, webSources, finnhubContextSource.fundamentals)
+  const finnhubContext = { ...finnhubContextSource, fundamentals }
+  const market = fundamentals.map((snapshot): FinnhubResult => {
+    const priceMetric = snapshot.metrics.find((metric) => metric.key === 'price')
+    return {
+      symbol: snapshot.symbol,
+      company: snapshot.company,
+      exchange: snapshot.exchange,
+      type: 'Cotizada',
+      price: snapshot.price ?? priceMetric?.numericValue ?? null,
+      changePercent: snapshot.changePercent ?? null,
+      dataAsOf: snapshot.dataAsOf,
+      sourceUrl: priceMetric?.sourceUrls[0]?.url ?? 'https://finnhub.io/docs/api/quote',
+    }
+  })
   const newsApiNews = newsResult.status === 'fulfilled' ? newsResult.value : []
   const news = [...finnhubContext.news, ...newsApiNews]
   const sourceFailure = (label: string, reason: unknown) => {
@@ -1074,6 +1160,33 @@ function sourceCredentials(row: typeof configuraciones_fuentes_inversion.$inferS
     fiscalApiKey,
     secContactEmail: row.sec_contact_email ?? undefined,
   }
+}
+
+async function discoverFundamentalsFromWeb(
+  row: typeof configuraciones_fuentes_inversion.$inferSelect | undefined,
+  webSources: FirecrawlResult[],
+  existing: FundamentalSnapshot[],
+) {
+  const credentials = sourceCredentials(row)
+  if (!credentials.finnhubToken || !webSources.length) return existing
+  const known = new Set(existing.map((snapshot) => symbolKey(snapshot.symbol)))
+  const entities = extractFirecrawlEntities(webSources)
+    .filter((entity) => !known.has(symbolKey(entity.symbol)))
+    .slice(0, 5)
+  if (!entities.length) return existing
+
+  const discovered = await Promise.all(entities.map(async (entity) => {
+    try {
+      const verified = await resolveFinnhubEntity(entity, credentials.finnhubToken as string)
+      return verified ? collectFundamentals(verified, credentials) : null
+    } catch {
+      return null
+    }
+  }))
+  return mergeFundamentalSnapshots([
+    ...existing,
+    ...discovered.flatMap((snapshot) => snapshot ? [snapshot] : []),
+  ])
 }
 
 async function enrichCandidateFundamentals(
