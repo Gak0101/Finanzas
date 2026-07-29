@@ -707,9 +707,26 @@ async function hydrateFirecrawlResults(
     }
   }
 
-  const hydrated = await Promise.all(results.slice(0, 4).map((source) => scrape(source).catch(() => source)))
+  const hydrated = await Promise.all(results.slice(0, 6).map((source) => scrape(source).catch(() => source)))
   const byUrl = new Map(hydrated.map((source) => [source.url, source]))
   return results.map((source) => byUrl.get(source.url) ?? source)
+}
+
+function discoverySeedSources(mode: ResearchInput['mode']): FirecrawlResult[] {
+  const urls = mode === 'ipo'
+    ? [
+      'https://stockanalysis.com/ipos/',
+      'https://stockanalysis.com/ipos/2026/',
+    ]
+    : [
+      'https://www.zacks.com/featured-articles/301/best-small-cap-stocks',
+      'https://www.forbes.com/lists/best-small-cap-companies/',
+    ]
+  return urls.map((url) => ({
+    title: new URL(url).hostname,
+    description: 'Fuente pública de descubrimiento consultada por Firecrawl propio.',
+    url,
+  }))
 }
 
 function extractFirecrawlEntities(sources: FirecrawlResult[]): FinnhubMatch[] {
@@ -1134,10 +1151,15 @@ async function gatherResearchContext(
 
   const [webResult, marketResult, newsResult] = await Promise.allSettled(tasks)
   const warnings: string[] = []
-  const webSources = webResult.status === 'fulfilled' ? webResult.value : []
+  let webSources = webResult.status === 'fulfilled' ? webResult.value : []
   const finnhubContextSource = marketResult.status === 'fulfilled'
     ? marketResult.value
     : { market: [], news: [], fundamentals: [], warnings: [] }
+  if (row.firecrawl_base_url && !finnhubContextSource.fundamentals.length && !extractWebCandidateRecords(webSources).length) {
+    const knownUrls = new Set(webSources.map((source) => source.url))
+    const seededSources = await hydrateFirecrawlResults(row, discoverySeedSources(mode).filter((source) => !knownUrls.has(source.url)))
+    webSources = [...webSources, ...seededSources]
+  }
   const fundamentals = finnhubContextSource.fundamentals.length
     ? finnhubContextSource.fundamentals
     : await discoverFundamentalsFromWeb(row, webSources, finnhubContextSource.fundamentals)
