@@ -1,0 +1,4528 @@
+{
+  "title": "Un paso por delante de Wall Street",
+  "source": "src/Un paso por delante de Wall Street.pdf",
+  "pageCount": 380,
+  "extractedPages": 373,
+  "markdown": "src/lib/buscador-acciones/lynch-book.md",
+  "pages": [
+    {
+      "page": 2,
+      "part": "Introducción",
+      "heading": "",
+      "start": 246,
+      "end": 1615,
+      "topics": [
+        "per",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 3,
+      "part": "Introducción",
+      "heading": "",
+      "start": 1648,
+      "end": 1783,
+      "topics": []
+    },
+    {
+      "page": 4,
+      "part": "Introducción",
+      "heading": "",
+      "start": 1816,
+      "end": 1936,
+      "topics": []
+    },
+    {
+      "page": 5,
+      "part": "Introducción",
+      "heading": "",
+      "start": 1969,
+      "end": 2693,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 6,
+      "part": "Introducción",
+      "heading": "",
+      "start": 2726,
+      "end": 4646,
+      "topics": [
+        "per",
+        "vender"
+      ]
+    },
+    {
+      "page": 7,
+      "part": "Introducción",
+      "heading": "",
+      "start": 4679,
+      "end": 7102,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 8,
+      "part": "Introducción",
+      "heading": "",
+      "start": 7135,
+      "end": 9513,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 9,
+      "part": "Introducción",
+      "heading": "",
+      "start": 9546,
+      "end": 11965,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 10,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 12000,
+      "end": 14301,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 11,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 14336,
+      "end": 16804,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "acciones emitidas"
+      ]
+    },
+    {
+      "page": 12,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 16839,
+      "end": 19093,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "10-bagger",
+        "valoración"
+      ]
+    },
+    {
+      "page": 13,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 19128,
+      "end": 21457,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "inventarios",
+        "valoración"
+      ]
+    },
+    {
+      "page": 14,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 21492,
+      "end": 23699,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 15,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 23734,
+      "end": 25985,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "activos",
+        "comprar"
+      ]
+    },
+    {
+      "page": 16,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 26020,
+      "end": 28351,
+      "topics": [
+        "per",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 17,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 28386,
+      "end": 30817,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "vender"
+      ]
+    },
+    {
+      "page": 18,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 30852,
+      "end": 33139,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "dividendo",
+        "comprar",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 19,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 33174,
+      "end": 35443,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "dividendo",
+        "comprar"
+      ]
+    },
+    {
+      "page": 20,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 35478,
+      "end": 37851,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 21,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 37886,
+      "end": 40251,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 22,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 40286,
+      "end": 42601,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar"
+      ]
+    },
+    {
+      "page": 23,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 42636,
+      "end": 45036,
+      "topics": [
+        "per",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 24,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 45071,
+      "end": 47401,
+      "topics": [
+        "per",
+        "deuda",
+        "vender"
+      ]
+    },
+    {
+      "page": 25,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 47436,
+      "end": 49791,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 26,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 49826,
+      "end": 51983,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 27,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 52018,
+      "end": 52667,
+      "topics": [
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 29,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 52702,
+      "end": 54194,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 30,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 54229,
+      "end": 56092,
+      "topics": [
+        "per",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 31,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 56127,
+      "end": 58274,
+      "topics": [
+        "per",
+        "activos",
+        "vender"
+      ]
+    },
+    {
+      "page": 32,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 58309,
+      "end": 60242,
+      "topics": [
+        "per",
+        "vender"
+      ]
+    },
+    {
+      "page": 33,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 60277,
+      "end": 60362,
+      "topics": []
+    },
+    {
+      "page": 34,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 60397,
+      "end": 62173,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 35,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 62208,
+      "end": 64274,
+      "topics": [
+        "per",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 36,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 64309,
+      "end": 66149,
+      "topics": [
+        "per",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 37,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 66184,
+      "end": 66967,
+      "topics": [
+        "per",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 38,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 67002,
+      "end": 69183,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 39,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 69218,
+      "end": 71202,
+      "topics": [
+        "per",
+        "ratio",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 40,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 71237,
+      "end": 73536,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 41,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 73571,
+      "end": 75873,
+      "topics": [
+        "per",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 42,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 75908,
+      "end": 78096,
+      "topics": [
+        "per",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 43,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 78131,
+      "end": 80197,
+      "topics": [
+        "per",
+        "vender"
+      ]
+    },
+    {
+      "page": 44,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 80232,
+      "end": 82347,
+      "topics": [
+        "per",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 45,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 82382,
+      "end": 84500,
+      "topics": [
+        "per",
+        "comprar",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 46,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 84535,
+      "end": 86445,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 47,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 86480,
+      "end": 88706,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 48,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 88741,
+      "end": 89691,
+      "topics": [
+        "per",
+        "ratio",
+        "cash flow",
+        "comprar",
+        "vender",
+        "seguimiento"
+      ]
+    },
+    {
+      "page": 49,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 89726,
+      "end": 90753,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 50,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "Cómo se hace el inversor",
+      "start": 90788,
+      "end": 92449,
+      "topics": [
+        "per",
+        "dividendo",
+        "vender"
+      ]
+    },
+    {
+      "page": 51,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 92484,
+      "end": 94747,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 52,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 94782,
+      "end": 97021,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 53,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 97056,
+      "end": 99429,
+      "topics": [
+        "per",
+        "deuda"
+      ]
+    },
+    {
+      "page": 54,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 99464,
+      "end": 101702,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 55,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 101737,
+      "end": 103784,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 56,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 103819,
+      "end": 105997,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 57,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 106032,
+      "end": 108361,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 58,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 108396,
+      "end": 110573,
+      "topics": [
+        "per",
+        "activos",
+        "comprar"
+      ]
+    },
+    {
+      "page": 59,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 110608,
+      "end": 111332,
+      "topics": [
+        "activos"
+      ]
+    },
+    {
+      "page": 60,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "Los oxímoros de Wall Street",
+      "start": 111367,
+      "end": 113151,
+      "topics": [
+        "per",
+        "activos",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 61,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 113186,
+      "end": 115352,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 62,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 115387,
+      "end": 117538,
+      "topics": [
+        "per",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 63,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 117573,
+      "end": 119887,
+      "topics": [
+        "per",
+        "ratio",
+        "comprar",
+        "seguimiento",
+        "acciones emitidas"
+      ]
+    },
+    {
+      "page": 64,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 119922,
+      "end": 121951,
+      "topics": [
+        "per",
+        "comprar",
+        "seguimiento"
+      ]
+    },
+    {
+      "page": 65,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 121986,
+      "end": 124373,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 66,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 124408,
+      "end": 126755,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 67,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 126790,
+      "end": 129080,
+      "topics": [
+        "per",
+        "vender"
+      ]
+    },
+    {
+      "page": 68,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 129115,
+      "end": 131413,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 69,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 131448,
+      "end": 133553,
+      "topics": [
+        "per",
+        "vender",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 70,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 133588,
+      "end": 135739,
+      "topics": [
+        "per",
+        "crecimiento",
+        "activos",
+        "comprar"
+      ]
+    },
+    {
+      "page": 71,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 135774,
+      "end": 138017,
+      "topics": [
+        "per",
+        "crecimiento",
+        "activos",
+        "comprar",
+        "10-bagger",
+        "acciones emitidas"
+      ]
+    },
+    {
+      "page": 72,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 138052,
+      "end": 140179,
+      "topics": [
+        "per",
+        "crecimiento",
+        "comprar"
+      ]
+    },
+    {
+      "page": 73,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 140214,
+      "end": 142543,
+      "topics": [
+        "per",
+        "activos",
+        "comprar",
+        "vender",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 74,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 142578,
+      "end": 143008,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 75,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "¿Esto es un casino o qué?",
+      "start": 143043,
+      "end": 144716,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 76,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 144751,
+      "end": 147073,
+      "topics": [
+        "per",
+        "deuda",
+        "margen",
+        "comprar"
+      ]
+    },
+    {
+      "page": 77,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 147108,
+      "end": 149210,
+      "topics": [
+        "per",
+        "deuda",
+        "comprar"
+      ]
+    },
+    {
+      "page": 78,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 149245,
+      "end": 151314,
+      "topics": [
+        "per",
+        "deuda"
+      ]
+    },
+    {
+      "page": 79,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 151349,
+      "end": 153165,
+      "topics": [
+        "per",
+        "deuda",
+        "crecimiento",
+        "comprar"
+      ]
+    },
+    {
+      "page": 80,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 153200,
+      "end": 155331,
+      "topics": [
+        "per",
+        "deuda",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 81,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 155366,
+      "end": 157558,
+      "topics": [
+        "per",
+        "vender"
+      ]
+    },
+    {
+      "page": 82,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 157593,
+      "end": 159742,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "valoración"
+      ]
+    },
+    {
+      "page": 83,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 159777,
+      "end": 162029,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 84,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 162064,
+      "end": 164383,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 85,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 164418,
+      "end": 166651,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 86,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 166686,
+      "end": 168039,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 87,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "Cómo superar la prueba del espejo",
+      "start": 168074,
+      "end": 169681,
+      "topics": [
+        "per",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 88,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 169716,
+      "end": 171979,
+      "topics": [
+        "per",
+        "margen",
+        "beneficios",
+        "beneficio",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 89,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 172014,
+      "end": 174379,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 90,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 174414,
+      "end": 176622,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 91,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 176657,
+      "end": 178868,
+      "topics": [
+        "per",
+        "activos"
+      ]
+    },
+    {
+      "page": 92,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 178903,
+      "end": 181299,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 93,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 181334,
+      "end": 183664,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 94,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 183699,
+      "end": 185092,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 95,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "¿Es este un buen momento para invertir?",
+      "start": 185127,
+      "end": 186863,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 96,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 186898,
+      "end": 189205,
+      "topics": [
+        "per",
+        "ratio"
+      ]
+    },
+    {
+      "page": 97,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 189240,
+      "end": 191323,
+      "topics": [
+        "per",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 98,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 191358,
+      "end": 193601,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 99,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 193636,
+      "end": 195760,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 100,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 195797,
+      "end": 197804,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 101,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 197841,
+      "end": 200106,
+      "topics": [
+        "per",
+        "beneficio",
+        "comprar",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 102,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 200143,
+      "end": 202330,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 103,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 202367,
+      "end": 203591,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 104,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 203628,
+      "end": 204371,
+      "topics": [
+        "per",
+        "ratio",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "valor contable",
+        "dividendo"
+      ]
+    },
+    {
+      "page": 105,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "A la caza de la 10-bagger",
+      "start": 204408,
+      "end": 206147,
+      "topics": [
+        "per",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 106,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 206184,
+      "end": 208364,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 107,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 208401,
+      "end": 210339,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "activos",
+        "comprar",
+        "vender",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 108,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 210376,
+      "end": 212581,
+      "topics": [
+        "per",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 109,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 212618,
+      "end": 214351,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 110,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 214388,
+      "end": 214602,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 111,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 214639,
+      "end": 216770,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar",
+        "vender",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 112,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 216807,
+      "end": 219122,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "activos"
+      ]
+    },
+    {
+      "page": 113,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 219159,
+      "end": 221354,
+      "topics": [
+        "per",
+        "margen",
+        "crecimiento",
+        "activos",
+        "comprar"
+      ]
+    },
+    {
+      "page": 114,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 221391,
+      "end": 223617,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "activos"
+      ]
+    },
+    {
+      "page": 115,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 223654,
+      "end": 224300,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 118,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "Lo tengo, lo tengo…",
+      "start": 224337,
+      "end": 226045,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 119,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 226082,
+      "end": 228097,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar"
+      ]
+    },
+    {
+      "page": 120,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 228134,
+      "end": 230421,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar"
+      ]
+    },
+    {
+      "page": 121,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 230458,
+      "end": 232572,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 122,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 232609,
+      "end": 234924,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "vender",
+        "10-bagger",
+        "acciones emitidas"
+      ]
+    },
+    {
+      "page": 123,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 234961,
+      "end": 237059,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "vender",
+        "seguimiento"
+      ]
+    },
+    {
+      "page": 124,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 237096,
+      "end": 239302,
+      "topics": [
+        "per",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 125,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 239339,
+      "end": 240670,
+      "topics": [
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 126,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 240707,
+      "end": 240916,
+      "topics": [
+        "crecimiento",
+        "dividendo"
+      ]
+    },
+    {
+      "page": 127,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 240953,
+      "end": 241210,
+      "topics": [
+        "dividendo"
+      ]
+    },
+    {
+      "page": 129,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 241247,
+      "end": 241910,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "dividendo"
+      ]
+    },
+    {
+      "page": 130,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 241947,
+      "end": 244250,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "comprar",
+        "vender",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 131,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 244287,
+      "end": 246393,
+      "topics": [
+        "per",
+        "ratio",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 132,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 246430,
+      "end": 248711,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 133,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 248748,
+      "end": 248891,
+      "topics": [
+        "per",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 134,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 248928,
+      "end": 251049,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "cíclica",
+        "comprar"
+      ]
+    },
+    {
+      "page": 135,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 251086,
+      "end": 253094,
+      "topics": [
+        "per",
+        "crecimiento",
+        "cíclica"
+      ]
+    },
+    {
+      "page": 136,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 253131,
+      "end": 253274,
+      "topics": [
+        "cíclica"
+      ]
+    },
+    {
+      "page": 137,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 253311,
+      "end": 255571,
+      "topics": [
+        "per",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 138,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 255608,
+      "end": 257970,
+      "topics": [
+        "per",
+        "margen",
+        "comprar"
+      ]
+    },
+    {
+      "page": 139,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 258007,
+      "end": 260162,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "activos"
+      ]
+    },
+    {
+      "page": 140,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 260199,
+      "end": 262445,
+      "topics": [
+        "per",
+        "activos",
+        "comprar",
+        "acciones emitidas"
+      ]
+    },
+    {
+      "page": 141,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 262482,
+      "end": 264731,
+      "topics": [
+        "per",
+        "activos",
+        "comprar"
+      ]
+    },
+    {
+      "page": 142,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 264768,
+      "end": 266983,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "activos",
+        "comprar"
+      ]
+    },
+    {
+      "page": 143,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 267020,
+      "end": 269152,
+      "topics": [
+        "per",
+        "crecimiento",
+        "cíclica",
+        "activos"
+      ]
+    },
+    {
+      "page": 144,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 269189,
+      "end": 271392,
+      "topics": [
+        "per",
+        "crecimiento",
+        "cíclica",
+        "activos",
+        "vender"
+      ]
+    },
+    {
+      "page": 145,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 271429,
+      "end": 273504,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "activos",
+        "vender"
+      ]
+    },
+    {
+      "page": 146,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 273541,
+      "end": 273930,
+      "topics": []
+    },
+    {
+      "page": 147,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 273967,
+      "end": 275506,
+      "topics": [
+        "per",
+        "comprar",
+        "seguimiento"
+      ]
+    },
+    {
+      "page": 148,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 275543,
+      "end": 277430,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 149,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 277467,
+      "end": 279689,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 150,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 279726,
+      "end": 282033,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar"
+      ]
+    },
+    {
+      "page": 151,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 282070,
+      "end": 283985,
+      "topics": [
+        "per",
+        "deuda",
+        "flujo de caja",
+        "beneficios",
+        "beneficio",
+        "comprar"
+      ]
+    },
+    {
+      "page": 152,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 284022,
+      "end": 284231,
+      "topics": []
+    },
+    {
+      "page": 153,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 284268,
+      "end": 286616,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "dividendo",
+        "comprar"
+      ]
+    },
+    {
+      "page": 154,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 286653,
+      "end": 288744,
+      "topics": [
+        "per",
+        "vender"
+      ]
+    },
+    {
+      "page": 155,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 288781,
+      "end": 290871,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 156,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 290908,
+      "end": 293030,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio",
+        "comprar"
+      ]
+    },
+    {
+      "page": 157,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 293067,
+      "end": 295364,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar"
+      ]
+    },
+    {
+      "page": 158,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 295401,
+      "end": 297568,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 159,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 297605,
+      "end": 299619,
+      "topics": [
+        "per",
+        "margen",
+        "crecimiento",
+        "comprar"
+      ]
+    },
+    {
+      "page": 160,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 299656,
+      "end": 301902,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar"
+      ]
+    },
+    {
+      "page": 161,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 301939,
+      "end": 304188,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 162,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 304225,
+      "end": 306111,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "vender"
+      ]
+    },
+    {
+      "page": 163,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 306148,
+      "end": 308264,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 164,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 308301,
+      "end": 310405,
+      "topics": [
+        "per",
+        "deuda",
+        "comprar",
+        "vender",
+        "seguimiento"
+      ]
+    },
+    {
+      "page": 165,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 310442,
+      "end": 312753,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "dividendo",
+        "comprar"
+      ]
+    },
+    {
+      "page": 166,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 312790,
+      "end": 314719,
+      "topics": [
+        "per",
+        "beneficio",
+        "dividendo",
+        "comprar"
+      ]
+    },
+    {
+      "page": 168,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 314756,
+      "end": 314794,
+      "topics": []
+    },
+    {
+      "page": 169,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 314831,
+      "end": 317109,
+      "topics": [
+        "per",
+        "crecimiento",
+        "comprar"
+      ]
+    },
+    {
+      "page": 170,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 317146,
+      "end": 317932,
+      "topics": [
+        "per",
+        "deuda",
+        "comprar"
+      ]
+    },
+    {
+      "page": 171,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "Valores que es mejor evitar",
+      "start": 317969,
+      "end": 319371,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 172,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 319408,
+      "end": 319888,
+      "topics": [
+        "deuda",
+        "comprar"
+      ]
+    },
+    {
+      "page": 173,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 319925,
+      "end": 322293,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "comprar"
+      ]
+    },
+    {
+      "page": 174,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 322330,
+      "end": 324736,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "comprar"
+      ]
+    },
+    {
+      "page": 175,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 324773,
+      "end": 326968,
+      "topics": [
+        "per",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 176,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 327005,
+      "end": 329115,
+      "topics": [
+        "per",
+        "dividendo",
+        "comprar"
+      ]
+    },
+    {
+      "page": 177,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 329152,
+      "end": 331274,
+      "topics": [
+        "per",
+        "ratio",
+        "dividendo"
+      ]
+    },
+    {
+      "page": 178,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 331311,
+      "end": 333588,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar"
+      ]
+    },
+    {
+      "page": 179,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 333625,
+      "end": 335196,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar"
+      ]
+    },
+    {
+      "page": 180,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 335233,
+      "end": 336025,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 181,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 336062,
+      "end": 338128,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 182,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 338165,
+      "end": 340459,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 183,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 340496,
+      "end": 342725,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 184,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 342762,
+      "end": 344870,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 185,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 344907,
+      "end": 346533,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "seguimiento"
+      ]
+    },
+    {
+      "page": 186,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "Beneficios, beneficios, beneficios",
+      "start": 346570,
+      "end": 348288,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "cíclica",
+        "activos",
+        "comprar",
+        "valoración"
+      ]
+    },
+    {
+      "page": 187,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 348325,
+      "end": 350571,
+      "topics": [
+        "per",
+        "deuda",
+        "crecimiento",
+        "activos",
+        "valor contable",
+        "comprar"
+      ]
+    },
+    {
+      "page": 188,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 350608,
+      "end": 352869,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "cíclica",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 189,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 352906,
+      "end": 355202,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 190,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 355239,
+      "end": 356875,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 191,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 356912,
+      "end": 356931,
+      "topics": [
+        "per",
+        "ratio"
+      ]
+    },
+    {
+      "page": 192,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 356968,
+      "end": 357185,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 193,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 357222,
+      "end": 357420,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 194,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 357457,
+      "end": 359810,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio",
+        "comprar"
+      ]
+    },
+    {
+      "page": 195,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 359847,
+      "end": 362005,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "cíclica",
+        "comprar"
+      ]
+    },
+    {
+      "page": 196,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 362042,
+      "end": 364219,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 197,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 364256,
+      "end": 366477,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "vender"
+      ]
+    },
+    {
+      "page": 198,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 366514,
+      "end": 368706,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio",
+        "activos"
+      ]
+    },
+    {
+      "page": 199,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 368743,
+      "end": 370693,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "comprar"
+      ]
+    },
+    {
+      "page": 200,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 370730,
+      "end": 371514,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "vender"
+      ]
+    },
+    {
+      "page": 201,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "La rutina de los dos minutos",
+      "start": 371551,
+      "end": 373285,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "cíclica",
+        "comprar"
+      ]
+    },
+    {
+      "page": 202,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 373322,
+      "end": 375584,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "activos",
+        "dividendo",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 203,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 375621,
+      "end": 377996,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "vender"
+      ]
+    },
+    {
+      "page": 204,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 378033,
+      "end": 380138,
+      "topics": [
+        "per",
+        "deuda"
+      ]
+    },
+    {
+      "page": 205,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 380175,
+      "end": 382453,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 206,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 382490,
+      "end": 384910,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 207,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 384947,
+      "end": 387216,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 208,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 387253,
+      "end": 389392,
+      "topics": [
+        "per",
+        "crecimiento",
+        "comprar"
+      ]
+    },
+    {
+      "page": 209,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 389429,
+      "end": 391637,
+      "topics": [
+        "per",
+        "deuda",
+        "comprar"
+      ]
+    },
+    {
+      "page": 210,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 391674,
+      "end": 393977,
+      "topics": [
+        "per",
+        "deuda",
+        "comprar"
+      ]
+    },
+    {
+      "page": 211,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 394014,
+      "end": 394416,
+      "topics": [
+        "comprar"
+      ]
+    },
+    {
+      "page": 212,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "Conseguir los datos",
+      "start": 394453,
+      "end": 396286,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 213,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 396323,
+      "end": 398426,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 214,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 398463,
+      "end": 400303,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 215,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 400340,
+      "end": 402134,
+      "topics": [
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "dividendo",
+        "comprar"
+      ]
+    },
+    {
+      "page": 216,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 402171,
+      "end": 404507,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "vender"
+      ]
+    },
+    {
+      "page": 217,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 404544,
+      "end": 406839,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "valoracion"
+      ]
+    },
+    {
+      "page": 218,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 406876,
+      "end": 408822,
+      "topics": [
+        "per",
+        "ratio"
+      ]
+    },
+    {
+      "page": 219,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 408859,
+      "end": 411052,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 220,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 411089,
+      "end": 413127,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 221,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 413164,
+      "end": 415268,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "dividendo"
+      ]
+    },
+    {
+      "page": 222,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 415305,
+      "end": 417671,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 223,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 417708,
+      "end": 419728,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 224,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 419765,
+      "end": 422053,
+      "topics": [
+        "per",
+        "vender"
+      ]
+    },
+    {
+      "page": 225,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 422090,
+      "end": 424107,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 226,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 424144,
+      "end": 424881,
+      "topics": []
+    },
+    {
+      "page": 228,
+      "part": "Parte II · Escoger a las ganadoras",
+      "heading": "",
+      "start": 424918,
+      "end": 425059,
+      "topics": []
+    },
+    {
+      "page": 229,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 425096,
+      "end": 427406,
+      "topics": [
+        "per",
+        "deuda",
+        "activos",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 230,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 427443,
+      "end": 429355,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "activos",
+        "dividendo",
+        "seguimiento"
+      ]
+    },
+    {
+      "page": 231,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "Algunos números famosos",
+      "start": 429392,
+      "end": 430682,
+      "topics": [
+        "per",
+        "ratio"
+      ]
+    },
+    {
+      "page": 232,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 430719,
+      "end": 432966,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "dividendo"
+      ]
+    },
+    {
+      "page": 233,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 433003,
+      "end": 435134,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficio",
+        "cíclica"
+      ]
+    },
+    {
+      "page": 234,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 435171,
+      "end": 437512,
+      "topics": [
+        "per",
+        "ratio",
+        "deuda",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 235,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 437549,
+      "end": 439483,
+      "topics": [
+        "per",
+        "deuda",
+        "activos",
+        "dividendo",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 236,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 439520,
+      "end": 441848,
+      "topics": [
+        "per",
+        "deuda",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 237,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 441885,
+      "end": 444194,
+      "topics": [
+        "per",
+        "deuda"
+      ]
+    },
+    {
+      "page": 238,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 444231,
+      "end": 446532,
+      "topics": [
+        "per",
+        "deuda",
+        "margen",
+        "vender"
+      ]
+    },
+    {
+      "page": 239,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 446569,
+      "end": 448645,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "dividendo"
+      ]
+    },
+    {
+      "page": 240,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 448682,
+      "end": 451051,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "dividendo",
+        "comprar"
+      ]
+    },
+    {
+      "page": 241,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 451088,
+      "end": 451938,
+      "topics": [
+        "per",
+        "crecimiento",
+        "dividendo",
+        "comprar"
+      ]
+    },
+    {
+      "page": 242,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 451975,
+      "end": 453774,
+      "topics": [
+        "deuda",
+        "crecimiento",
+        "cíclica",
+        "valor contable",
+        "dividendo",
+        "comprar"
+      ]
+    },
+    {
+      "page": 243,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 453811,
+      "end": 456056,
+      "topics": [
+        "per",
+        "deuda",
+        "margen",
+        "valor contable"
+      ]
+    },
+    {
+      "page": 244,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 456093,
+      "end": 458452,
+      "topics": [
+        "per",
+        "deuda",
+        "activos",
+        "valor contable",
+        "comprar"
+      ]
+    },
+    {
+      "page": 245,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 458489,
+      "end": 460472,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "activos",
+        "valor contable",
+        "comprar",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 246,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 460509,
+      "end": 462890,
+      "topics": [
+        "per",
+        "activos",
+        "valor contable",
+        "valoración"
+      ]
+    },
+    {
+      "page": 247,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 462927,
+      "end": 465232,
+      "topics": [
+        "per",
+        "activos",
+        "valor contable",
+        "vender",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 248,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 465269,
+      "end": 467583,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "activos"
+      ]
+    },
+    {
+      "page": 249,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 467620,
+      "end": 469851,
+      "topics": [
+        "per",
+        "deuda",
+        "activos",
+        "comprar"
+      ]
+    },
+    {
+      "page": 250,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 469888,
+      "end": 472279,
+      "topics": [
+        "per",
+        "dividendo",
+        "comprar"
+      ]
+    },
+    {
+      "page": 251,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 472316,
+      "end": 474421,
+      "topics": [
+        "per",
+        "flujo de caja",
+        "beneficios",
+        "beneficio",
+        "comprar"
+      ]
+    },
+    {
+      "page": 252,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 474458,
+      "end": 476815,
+      "topics": [
+        "per",
+        "ratio",
+        "flujo de caja",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 253,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 476852,
+      "end": 479039,
+      "topics": [
+        "per",
+        "flujo de caja",
+        "beneficio",
+        "crecimiento",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 254,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 479076,
+      "end": 481325,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar",
+        "vender",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 255,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 481362,
+      "end": 483478,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "activos",
+        "vender",
+        "seguimiento",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 256,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 483515,
+      "end": 485623,
+      "topics": [
+        "per",
+        "margen",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "activos"
+      ]
+    },
+    {
+      "page": 257,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 485660,
+      "end": 487889,
+      "topics": [
+        "per",
+        "deuda",
+        "flujo de caja",
+        "margen",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 258,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 487926,
+      "end": 489422,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "comprar",
+        "valoración"
+      ]
+    },
+    {
+      "page": 259,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 489459,
+      "end": 491589,
+      "topics": [
+        "per",
+        "margen",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "vender"
+      ]
+    },
+    {
+      "page": 260,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 491626,
+      "end": 493890,
+      "topics": [
+        "per",
+        "margen",
+        "beneficios",
+        "beneficio",
+        "vender"
+      ]
+    },
+    {
+      "page": 261,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 493927,
+      "end": 494865,
+      "topics": [
+        "per",
+        "margen",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 262,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "Comprobar la historia",
+      "start": 494902,
+      "end": 496604,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "activos"
+      ]
+    },
+    {
+      "page": 263,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 496641,
+      "end": 498939,
+      "topics": [
+        "per",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 264,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 498976,
+      "end": 501242,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 265,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 501279,
+      "end": 503643,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "vender",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 266,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 503680,
+      "end": 506042,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 267,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 506079,
+      "end": 506390,
+      "topics": []
+    },
+    {
+      "page": 268,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "La lista de comprobación final",
+      "start": 506427,
+      "end": 507836,
+      "topics": [
+        "per",
+        "ratio",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 269,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 507873,
+      "end": 509515,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "cíclica",
+        "dividendo"
+      ]
+    },
+    {
+      "page": 270,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 509552,
+      "end": 511414,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 271,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 511451,
+      "end": 513375,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 272,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 513412,
+      "end": 515513,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "vender"
+      ]
+    },
+    {
+      "page": 273,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 515550,
+      "end": 517347,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "activos"
+      ]
+    },
+    {
+      "page": 274,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 517384,
+      "end": 519162,
+      "topics": [
+        "per",
+        "margen",
+        "beneficios",
+        "beneficio",
+        "crecimiento"
+      ]
+    },
+    {
+      "page": 275,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 519199,
+      "end": 520932,
+      "topics": [
+        "per",
+        "ratio",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "dividendo",
+        "comprar",
+        "seguimiento"
+      ]
+    },
+    {
+      "page": 276,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 520969,
+      "end": 521272,
+      "topics": [
+        "valor contable",
+        "comprar"
+      ]
+    },
+    {
+      "page": 277,
+      "part": "Parte III · La visión a largo plazo",
+      "heading": "",
+      "start": 521309,
+      "end": 521910,
+      "topics": [
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 278,
+      "part": "Parte III · La visión a largo plazo",
+      "heading": "Diseñar una cartera",
+      "start": 521947,
+      "end": 523523,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 279,
+      "part": "Parte III · La visión a largo plazo",
+      "heading": "",
+      "start": 523560,
+      "end": 525942,
+      "topics": [
+        "per",
+        "dividendo"
+      ]
+    },
+    {
+      "page": 280,
+      "part": "Parte III · La visión a largo plazo",
+      "heading": "",
+      "start": 525979,
+      "end": 528074,
+      "topics": [
+        "per",
+        "beneficio",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 281,
+      "part": "Parte III · La visión a largo plazo",
+      "heading": "",
+      "start": 528111,
+      "end": 530426,
+      "topics": [
+        "per",
+        "ratio",
+        "crecimiento",
+        "dividendo",
+        "comprar",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 282,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 530463,
+      "end": 532721,
+      "topics": [
+        "per",
+        "crecimiento",
+        "cíclica"
+      ]
+    },
+    {
+      "page": 283,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 532758,
+      "end": 534781,
+      "topics": [
+        "per",
+        "crecimiento",
+        "cíclica",
+        "activos",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 284,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 534818,
+      "end": 537010,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 285,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 537047,
+      "end": 539342,
+      "topics": [
+        "per",
+        "vender"
+      ]
+    },
+    {
+      "page": 286,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 539379,
+      "end": 541481,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "cíclica",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 287,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 541518,
+      "end": 542393,
+      "topics": [
+        "per",
+        "vender"
+      ]
+    },
+    {
+      "page": 288,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "El mejor momento para comprar y vender",
+      "start": 542430,
+      "end": 544199,
+      "topics": [
+        "per",
+        "margen",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 289,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 544236,
+      "end": 545201,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar"
+      ]
+    },
+    {
+      "page": 290,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 545238,
+      "end": 545680,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 291,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 545717,
+      "end": 546765,
+      "topics": [
+        "per",
+        "deuda",
+        "vender",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 292,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 546802,
+      "end": 549069,
+      "topics": [
+        "per",
+        "margen",
+        "crecimiento",
+        "vender"
+      ]
+    },
+    {
+      "page": 293,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 549106,
+      "end": 551520,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 294,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 551557,
+      "end": 553624,
+      "topics": [
+        "per",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 295,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 553661,
+      "end": 556009,
+      "topics": [
+        "per",
+        "crecimiento",
+        "cíclica",
+        "vender"
+      ]
+    },
+    {
+      "page": 296,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 556046,
+      "end": 558173,
+      "topics": [
+        "per",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 297,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 558210,
+      "end": 559934,
+      "topics": [
+        "per",
+        "deuda",
+        "crecimiento",
+        "dividendo",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 298,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 559971,
+      "end": 561778,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "comprar",
+        "vender",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 299,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 561815,
+      "end": 563916,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "cíclica",
+        "comprar",
+        "vender",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 300,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 563953,
+      "end": 565909,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "vender",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 301,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 565946,
+      "end": 567725,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "cíclica",
+        "vender"
+      ]
+    },
+    {
+      "page": 302,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 567762,
+      "end": 569688,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "vender",
+        "inventarios"
+      ]
+    },
+    {
+      "page": 303,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 569725,
+      "end": 572074,
+      "topics": [
+        "per",
+        "deuda",
+        "crecimiento",
+        "activos",
+        "comprar"
+      ]
+    },
+    {
+      "page": 304,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 572111,
+      "end": 573630,
+      "topics": [
+        "per",
+        "vender"
+      ]
+    },
+    {
+      "page": 305,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "Las doce tonterías más grandes (y más peligrosas) que se",
+      "start": 573667,
+      "end": 575194,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 306,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 575231,
+      "end": 577511,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 307,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 577548,
+      "end": 579746,
+      "topics": [
+        "per",
+        "deuda",
+        "activos",
+        "comprar"
+      ]
+    },
+    {
+      "page": 308,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 579783,
+      "end": 581439,
+      "topics": [
+        "per",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 309,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 581476,
+      "end": 581690,
+      "topics": []
+    },
+    {
+      "page": 310,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 581727,
+      "end": 583623,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "dividendo",
+        "comprar",
+        "vender",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 311,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 583660,
+      "end": 585786,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "vender"
+      ]
+    },
+    {
+      "page": 312,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 585823,
+      "end": 587962,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 313,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 587999,
+      "end": 590069,
+      "topics": [
+        "per",
+        "dividendo",
+        "comprar",
+        "vender",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 314,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 590106,
+      "end": 592161,
+      "topics": [
+        "per",
+        "ratio",
+        "beneficios",
+        "beneficio",
+        "vender"
+      ]
+    },
+    {
+      "page": 315,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 592198,
+      "end": 592428,
+      "topics": [
+        "comprar"
+      ]
+    },
+    {
+      "page": 316,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 592465,
+      "end": 594614,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 317,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 594651,
+      "end": 596550,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 318,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 596587,
+      "end": 598524,
+      "topics": [
+        "per",
+        "crecimiento",
+        "comprar"
+      ]
+    },
+    {
+      "page": 319,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "Opciones, futuros y operaciones a corto",
+      "start": 598561,
+      "end": 600158,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 320,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 600195,
+      "end": 602435,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "activos",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 321,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 602472,
+      "end": 604747,
+      "topics": [
+        "per",
+        "activos",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 322,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 604784,
+      "end": 607112,
+      "topics": [
+        "per",
+        "crecimiento",
+        "vender"
+      ]
+    },
+    {
+      "page": 323,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 607149,
+      "end": 609074,
+      "topics": [
+        "per",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 324,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 609111,
+      "end": 611461,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "dividendo"
+      ]
+    },
+    {
+      "page": 325,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 611498,
+      "end": 613009,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 326,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "50 000 franceses pueden estar equivocados",
+      "start": 613046,
+      "end": 614739,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 327,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 614776,
+      "end": 617095,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 328,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 617132,
+      "end": 619352,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 329,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 619389,
+      "end": 621696,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 330,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 621733,
+      "end": 623896,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 331,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 623933,
+      "end": 626274,
+      "topics": [
+        "per",
+        "margen",
+        "crecimiento",
+        "vender",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 332,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 626311,
+      "end": 628578,
+      "topics": [
+        "per",
+        "ratio",
+        "flujo de caja",
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 333,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 628615,
+      "end": 630823,
+      "topics": [
+        "per",
+        "comprar",
+        "vender"
+      ]
+    },
+    {
+      "page": 334,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 630860,
+      "end": 633067,
+      "topics": [
+        "per",
+        "vender"
+      ]
+    },
+    {
+      "page": 335,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 633104,
+      "end": 635382,
+      "topics": [
+        "per",
+        "deuda"
+      ]
+    },
+    {
+      "page": 336,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 635419,
+      "end": 637639,
+      "topics": [
+        "per",
+        "comprar"
+      ]
+    },
+    {
+      "page": 337,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 637676,
+      "end": 639990,
+      "topics": [
+        "per",
+        "deuda",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "dividendo",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 338,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 640027,
+      "end": 641744,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "crecimiento",
+        "comprar"
+      ]
+    },
+    {
+      "page": 339,
+      "part": "Parte I · Prepararse para invertir",
+      "heading": "",
+      "start": 641781,
+      "end": 643456,
+      "topics": [
+        "per",
+        "crecimiento",
+        "comprar",
+        "vender",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 340,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 643493,
+      "end": 645190,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 341,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 645227,
+      "end": 646983,
+      "topics": [
+        "per",
+        "margen",
+        "comprar"
+      ]
+    },
+    {
+      "page": 342,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 647020,
+      "end": 648957,
+      "topics": [
+        "per",
+        "deuda"
+      ]
+    },
+    {
+      "page": 343,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 648994,
+      "end": 650546,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 344,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 650583,
+      "end": 651377,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 345,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 651414,
+      "end": 652535,
+      "topics": []
+    },
+    {
+      "page": 346,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 652572,
+      "end": 654495,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 347,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 654532,
+      "end": 654609,
+      "topics": []
+    },
+    {
+      "page": 348,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 654646,
+      "end": 655288,
+      "topics": []
+    },
+    {
+      "page": 349,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 655325,
+      "end": 655330,
+      "topics": []
+    },
+    {
+      "page": 350,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 655367,
+      "end": 655536,
+      "topics": []
+    },
+    {
+      "page": 351,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 655573,
+      "end": 655652,
+      "topics": []
+    },
+    {
+      "page": 352,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 655689,
+      "end": 655859,
+      "topics": []
+    },
+    {
+      "page": 353,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 655896,
+      "end": 656044,
+      "topics": [
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 354,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 656081,
+      "end": 656195,
+      "topics": [
+        "beneficios",
+        "beneficio"
+      ]
+    },
+    {
+      "page": 355,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 656232,
+      "end": 656400,
+      "topics": []
+    },
+    {
+      "page": 356,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 656437,
+      "end": 656490,
+      "topics": []
+    },
+    {
+      "page": 357,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 656527,
+      "end": 656584,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 358,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 656621,
+      "end": 656767,
+      "topics": []
+    },
+    {
+      "page": 359,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 656804,
+      "end": 658084,
+      "topics": [
+        "per",
+        "vender"
+      ]
+    },
+    {
+      "page": 360,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 658121,
+      "end": 658293,
+      "topics": []
+    },
+    {
+      "page": 361,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 658330,
+      "end": 658412,
+      "topics": []
+    },
+    {
+      "page": 362,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 658449,
+      "end": 658502,
+      "topics": []
+    },
+    {
+      "page": 363,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 658539,
+      "end": 658603,
+      "topics": []
+    },
+    {
+      "page": 364,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 658640,
+      "end": 658696,
+      "topics": []
+    },
+    {
+      "page": 365,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 658733,
+      "end": 658962,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 366,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 658999,
+      "end": 659113,
+      "topics": []
+    },
+    {
+      "page": 367,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 659150,
+      "end": 659235,
+      "topics": []
+    },
+    {
+      "page": 368,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 659272,
+      "end": 659389,
+      "topics": []
+    },
+    {
+      "page": 369,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 659426,
+      "end": 659488,
+      "topics": []
+    },
+    {
+      "page": 370,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 659525,
+      "end": 659663,
+      "topics": []
+    },
+    {
+      "page": 371,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 659700,
+      "end": 659881,
+      "topics": []
+    },
+    {
+      "page": 372,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 659918,
+      "end": 660733,
+      "topics": [
+        "per",
+        "10-bagger"
+      ]
+    },
+    {
+      "page": 373,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 660770,
+      "end": 660889,
+      "topics": []
+    },
+    {
+      "page": 374,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 660926,
+      "end": 661031,
+      "topics": []
+    },
+    {
+      "page": 375,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 661068,
+      "end": 661211,
+      "topics": []
+    },
+    {
+      "page": 376,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 661248,
+      "end": 661556,
+      "topics": [
+        "deuda",
+        "activos"
+      ]
+    },
+    {
+      "page": 377,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 661593,
+      "end": 661798,
+      "topics": []
+    },
+    {
+      "page": 378,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 661835,
+      "end": 662031,
+      "topics": []
+    },
+    {
+      "page": 379,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 662068,
+      "end": 662219,
+      "topics": [
+        "per"
+      ]
+    },
+    {
+      "page": 380,
+      "part": "Epílogo",
+      "heading": "",
+      "start": 662256,
+      "end": 662691,
+      "topics": [
+        "per",
+        "beneficios",
+        "beneficio",
+        "dividendo"
+      ]
+    }
+  ]
+}

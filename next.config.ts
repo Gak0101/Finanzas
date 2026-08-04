@@ -8,6 +8,14 @@ const nextConfig: NextConfig = {
     root: process.cwd(),
   },
   outputFileTracingRoot: process.cwd(),
+  // El buscador consulta estos artefactos locales para recuperar extractos
+  // relevantes del libro sin enviar el PDF completo en cada petición.
+  outputFileTracingIncludes: {
+    '/*': [
+      './src/lib/buscador-acciones/lynch-book.md',
+      './src/lib/buscador-acciones/lynch-book-index.json',
+    ],
+  },
   // Node necesita cargar estos paquetes en runtime: better-sqlite3 incluye un
   // addon nativo y xlsx se usa para una importación opcional de compatibilidad.
   // El Dockerfile copia sus dependencias junto con el standalone.

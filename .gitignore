@@ -41,6 +41,10 @@ yarn-error.log*
 *.db-shm
 *.db-wal
 
+# PDF original aportado por el usuario; la app usa el Markdown y el índice
+# extraídos para poder desplegar el contexto sin versionar el archivo fuente.
+/src/Un paso por delante de Wall Street.pdf
+
 # Claude Code
 .claude/
 

@@ -17,6 +17,8 @@ export type ResearchLead = {
   thesis: string
   evidence: string[]
   risks: string[]
+  monitoring?: string[]
+  exitSignals?: string[]
   firstSource: string
   stage: 'Universo' | 'Preselección' | 'Revisión'
   ticker?: string
@@ -104,13 +106,102 @@ export type ResearchScorecard = {
   }
 }
 
-export type ResearchEngine = 'local' | 'openrouter-free' | 'openai-firecrawl' | 'openrouter-firecrawl' | 'local-fallback'
+export type ResearchEngine = 'local' | 'openrouter-free' | 'openai-firecrawl' | 'openrouter-firecrawl' | 'local-fallback' | 'data-fallback'
+
+export const RESEARCH_INTEGRITY_NOTE = 'Regla de integridad: no se inventan empresas, tickers, cifras, fechas ni fuentes. Si un dato no está respaldado por una fuente trazable, aparece como «No encontrado» o el candidato se descarta.'
+export const RESEARCH_INTERPRETATION_NOTE = 'Las categorías, tesis, riesgos y señales de seguimiento son hipótesis para revisar; no son hechos verificados ni órdenes de compra o venta.'
+
+export type LynchCoachCategory = LynchCategoryKey | 'undecided'
+
+export type LynchMetricFocus =
+  | 'growth'
+  | 'profitability'
+  | 'cash-flow'
+  | 'balance-sheet'
+  | 'valuation'
+  | 'dilution'
+
+export type LynchResearchProfile = {
+  observation: string
+  business: string
+  category: LynchCoachCategory
+  metricFocus: LynchMetricFocus[]
+  thesis: string
+  invalidation: string
+}
+
+export type LynchCoachStep = {
+  key: 'observation' | 'business' | 'category' | 'metricFocus' | 'thesis' | 'invalidation'
+  label: string
+  prompt: string
+  hint: string
+}
+
+export const LYNCH_COACH_STEPS: LynchCoachStep[] = [
+  {
+    key: 'observation',
+    label: 'La pista',
+    prompt: '¿Qué has visto que merece una pregunta? Puede ser una empresa, un producto, un sector o un cambio que observes a diario.',
+    hint: 'No necesitas saber el ticker todavía. La observación es el punto de partida, no una tesis.',
+  },
+  {
+    key: 'business',
+    label: 'La historia',
+    prompt: '¿Qué crees que vende, quién paga y por qué el cliente volvería? Explícalo como si se lo contaras a alguien en dos minutos.',
+    hint: 'Si aún no lo sabes, escribe “quiero que lo investigue”. La app lo dejará como pregunta pendiente.',
+  },
+  {
+    key: 'category',
+    label: 'La categoría',
+    prompt: '¿Qué tipo de historia parece ser? La categoría no es una etiqueta decorativa: cambia qué números importan y cuándo una tesis deja de tener sentido.',
+    hint: 'Puedes elegir “Todavía no lo sé” y dejar que la evidencia pese más que la intuición.',
+  },
+  {
+    key: 'metricFocus',
+    label: 'Los números',
+    prompt: '¿Qué quieres que la investigación compruebe con especial cuidado? Elige una o varias prioridades.',
+    hint: 'Siempre se revisarán ventas, beneficio, caja, deuda, acciones y valoración cuando haya datos; esto marca tu foco personal.',
+  },
+  {
+    key: 'thesis',
+    label: 'La tesis',
+    prompt: '¿Qué tendría que ocurrir para que esta empresa demostrase que la historia funciona durante tu horizonte?',
+    hint: 'Escribe una condición observable, no una promesa de rentabilidad.',
+  },
+  {
+    key: 'invalidation',
+    label: 'La salida',
+    prompt: '¿Qué dato, hecho o cambio te haría revisar o abandonar la tesis? Decidirlo antes ayuda a no mover la portería después.',
+    hint: 'Si no tienes una respuesta, escribe “proponer señales” y la IA planteará preguntas de invalidación, no órdenes de compra o venta.',
+  },
+]
+
+export const LYNCH_METRIC_FOCUS: Array<{ key: LynchMetricFocus; label: string; description: string }> = [
+  { key: 'growth', label: 'Crecimiento', description: 'Ventas y BPA a través del tiempo' },
+  { key: 'profitability', label: 'Rentabilidad', description: 'Márgenes, ROE y calidad del beneficio' },
+  { key: 'cash-flow', label: 'Caja', description: 'Flujo operativo y flujo libre' },
+  { key: 'balance-sheet', label: 'Deuda y balance', description: 'Caja, deuda neta y resistencia' },
+  { key: 'valuation', label: 'Valoración', description: 'PER, precio/ventas y margen' },
+  { key: 'dilution', label: 'Dilución', description: 'Acciones, opciones y nuevas emisiones' },
+]
+
+export function createInitialResearchProfile(): LynchResearchProfile {
+  return {
+    observation: '',
+    business: '',
+    category: 'undecided',
+    metricFocus: [],
+    thesis: '',
+    invalidation: '',
+  }
+}
 
 export type ResearchInput = {
   query: string
   mode: SearchMode
   horizon: '3-5' | '5-10' | '10+'
   risk: 'prudente' | 'moderado' | 'alto'
+  profile?: LynchResearchProfile
 }
 
 export type ResearchResult = {
@@ -122,6 +213,7 @@ export type ResearchResult = {
   nextStep: string
   engine: ResearchEngine
   generatedAt: string
+  profile?: LynchResearchProfile
   providerNote?: string
   screening?: {
     companiesFound: number
@@ -411,10 +503,10 @@ export function createInitialResult(): ResearchResult {
   return {
     ...generateResearchResult({ query: '', mode: 'boring', horizon: '5-10', risk: 'moderado' }),
     title: 'Aún no hay informe',
-    summary: 'Introduce una empresa, un ticker o un criterio. La aplicación no mostrará candidatos hasta comprobar identidad, datos y fuentes.',
+    summary: 'Completa el preparador Lynch o usa el atajo con una empresa/ticker. La aplicación no mostrará candidatos hasta comprobar identidad, datos y fuentes.',
     methodNote: 'Todavía no se ha ejecutado ninguna consulta; no hay datos financieros verificados.',
     questions: [],
-    nextStep: 'Escribe una empresa o ticker y pulsa «Buscar y verificar».',
+    nextStep: 'Responde las preguntas del preparador y pulsa «Buscar y verificar» cuando el mapa esté listo.',
     generatedAt: '',
     screening: {
       companiesFound: 0,
@@ -515,7 +607,7 @@ export function generateResearchResult(input: ResearchInput): ResearchResult {
 
   const nextStep = query
     ? 'Prueba con un ticker, una empresa o un sector más concreto; si buscas descubrimiento abierto, amplía la pista y vuelve a verificar las fuentes.'
-    : 'Escribe una empresa, un ticker o una pista temática para iniciar el cribado.'
+    : 'Completa el mapa Lynch o escribe una empresa, un ticker o una pista temática para iniciar el cribado.'
 
   return {
     title,
@@ -526,6 +618,7 @@ export function generateResearchResult(input: ResearchInput): ResearchResult {
     nextStep,
     engine: 'local',
     generatedAt: new Date().toISOString(),
+    profile: input.profile,
     screening: {
       companiesFound: 0,
       candidatesReturned: 0,

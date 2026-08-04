@@ -7,6 +7,12 @@ import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 import { decryptSecret, encryptSecret, maskedSecret } from '@/lib/ai/secret-crypto'
 import { getAiCredentials } from '@/lib/ai/provider-config'
 import { testAiProvider } from '@/lib/ai/test-provider'
+import {
+  DEFAULT_OPENROUTER_MODEL,
+  isExplicitOpenRouterFreeModel,
+  normalizeOpenRouterFreeModel,
+  normalizeOpenRouterModel,
+} from '@/lib/ai/model-routing'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -21,21 +27,17 @@ const settingsSchema = z.object({
   api_key: z.string().trim().max(1000).optional(),
 })
 
-function isFreeOpenRouterModel(model: string) {
-  return model === 'openrouter/free' || model.endsWith(':free')
-}
-
 function publicSettings(row: typeof configuraciones_ia.$inferSelect | undefined) {
   if (!row) {
     return {
       provider: 'openrouter',
-      model: 'openrouter/free',
+      model: DEFAULT_OPENROUTER_MODEL,
       hasApiKey: false,
       apiKeyHint: null,
       models: {
-        searchFree: 'openrouter/free',
-        searchPremium: 'openrouter/free',
-        portfolioAnalysis: 'openrouter/free',
+        searchFree: DEFAULT_OPENROUTER_MODEL,
+        searchPremium: DEFAULT_OPENROUTER_MODEL,
+        portfolioAnalysis: DEFAULT_OPENROUTER_MODEL,
       },
       source: 'none',
       lastTestAt: null,
@@ -50,16 +52,24 @@ function publicSettings(row: typeof configuraciones_ia.$inferSelect | undefined)
     apiKeyHint = 'Credencial no disponible'
   }
 
+  const model = row.proveedor === 'openrouter'
+    ? normalizeOpenRouterFreeModel(row.modelo_busqueda_gratuita ?? row.modelo)
+    : row.modelo
   return {
     provider: row.proveedor,
-    model: row.modelo,
+    model,
     hasApiKey: apiKeyHint !== 'Credencial no disponible',
     apiKeyHint,
     models: {
-      searchFree: row.modelo_busqueda_gratuita
-        ?? (row.proveedor === 'openrouter' && isFreeOpenRouterModel(row.modelo) ? row.modelo : 'openrouter/free'),
-      searchPremium: row.modelo_busqueda_premium ?? row.modelo,
-      portfolioAnalysis: row.modelo_analisis_cartera ?? row.modelo,
+      searchFree: row.proveedor === 'openrouter'
+        ? normalizeOpenRouterFreeModel(row.modelo_busqueda_gratuita ?? model)
+        : row.modelo_busqueda_gratuita ?? model,
+      searchPremium: row.proveedor === 'openrouter'
+        ? normalizeOpenRouterModel(row.modelo_busqueda_premium ?? model)
+        : row.modelo_busqueda_premium ?? model,
+      portfolioAnalysis: row.proveedor === 'openrouter'
+        ? normalizeOpenRouterModel(row.modelo_analisis_cartera ?? model)
+        : row.modelo_analisis_cartera ?? model,
     },
     source: 'app',
     lastTestAt: row.ultimo_test_at,
@@ -113,13 +123,29 @@ export async function PUT(request: Request) {
   if (existing && existing.proveedor !== parsed.data.provider && !apiKey) {
     return NextResponse.json({ error: 'Introduce la clave correspondiente al nuevo proveedor' }, { status: 400 })
   }
-  const freeSearchModel = parsed.data.model_search_free
-    ?? (parsed.data.provider === 'openrouter' && isFreeOpenRouterModel(parsed.data.model) ? parsed.data.model : 'openrouter/free')
-  if (parsed.data.provider === 'openrouter' && !isFreeOpenRouterModel(freeSearchModel)) {
+  const savedModel = parsed.data.provider === 'openrouter'
+    ? normalizeOpenRouterFreeModel(parsed.data.model)
+    : parsed.data.model
+  const requestedFreeModel = parsed.data.model_search_free ?? parsed.data.model
+  const freeSearchModel = parsed.data.provider === 'openrouter'
+    ? normalizeOpenRouterFreeModel(requestedFreeModel)
+    : (parsed.data.model_search_free ?? savedModel)
+  if (parsed.data.provider === 'openrouter' && !isExplicitOpenRouterFreeModel(requestedFreeModel)) {
     return NextResponse.json({
-      error: 'El modelo asignado a búsqueda gratuita debe ser openrouter/free o terminar en :free',
+      error: 'El modelo de búsqueda gratuita debe ser un modelo explícito terminado en :free; el router aleatorio no está permitido.',
     }, { status: 400 })
   }
+  if (parsed.data.provider === 'openrouter' && freeSearchModel !== requestedFreeModel.trim()) {
+    return NextResponse.json({
+      error: 'Ese modelo no admite el JSON estructurado que necesita el buscador. Elige uno de los modelos gratuitos sugeridos.',
+    }, { status: 400 })
+  }
+  const premiumModel = parsed.data.provider === 'openrouter'
+    ? normalizeOpenRouterModel(parsed.data.model_search_premium ?? savedModel)
+    : parsed.data.model_search_premium ?? savedModel
+  const portfolioModel = parsed.data.provider === 'openrouter'
+    ? normalizeOpenRouterModel(parsed.data.model_portfolio_analysis ?? savedModel)
+    : parsed.data.model_portfolio_analysis ?? savedModel
 
   const now = new Date().toISOString()
   if (existing) {
@@ -127,10 +153,10 @@ export async function PUT(request: Request) {
       .update(configuraciones_ia)
       .set({
         proveedor: parsed.data.provider,
-        modelo: parsed.data.model,
+        modelo: savedModel,
         modelo_busqueda_gratuita: freeSearchModel,
-        modelo_busqueda_premium: parsed.data.model_search_premium ?? parsed.data.model,
-        modelo_analisis_cartera: parsed.data.model_portfolio_analysis ?? parsed.data.model,
+        modelo_busqueda_premium: premiumModel,
+        modelo_analisis_cartera: portfolioModel,
         ...(apiKey ? { api_key_cifrada: encryptSecret(apiKey) } : {}),
         updated_at: now,
       })
@@ -139,10 +165,10 @@ export async function PUT(request: Request) {
     await db.insert(configuraciones_ia).values({
       usuario_id: auth.userId,
       proveedor: parsed.data.provider,
-      modelo: parsed.data.model,
+      modelo: savedModel,
       modelo_busqueda_gratuita: freeSearchModel,
-      modelo_busqueda_premium: parsed.data.model_search_premium ?? parsed.data.model,
-      modelo_analisis_cartera: parsed.data.model_portfolio_analysis ?? parsed.data.model,
+      modelo_busqueda_premium: premiumModel,
+      modelo_analisis_cartera: portfolioModel,
       api_key_cifrada: encryptSecret(apiKey!),
       created_at: now,
       updated_at: now,
@@ -185,10 +211,13 @@ export async function POST(request: Request) {
   }
 
   try {
+    const testedModel = parsed.data.provider === 'openrouter'
+      ? normalizeOpenRouterFreeModel(parsed.data.model)
+      : parsed.data.model
     const result = await testAiProvider({
       provider: parsed.data.provider,
       apiKey,
-      model: parsed.data.model,
+      model: testedModel,
     })
     const now = new Date().toISOString()
     if (existing) {
@@ -197,7 +226,7 @@ export async function POST(request: Request) {
         .set({ ultimo_test_at: now, ultimo_test_ok: true, updated_at: now })
         .where(eq(configuraciones_ia.id, existing.id))
     }
-    return NextResponse.json({ ok: true, model: parsed.data.model, ...result, testedAt: now })
+    return NextResponse.json({ ok: true, ...result, testedAt: now })
   } catch (error) {
     const now = new Date().toISOString()
     if (existing) {

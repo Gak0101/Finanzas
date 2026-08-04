@@ -47,6 +47,11 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Contexto local indexado de Lynch para el buscador; no se envía el PDF
+# completo en cada consulta, solo los extractos relevantes.
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/buscador-acciones/lynch-book.md ./src/lib/buscador-acciones/lynch-book.md
+COPY --from=builder --chown=nextjs:nodejs /app/src/lib/buscador-acciones/lynch-book-index.json ./src/lib/buscador-acciones/lynch-book-index.json
+
 # El standalone contiene el servidor Next; estos archivos quedan fuera del
 # tracing de Next y se copian explícitamente para el bootstrap de producción.
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate.mjs ./scripts/migrate.mjs

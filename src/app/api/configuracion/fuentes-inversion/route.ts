@@ -36,15 +36,9 @@ async function publicSettings(userId: number, row?: SourcesRow) {
   })
   const firecrawlUrl = row?.firecrawl_base_url ?? ''
   const aiReady = ai?.ultimo_test_ok === true
-  const freeSourcesReady = Boolean(
-    firecrawlUrl
-      || row?.finnhub_token_cifrado
-      || row?.newsapi_key_cifrada
-      || row?.financial_datasets_api_key_cifrada
-      || row?.fiscal_api_key_cifrada
-      || row?.alpha_vantage_api_key_cifrada
-      || row?.sec_contact_email,
-  )
+  // Yahoo Finance no requiere una credencial y sirve como base gratuita. Las
+  // demás fuentes amplían cobertura, pero ya no son requisito para arrancar.
+  const freeSourcesReady = true
 
   return {
     secContactEmail: row?.sec_contact_email ?? '',

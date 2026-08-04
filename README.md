@@ -62,9 +62,11 @@ npm run dev
 
 ### Portfolio de inversiones y actualización de precios
 
-Al entrar por primera vez en **Inversiones**, la app crea la cartera desde el
-snapshot app-native incluido en el código. El resultado se guarda en SQLite y
-las siguientes visitas trabajan siempre con la base de datos de la app.
+La cartera y las operaciones viven en SQLite (`data/finanzas.db` en local y
+`/app/data/finanzas.db` en Coolify). Ese archivo está fuera de Git: en una
+instalación local limpia hay que restaurar una copia segura de la base de datos
+de producción por SSH o registrar de nuevo las operaciones. No conviene que el
+servidor local consulte directamente la base de datos de producción.
 
 La actualización gratuita usa CoinGecko para criptoactivos y Yahoo Finance con
 los símbolos Xetra equivalentes para los ETF. La app guarda y muestra siempre
@@ -75,16 +77,28 @@ fuera del total para evitar duplicar activos.
 
 ### Buscador de inversiones con IA
 
+El buscador empieza con un preparador Lynch de seis pasos: observación, historia
+del negocio, categoría, prioridades numéricas, tesis y señales de invalidación.
+Ese perfil viaja junto a la consulta para que el modelo no reciba solo una frase
+genérica, sino un brief de investigación personalizado. El informe separa datos
+verificados, interpretación, métricas que seguir y condiciones para revisar la
+tesis.
+
 Sin una clave configurada, el buscador utiliza únicamente el marco local y lo
-indica expresamente en la interfaz. No presenta esos resultados como datos
-actuales.
+indica expresamente en la interfaz. Cuando las APIs financieras sí devuelven
+identidad y métricas, conserva un cribado determinista aunque el modelo no
+redacte texto; no rellena candidatos ni cifras inventadas. Regla de integridad:
+si una empresa, ticker, cifra, fecha o fuente no tiene respaldo trazable, se
+muestra como «No encontrado» o el candidato se descarta. Las categorías, tesis,
+riesgos y señales de seguimiento generadas por IA se presentan como hipótesis
+para contrastar, nunca como hechos verificados.
 
 Para activar OpenRouter:
 
 ```bash
 BUSCADOR_ACCIONES_PROVIDER=openrouter
 OPENROUTER_API_KEY=tu-clave
-OPENROUTER_MODEL=openrouter/free
+OPENROUTER_MODEL=nvidia/nemotron-3-super-120b-a12b:free
 OPENROUTER_SITE_URL=http://localhost:3000
 ```
 
@@ -93,14 +107,35 @@ Coolify. El modelo gratuito es adecuado para pruebas y uso personal moderado,
 pero mantiene límites de peticiones. La búsqueda web puede consumir créditos
 independientemente del coste del modelo.
 
+Una suscripción de ChatGPT no aporta saldo a la API de OpenAI. El inicio de
+sesión con ChatGPT/OAuth está disponible en clientes oficiales como Codex, pero
+sus credenciales no se reutilizan en esta aplicación; para seleccionar OpenAI
+aquí hace falta una clave de la plataforma API y su facturación separada.
+
 Desde Configuración se pueden elegir como máximo dos modelos: uno principal
 para pruebas y tareas gratuitas, y otro avanzado opcional para investigación
-web y análisis de cartera. En OpenRouter, el modelo principal debe ser
-`openrouter/free` o una variante cuyo identificador termine en `:free`.
+web y análisis de cartera. El buscador no usa el router aleatorio de OpenRouter:
+si falla el modelo principal, prueba en orden cuatro modelos explícitos con
+salida estructurada (Gemma 4 26B, gpt-oss-20b, Gemma 4 31B y Nemotron Nano 9B).
 
-La búsqueda web ampliada usa la instancia Firecrawl configurada por el usuario
-mediante `POST /v2/search`; la app no activa automáticamente la búsqueda web de
-pago de OpenRouter.
+La búsqueda consulta primero las fuentes y entrega después el contexto al
+modelo. Yahoo Finance funciona sin clave para resolver tickers, cotizaciones y
+fundamentales disponibles. Finnhub, NewsAPI, Alpha Vantage, Fiscal.ai,
+Financial Datasets y SEC EDGAR amplían la cobertura cuando están configurados.
+Financial Datasets puede exigir un plan compatible; la aplicación informa del
+límite y no activa pagos. La búsqueda web usa la instancia Firecrawl configurada
+mediante `POST /v2/search` y recurre a `/v1/scrape` cuando esa instalación no
+expone el buscador. La app no activa la búsqueda web de pago de OpenRouter.
+
+### Contexto local de Lynch
+
+El PDF original puede conservarse localmente en `src/`, pero no se versiona.
+El asistente utiliza los artefactos generados
+`src/lib/buscador-acciones/lynch-book.md` y
+`src/lib/buscador-acciones/lynch-book-index.json`: el endpoint selecciona
+extractos por pista, categoría y métricas, en lugar de enviar el libro completo
+en cada petición. El prompt obliga a parafrasear y a usar las fuentes actuales
+para los datos financieros.
 
 ---
 
@@ -122,7 +157,7 @@ operando solo con la app.
 | `HOSTNAME` | `0.0.0.0` |
 | `BUSCADOR_ACCIONES_PROVIDER` | `openrouter` |
 | `OPENROUTER_API_KEY` | Clave secreta creada en OpenRouter |
-| `OPENROUTER_MODEL` | `openrouter/free` para pruebas o un modelo fijado |
+| `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` o un modelo fijado |
 | `OPENROUTER_SITE_URL` | URL pública de la aplicación |
 
 ### Volumen persistente

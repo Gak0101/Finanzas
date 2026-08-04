@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { buildOpenRouterModelChain, DEFAULT_OPENROUTER_MODEL, OPENROUTER_MODEL_OPTIONS } from '@/lib/ai/model-routing'
 
 type AiProvider = 'openrouter' | 'openai'
 
@@ -125,8 +126,8 @@ export default function ConfiguracionPage() {
 
   const [provider, setProvider] = useState<AiProvider>('openrouter')
   const [apiKey, setApiKey] = useState('')
-  const [model, setModel] = useState('openrouter/free')
-  const [advancedModel, setAdvancedModel] = useState('openrouter/free')
+  const [model, setModel] = useState(DEFAULT_OPENROUTER_MODEL)
+  const [advancedModel, setAdvancedModel] = useState(DEFAULT_OPENROUTER_MODEL)
   const [hasApiKey, setHasApiKey] = useState(false)
   const [apiKeyHint, setApiKeyHint] = useState<string | null>(null)
   const [settingsSource, setSettingsSource] = useState<AiSettingsResponse['source']>('none')
@@ -243,7 +244,7 @@ export default function ConfiguracionPage() {
 
   function changeProvider(nextProvider: AiProvider) {
     setProvider(nextProvider)
-    const defaultModel = nextProvider === 'openrouter' ? 'openrouter/free' : 'gpt-5-mini'
+    const defaultModel = nextProvider === 'openrouter' ? DEFAULT_OPENROUTER_MODEL : 'gpt-5-mini'
     setModel(defaultModel)
     setAdvancedModel(defaultModel)
     setApiKey('')
@@ -416,16 +417,18 @@ export default function ConfiguracionPage() {
 
                 <div className="grid gap-2">
                   <Label htmlFor="ai-model">Modelo principal</Label>
-                  <Input id="ai-model" value={model} onChange={(event) => setModel(event.target.value)} list="ai-model-suggestions" placeholder="openrouter/free" spellCheck={false} />
+                  <Input id="ai-model" value={model} onChange={(event) => setModel(event.target.value)} list="ai-model-suggestions" placeholder={DEFAULT_OPENROUTER_MODEL} spellCheck={false} />
                   <datalist id="ai-model-suggestions">
                     {provider === 'openrouter'
-                      ? <>
-                        <option value="openrouter/free" />
-                        <option value="inclusionai/ling-3.0-flash:free" />
-                      </>
+                      ? OPENROUTER_MODEL_OPTIONS.map((modelOption) => <option key={modelOption} value={modelOption} />)
                       : <option value="gpt-5-mini" />}
                   </datalist>
-                  <p className="text-[11px] leading-5 text-muted-foreground">{provider === 'openrouter' ? 'Para mantenerlo gratuito, elige un modelo que termine en :free o openrouter/free. El límite depende del proveedor del modelo.' : 'OpenAI factura según el modelo y la cuenta; aquí no existe una modalidad gratuita propia de la app.'}</p>
+                  <p className="text-[11px] leading-5 text-muted-foreground">{provider === 'openrouter' ? 'La app usa este modelo como principal y prueba automáticamente cuatro modelos gratuitos concretos si falla. No utiliza el router aleatorio de OpenRouter.' : 'OpenAI factura según el modelo y la cuenta. La suscripción de ChatGPT no funciona como crédito API y su inicio OAuth solo está soportado en clientes oficiales como Codex, no en esta app.'}</p>
+                  {provider === 'openrouter' && (
+                    <p className="break-words text-[10px] leading-5 text-slate-500">
+                      Orden de respaldo: {buildOpenRouterModelChain(model).join(' → ')}
+                    </p>
+                  )}
                 </div>
 
                 <div className="grid gap-2 rounded-lg border border-slate-200 bg-slate-50/70 p-4">
@@ -495,7 +498,7 @@ export default function ConfiguracionPage() {
                   <Leaf className="mt-0.5 h-4 w-4 shrink-0 text-emerald-700" />
                   <div>
                     <p className="font-semibold">Datos gratuitos por defecto</p>
-                    <p className="mt-1">Las claves son opcionales y solo amplían el acceso a cada proveedor. La app no contrata ni renueva planes: si algún día necesitas más volumen o funciones, lo activas directamente en la cuenta de esa fuente.</p>
+                    <p className="mt-1">Yahoo Finance aporta sin clave identidad, cotización y fundamentales cuando están disponibles; Firecrawl propio aporta la web. Las claves opcionales amplían la cobertura. La app no contrata ni renueva planes.</p>
                   </div>
                 </div>
                 <div className="mb-5">
@@ -550,7 +553,7 @@ export default function ConfiguracionPage() {
                     label="Financial Datasets API key"
                     helpUrl="https://financialdatasets.ai/"
                     helpLabel="Crear cuenta"
-                    description="Opcional: preparada para datos financieros estructurados; revisa en su portal el acceso disponible y sus límites."
+                    description="Opcional: datos financieros estructurados de EE. UU.; su endpoint puede exigir un plan de pago y la app lo indicará sin activarlo automáticamente."
                     value={financialDatasetsApiKey}
                     configured={sources?.financialDatasets.configured ?? false}
                     onChange={setFinancialDatasetsApiKey}

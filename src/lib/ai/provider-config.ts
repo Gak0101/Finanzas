@@ -2,6 +2,10 @@ import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { configuraciones_ia } from '@/lib/db/schema'
 import { decryptSecret } from '@/lib/ai/secret-crypto'
+import {
+  normalizeOpenRouterFreeModel,
+  normalizeOpenRouterModel,
+} from '@/lib/ai/model-routing'
 
 export type AiProviderName = 'openrouter' | 'openai'
 
@@ -17,10 +21,6 @@ export type AiCredentials = {
   source: 'app' | 'environment'
 }
 
-function isFreeOpenRouterModel(model: string) {
-  return model === 'openrouter/free' || model.endsWith(':free')
-}
-
 export async function getAiCredentials(userId: number): Promise<AiCredentials | null> {
   const stored = await db.query.configuraciones_ia.findFirst({
     where: eq(configuraciones_ia.usuario_id, userId),
@@ -28,15 +28,23 @@ export async function getAiCredentials(userId: number): Promise<AiCredentials | 
 
   if (stored && (stored.proveedor === 'openrouter' || stored.proveedor === 'openai')) {
     try {
+      const storedModel = stored.proveedor === 'openrouter'
+        ? normalizeOpenRouterModel(stored.modelo)
+        : stored.modelo
       return {
         provider: stored.proveedor,
         apiKey: decryptSecret(stored.api_key_cifrada),
-        model: stored.modelo,
+        model: storedModel,
         models: {
-          searchFree: stored.modelo_busqueda_gratuita
-            ?? (stored.proveedor === 'openrouter' && isFreeOpenRouterModel(stored.modelo) ? stored.modelo : 'openrouter/free'),
-          searchPremium: stored.modelo_busqueda_premium ?? stored.modelo,
-          portfolioAnalysis: stored.modelo_analisis_cartera ?? stored.modelo,
+          searchFree: stored.proveedor === 'openrouter'
+            ? normalizeOpenRouterFreeModel(stored.modelo_busqueda_gratuita ?? storedModel)
+            : stored.modelo_busqueda_gratuita ?? storedModel,
+          searchPremium: stored.proveedor === 'openrouter'
+            ? normalizeOpenRouterModel(stored.modelo_busqueda_premium ?? storedModel)
+            : stored.modelo_busqueda_premium ?? storedModel,
+          portfolioAnalysis: stored.proveedor === 'openrouter'
+            ? normalizeOpenRouterModel(stored.modelo_analisis_cartera ?? storedModel)
+            : stored.modelo_analisis_cartera ?? storedModel,
         },
         source: 'app',
       }
@@ -47,27 +55,29 @@ export async function getAiCredentials(userId: number): Promise<AiCredentials | 
 
   const requestedProvider = process.env.BUSCADOR_ACCIONES_PROVIDER?.trim().toLowerCase()
   if (requestedProvider === 'openrouter' && process.env.OPENROUTER_API_KEY) {
+    const environmentModel = normalizeOpenRouterModel(process.env.OPENROUTER_MODEL ?? process.env.BUSCADOR_ACCIONES_MODEL)
     return {
       provider: 'openrouter',
       apiKey: process.env.OPENROUTER_API_KEY,
-      model: process.env.OPENROUTER_MODEL ?? process.env.BUSCADOR_ACCIONES_MODEL ?? 'openrouter/free',
+      model: environmentModel,
       models: {
-        searchFree: process.env.OPENROUTER_FREE_SEARCH_MODEL ?? 'openrouter/free',
-        searchPremium: process.env.OPENROUTER_ADVANCED_MODEL ?? process.env.OPENROUTER_PREMIUM_SEARCH_MODEL ?? process.env.OPENROUTER_MODEL ?? process.env.BUSCADOR_ACCIONES_MODEL ?? 'openrouter/free',
-        portfolioAnalysis: process.env.OPENROUTER_ADVANCED_MODEL ?? process.env.OPENROUTER_PORTFOLIO_MODEL ?? process.env.OPENROUTER_MODEL ?? process.env.BUSCADOR_ACCIONES_MODEL ?? 'openrouter/free',
+        searchFree: normalizeOpenRouterFreeModel(process.env.OPENROUTER_FREE_SEARCH_MODEL ?? environmentModel),
+        searchPremium: normalizeOpenRouterModel(process.env.OPENROUTER_ADVANCED_MODEL ?? process.env.OPENROUTER_PREMIUM_SEARCH_MODEL ?? environmentModel),
+        portfolioAnalysis: normalizeOpenRouterModel(process.env.OPENROUTER_ADVANCED_MODEL ?? process.env.OPENROUTER_PORTFOLIO_MODEL ?? environmentModel),
       },
       source: 'environment',
     }
   }
   if (requestedProvider === 'openai' && process.env.OPENAI_API_KEY) {
+    const environmentModel = process.env.BUSCADOR_ACCIONES_MODEL ?? process.env.OPENAI_MODEL ?? 'gpt-5-mini'
     return {
       provider: 'openai',
       apiKey: process.env.OPENAI_API_KEY,
-      model: process.env.BUSCADOR_ACCIONES_MODEL ?? process.env.OPENAI_MODEL ?? 'gpt-5-mini',
+      model: environmentModel,
       models: {
-        searchFree: 'openrouter/free',
-        searchPremium: process.env.OPENAI_ADVANCED_MODEL ?? process.env.OPENAI_PREMIUM_SEARCH_MODEL ?? process.env.BUSCADOR_ACCIONES_MODEL ?? process.env.OPENAI_MODEL ?? 'gpt-5-mini',
-        portfolioAnalysis: process.env.OPENAI_ADVANCED_MODEL ?? process.env.OPENAI_PORTFOLIO_MODEL ?? process.env.BUSCADOR_ACCIONES_MODEL ?? process.env.OPENAI_MODEL ?? 'gpt-5-mini',
+        searchFree: environmentModel,
+        searchPremium: process.env.OPENAI_ADVANCED_MODEL ?? process.env.OPENAI_PREMIUM_SEARCH_MODEL ?? environmentModel,
+        portfolioAnalysis: process.env.OPENAI_ADVANCED_MODEL ?? process.env.OPENAI_PORTFOLIO_MODEL ?? environmentModel,
       },
       source: 'environment',
     }

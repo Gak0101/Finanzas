@@ -1,4 +1,5 @@
 import type { AiProviderName } from '@/lib/ai/provider-config'
+import { buildOpenRouterModelChain, DEFAULT_OPENROUTER_MODEL } from '@/lib/ai/model-routing'
 
 type TestProviderInput = {
   provider: AiProviderName
@@ -37,29 +38,47 @@ export async function testAiProvider({ provider, apiKey, model }: TestProviderIn
     : 'https://api.openai.com/v1'
   const base = (configuredBase || defaultBase).replace(/\/+$/, '')
   const endpoint = base.endsWith('/v1') ? `${base}/chat/completions` : `${base}/v1/chat/completions`
-  const requestBody = {
-    model,
-    messages: [
-      {
-        role: 'system',
-        content: 'Eres el asistente de una app de finanzas personales. Responde de forma breve y en español.',
-      },
-      {
-        role: 'user',
-        content: 'Responde exactamente con una frase breve confirmando que la conexión funciona e indica tu modelo.',
-      },
-    ],
-    ...(provider === 'openai'
-      ? { max_completion_tokens: 256 }
-      : {
-        max_tokens: 256,
-        // Un modelo de razonamiento puede consumir un límite pequeño pensando y
-        // terminar con content vacío. Para este test técnico no necesitamos CoT.
-        reasoning: { effort: 'none', exclude: true },
-      }),
-  }
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  const modelAttempts = provider === 'openrouter' ? buildOpenRouterModelChain(model) : [model, model]
+  let lastError = ''
+  for (let attempt = 0; attempt < modelAttempts.length; attempt += 1) {
+    const attemptModel = modelAttempts[attempt]
+    const requestBody = {
+      model: attemptModel,
+      messages: [
+        {
+          role: 'system',
+          content: provider === 'openrouter'
+            ? 'Responde únicamente con JSON válido que cumpla el esquema.'
+            : 'Eres el asistente de una app de finanzas personales. Responde de forma breve y en español.',
+        },
+        {
+          role: 'user',
+          content: provider === 'openrouter'
+            ? 'Confirma que la conexión funciona.'
+            : 'Responde exactamente con una frase breve confirmando que la conexión funciona e indica tu modelo.',
+        },
+      ],
+      ...(provider === 'openai'
+        ? { max_completion_tokens: 256 }
+        : {
+          max_tokens: 256,
+          reasoning: { effort: 'none', exclude: true },
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'connection_test',
+              strict: true,
+              schema: {
+                type: 'object',
+                additionalProperties: false,
+                properties: { ok: { type: 'boolean' }, message: { type: 'string' } },
+                required: ['ok', 'message'],
+              },
+            },
+          },
+          provider: { require_parameters: true },
+        }),
+    }
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -80,21 +99,34 @@ export async function testAiProvider({ provider, apiKey, model }: TestProviderIn
     const payload = await response.json().catch(() => null) as ChatPayload | null
     if (!response.ok) {
       const providerMessage = payload?.error?.message?.trim()
-      throw new Error(providerMessage ? providerMessage.slice(0, 240) : `${provider} respondió HTTP ${response.status}`)
+      lastError = providerMessage ? providerMessage.slice(0, 240) : `${provider} respondió HTTP ${response.status}`
+      if (provider === 'openrouter') continue
+      throw new Error(lastError)
     }
 
     const message = payload ? outputText(payload) : ''
     if (message) {
+      let readableMessage = message
+      try {
+        const parsedMessage = JSON.parse(message) as { message?: unknown }
+        if (typeof parsedMessage.message === 'string' && parsedMessage.message.trim()) {
+          readableMessage = parsedMessage.message.trim()
+        }
+      } catch {
+        // OpenAI y algunos proveedores devuelven texto libre en la prueba.
+      }
       return {
-        message: message.slice(0, 500),
+        message: readableMessage.slice(0, 500),
+        model: attemptModel,
         latencyMs: Date.now() - startedAt,
       }
     }
-
-    if (attempt === 0) {
-      await new Promise((resolve) => setTimeout(resolve, 750))
-    }
+    lastError = `${attemptModel} aceptó la petición, pero no generó texto.`
   }
 
-  throw new Error('La clave es válida y OpenRouter aceptó la petición, pero este modelo no generó texto. Prueba de nuevo o usa openrouter/free.')
+  const providerLabel = provider === 'openrouter' ? 'OpenRouter' : 'OpenAI'
+  const suggestion = provider === 'openrouter'
+    ? `Prueba de nuevo o usa ${DEFAULT_OPENROUTER_MODEL}.`
+    : 'Revisa el modelo configurado y la cuota de tu API.'
+  throw new Error(`${providerLabel} no completó la prueba verificable. ${lastError || suggestion}`)
 }

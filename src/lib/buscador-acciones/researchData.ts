@@ -13,6 +13,7 @@ export type ResearchEntity = {
   company: string
   exchange: string
   type: string
+  identityVerified?: boolean
 }
 
 export type FundamentalSnapshot = {
@@ -32,6 +33,8 @@ type SourceCredentials = {
   finnhubToken?: string
   secContactEmail?: string
   fiscalApiKey?: string
+  alphaVantageApiKey?: string
+  financialDatasetsApiKey?: string
 }
 
 type FinnhubMetricPayload = {
@@ -82,6 +85,8 @@ type SecTicker = {
   title?: unknown
 }
 
+type JsonRecord = Record<string, unknown>
+
 const FINNHUB_METRIC_DEFINITIONS: Array<{
   key: ResearchMetricKey
   label: string
@@ -106,6 +111,9 @@ const FINNHUB_METRIC_DEFINITIONS: Array<{
 ]
 
 let secTickerMapPromise: Promise<Map<string, string>> | null = null
+let yahooSessionPromise: Promise<{ cookie: string; crumb: string }> | null = null
+let yahooSessionExpiresAt = 0
+const YAHOO_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/128 Safari/537.36'
 
 function safeSource(label: string, url: string): ResearchSource | null {
   try {
@@ -125,6 +133,11 @@ function asNumber(value: unknown) {
     return Number.isFinite(parsed) ? parsed : null
   }
   return null
+}
+
+function isUsableMetricValue(key: ResearchMetricKey, value: number) {
+  if (['price', 'market-cap', 'pe', 'ps', 'shares'].includes(key)) return value > 0
+  return true
 }
 
 function formatCompact(value: number) {
@@ -240,7 +253,7 @@ function reportedMetric(
   kind: 'percent' | 'multiple' | 'number' | 'compact' = 'compact',
 ) {
   const latest = series[0]
-  return latest
+  return latest && isUsableMetricValue(key, latest.value)
     ? makeMetric(key, label, latest.value, [source], { kind, period: latest.period })
     : null
 }
@@ -361,6 +374,7 @@ export async function resolveFinnhubEntity(entity: ResearchEntity, token: string
       company,
       exchange: typeof match.exchange === 'string' && match.exchange.trim() ? match.exchange.trim() : entity.exchange,
       type,
+      identityVerified: true,
     }]
   })
   const exact = normalizedMatches.find((match) => normalizeSymbol(match.symbol) === requested)
@@ -418,7 +432,7 @@ async function fetchFinnhubMetrics(entity: ResearchEntity, token: string): Promi
     const field = definition.fields.find((candidate) => asNumber(metricRecord[candidate]) !== null)
     if (!field) continue
     const numericValue = asNumber(metricRecord[field])
-    if (numericValue === null) continue
+    if (numericValue === null || !isUsableMetricValue(definition.key, numericValue)) continue
     metrics.push(makeMetric(definition.key, definition.label, numericValue, metricSource ? [metricSource] : [], {
       kind: definition.kind,
       period: field.includes('TTM') ? 'TTM' : 'último dato disponible',
@@ -438,7 +452,7 @@ async function fetchFinnhubMetrics(entity: ResearchEntity, token: string): Promi
     symbol: entity.symbol,
     company: entity.company,
     exchange: entity.exchange,
-    identityVerified: true,
+    identityVerified: entity.identityVerified === true,
     dataAsOf: quoteTimestamp && quoteTimestamp > 1_000_000_000
       ? new Date(quoteTimestamp * 1000).toISOString()
       : reportedDate ?? new Date().toISOString(),
@@ -661,25 +675,539 @@ async function fetchFiscalMetrics(entity: ResearchEntity, apiKey: string): Promi
   ]
   for (const definition of ratioDefinitions) {
     const value = findRatioValue(payload, definition.names)
-    if (value !== null) metrics.push(makeMetric(definition.key, definition.label, value, [source], { kind: 'multiple', period: 'último dato disponible' }))
+    if (value !== null && isUsableMetricValue(definition.key, value)) {
+      metrics.push(makeMetric(definition.key, definition.label, value, [source], { kind: 'multiple', period: 'último dato disponible' }))
+    }
   }
   return {
     symbol: entity.symbol,
     company: entity.company,
     exchange: entity.exchange,
     dataAsOf: new Date().toISOString(),
-    identityVerified: true,
+    identityVerified: entity.identityVerified === true,
     metrics,
     sources: [source],
     warnings: metrics.length ? [] : ['Fiscal.ai no devolvió ratios reconocibles para este símbolo'],
   }
 }
 
+function asRecord(value: unknown): JsonRecord | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as JsonRecord
+    : null
+}
+
+function asRecordArray(value: unknown) {
+  return Array.isArray(value) ? value.flatMap((item) => {
+    const record = asRecord(item)
+    return record ? [record] : []
+  }) : []
+}
+
+function orderedRecords(value: unknown, periodField: string) {
+  return asRecordArray(value).sort((left, right) => String(right[periodField] ?? '').localeCompare(String(left[periodField] ?? '')))
+}
+
+function firstNumber(record: JsonRecord | undefined, fields: string[]) {
+  if (!record) return null
+  for (const field of fields) {
+    const value = asNumber(record[field])
+    if (value !== null) return value
+  }
+  return null
+}
+
+function recordPeriod(record: JsonRecord | undefined, fields: string[]) {
+  if (!record) return undefined
+  for (const field of fields) {
+    const value = record[field]
+    if (typeof value === 'string' && value.trim()) return value.trim().slice(0, 10)
+  }
+  return undefined
+}
+
+function identitySymbol(value: string) {
+  return normalizeSymbol(value).split(':').at(-1) ?? ''
+}
+
+function yahooNumber(record: JsonRecord | null | undefined, field: string) {
+  const value = record?.[field]
+  const wrapped = asRecord(value)
+  return firstNumber(wrapped ?? undefined, ['raw']) ?? asNumber(value)
+}
+
+async function yahooSession() {
+  if (yahooSessionPromise && Date.now() < yahooSessionExpiresAt) return yahooSessionPromise
+  yahooSessionPromise = (async () => {
+    const cookieResponse = await fetch('https://fc.yahoo.com', {
+      headers: { 'User-Agent': YAHOO_USER_AGENT },
+      redirect: 'manual',
+      cache: 'no-store',
+      signal: AbortSignal.timeout(12_000),
+    })
+    const headers = cookieResponse.headers as Headers & { getSetCookie?: () => string[] }
+    const setCookies = headers.getSetCookie?.() ?? [headers.get('set-cookie') ?? '']
+    const cookie = setCookies.filter(Boolean).map((value) => value.split(';')[0]).join('; ')
+    if (!cookie) throw new Error('Yahoo Finance no entregó una sesión de consulta')
+    const crumbResponse = await fetch('https://query2.finance.yahoo.com/v1/test/getcrumb', {
+      headers: { 'User-Agent': YAHOO_USER_AGENT, Cookie: cookie },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(12_000),
+    })
+    const crumb = (await crumbResponse.text()).trim()
+    if (!crumbResponse.ok || !crumb || /unauthorized|error/i.test(crumb)) {
+      throw new Error(`Yahoo Finance no entregó autorización de consulta (${crumbResponse.status})`)
+    }
+    yahooSessionExpiresAt = Date.now() + 30 * 60 * 1000
+    return { cookie, crumb }
+  })().catch((error) => {
+    yahooSessionPromise = null
+    yahooSessionExpiresAt = 0
+    throw error
+  })
+  return yahooSessionPromise
+}
+
+async function fetchYahooQuoteSummary(symbol: string) {
+  const session = await yahooSession()
+  const url = new URL(`https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}`)
+  url.searchParams.set('modules', [
+    'financialData',
+    'defaultKeyStatistics',
+    'summaryDetail',
+    'incomeStatementHistory',
+    'balanceSheetHistory',
+    'cashflowStatementHistory',
+  ].join(','))
+  url.searchParams.set('crumb', session.crumb)
+  const response = await fetch(url, {
+    headers: { 'User-Agent': YAHOO_USER_AGENT, Cookie: session.cookie },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(15_000),
+  })
+  const payload = asRecord(await response.json().catch(() => null))
+  if (!response.ok) {
+    if (response.status === 401) {
+      yahooSessionPromise = null
+      yahooSessionExpiresAt = 0
+    }
+    throw new Error(`Yahoo Finance fundamentales respondió HTTP ${response.status}`)
+  }
+  const quoteSummary = asRecord(payload?.quoteSummary)
+  return asRecordArray(quoteSummary?.result)[0] ?? null
+}
+
+export async function resolveYahooEntity(entity: ResearchEntity) {
+  const requested = identitySymbol(entity.symbol)
+  const companyQuery = entity.company.trim().slice(0, 120)
+  const baseQuery = requested || companyQuery
+  if (!baseQuery) return null
+  const words = baseQuery.split(/\s+/).filter(Boolean)
+  const queryAttempts = [baseQuery, words.slice(0, 3).join(' '), words.slice(0, 2).join(' ')]
+    .filter((value, index, all) => value && all.indexOf(value) === index)
+  const companyTokens = new Set(companyQuery.toLowerCase().match(/[a-záéíóúüñ0-9]{3,}/g) ?? [])
+
+  for (const query of queryAttempts) {
+    const url = new URL('https://query2.finance.yahoo.com/v1/finance/search')
+    url.searchParams.set('q', query)
+    url.searchParams.set('quotesCount', '8')
+    url.searchParams.set('newsCount', '0')
+    const response = await fetch(url, {
+      headers: { 'User-Agent': YAHOO_USER_AGENT },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(12_000),
+    })
+    if (!response.ok) throw new Error(`Yahoo Finance búsqueda respondió HTTP ${response.status}`)
+    const payload = asRecord(await response.json().catch(() => null))
+    const matches = asRecordArray(payload?.quotes).flatMap((quote) => {
+      const symbol = typeof quote.symbol === 'string' ? quote.symbol.trim() : ''
+      const company = [quote.longname, quote.shortname]
+        .find((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+      const quoteType = typeof quote.quoteType === 'string' ? quote.quoteType.toUpperCase() : ''
+      if (!symbol || !company || !['EQUITY', 'ETF'].includes(quoteType)) return []
+      const normalizedCompany = company.toLowerCase()
+      const overlap = [...companyTokens].filter((token) => normalizedCompany.includes(token)).length
+      const primaryListingScore = symbol.endsWith('.L') ? 20 : symbol.includes('.') ? 0 : 10
+      return [{
+        entity: {
+          symbol,
+          company: company.trim(),
+          exchange: typeof quote.exchDisp === 'string' && quote.exchDisp.trim()
+            ? quote.exchDisp.trim()
+            : typeof quote.exchange === 'string' ? quote.exchange.trim() : entity.exchange,
+          type: quoteType === 'ETF' ? 'ETP' : 'Common Stock',
+          identityVerified: true,
+        } satisfies ResearchEntity,
+        score: overlap * 100 + primaryListingScore,
+      }]
+    })
+    const exact = matches.find((match) => identitySymbol(match.entity.symbol) === requested)
+    if (exact) return exact.entity
+    if (requested) continue
+    const ranked = matches.filter((match) => !companyTokens.size || match.score >= 100).sort((left, right) => right.score - left.score)
+    if (ranked[0]) return ranked[0].entity
+  }
+  return null
+}
+
+async function fetchAlphaVantageJson(functionName: string, symbol: string, apiKey: string) {
+  const url = new URL('https://www.alphavantage.co/query')
+  url.searchParams.set('function', functionName)
+  url.searchParams.set('symbol', symbol)
+  url.searchParams.set('apikey', apiKey)
+  const response = await fetch(url, {
+    cache: 'no-store',
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!response.ok) throw new Error(`Alpha Vantage respondió HTTP ${response.status}`)
+  const payload = asRecord(await response.json().catch(() => null))
+  if (!payload) throw new Error('Alpha Vantage no devolvió JSON válido')
+  const providerMessage = ['Error Message', 'Information', 'Note']
+    .map((field) => payload[field])
+    .find((value) => typeof value === 'string' && value.trim())
+  if (typeof providerMessage === 'string') {
+    const isQuota = /rate|limit|frequency|calls|quota/i.test(providerMessage)
+    throw new Error(isQuota ? 'Alpha Vantage ha alcanzado su límite gratuito' : `Alpha Vantage: ${providerMessage.slice(0, 180)}`)
+  }
+  return payload
+}
+
+async function fetchAlphaVantageMetrics(entity: ResearchEntity, apiKey: string): Promise<FundamentalSnapshot> {
+  const endpointNames = ['OVERVIEW', 'INCOME_STATEMENT', 'BALANCE_SHEET', 'CASH_FLOW'] as const
+  const results = await Promise.allSettled(endpointNames.map((endpoint) => fetchAlphaVantageJson(endpoint, entity.symbol, apiKey)))
+  const payloadFor = (endpoint: typeof endpointNames[number]) => {
+    const result = results[endpointNames.indexOf(endpoint)]
+    return result?.status === 'fulfilled' ? result.value : null
+  }
+  const overview = payloadFor('OVERVIEW')
+  const incomePayload = payloadFor('INCOME_STATEMENT')
+  const balancePayload = payloadFor('BALANCE_SHEET')
+  const cashPayload = payloadFor('CASH_FLOW')
+  const income = orderedRecords(incomePayload?.annualReports, 'fiscalDateEnding')
+  const balance = orderedRecords(balancePayload?.annualReports, 'fiscalDateEnding')
+  const cashFlow = orderedRecords(cashPayload?.annualReports, 'fiscalDateEnding')
+  const latestIncome = income[0]
+  const previousIncome = income[1]
+  const latestBalance = balance[0]
+  const latestCashFlow = cashFlow[0]
+  const source = safeSource('Alpha Vantage · fundamentales', 'https://www.alphavantage.co/documentation/#fundamentals')
+  if (!source) throw new Error('URL de Alpha Vantage no válida')
+  const metrics: ResearchMetric[] = []
+  const push = (metric: ResearchMetric | null) => { if (metric) metrics.push(metric) }
+  const sourceUrls = [source]
+  const incomePeriod = recordPeriod(latestIncome, ['fiscalDateEnding'])
+  const balancePeriod = recordPeriod(latestBalance, ['fiscalDateEnding'])
+  const cashPeriod = recordPeriod(latestCashFlow, ['fiscalDateEnding'])
+
+  const overviewDefinitions: Array<{
+    key: ResearchMetricKey
+    label: string
+    fields: string[]
+    kind: 'percent' | 'multiple' | 'number' | 'compact'
+  }> = [
+    { key: 'market-cap', label: 'Capitalización', fields: ['MarketCapitalization'], kind: 'compact' },
+    { key: 'pe', label: 'PER', fields: ['PERatio', 'TrailingPE'], kind: 'multiple' },
+    { key: 'ps', label: 'Precio / ventas', fields: ['PriceToSalesRatioTTM'], kind: 'multiple' },
+    { key: 'eps', label: 'Beneficio por acción', fields: ['DilutedEPSTTM', 'EPS'], kind: 'number' },
+    { key: 'revenue', label: 'Ventas TTM', fields: ['RevenueTTM'], kind: 'compact' },
+    { key: 'revenue-growth', label: 'Crecimiento de ventas interanual', fields: ['QuarterlyRevenueGrowthYOY'], kind: 'percent' },
+    { key: 'eps-growth', label: 'Crecimiento del BPA interanual', fields: ['QuarterlyEarningsGrowthYOY'], kind: 'percent' },
+    { key: 'gross-margin', label: 'Margen bruto', fields: ['GrossProfitTTM'], kind: 'percent' },
+    { key: 'operating-margin', label: 'Margen operativo', fields: ['OperatingMarginTTM'], kind: 'percent' },
+    { key: 'net-margin', label: 'Margen neto', fields: ['ProfitMargin'], kind: 'percent' },
+    { key: 'roe', label: 'ROE', fields: ['ReturnOnEquityTTM'], kind: 'percent' },
+    { key: 'roic', label: 'Retorno sobre la inversión', fields: ['ReturnOnInvestmentTTM'], kind: 'percent' },
+    { key: 'shares', label: 'Acciones en circulación', fields: ['SharesOutstanding'], kind: 'compact' },
+  ]
+  for (const definition of overviewDefinitions) {
+    let value = firstNumber(overview ?? undefined, definition.fields)
+    if (definition.key === 'gross-margin' && value !== null) {
+      const overviewRevenue = firstNumber(overview ?? undefined, ['RevenueTTM'])
+      value = overviewRevenue ? (value / overviewRevenue) * 100 : null
+    }
+    if (value !== null && isUsableMetricValue(definition.key, value)) {
+      push(makeMetric(definition.key, definition.label, value, sourceUrls, {
+        kind: definition.kind,
+        period: definition.fields.some((field) => field.endsWith('TTM')) ? 'TTM' : 'último dato disponible',
+      }))
+    }
+  }
+
+  const revenue = firstNumber(latestIncome, ['totalRevenue'])
+  const previousRevenue = firstNumber(previousIncome, ['totalRevenue'])
+  const grossProfit = firstNumber(latestIncome, ['grossProfit'])
+  const operatingIncome = firstNumber(latestIncome, ['operatingIncome'])
+  const netIncome = firstNumber(latestIncome, ['netIncome'])
+  const cashValue = firstNumber(latestBalance, ['cashAndShortTermInvestments', 'cashAndCashEquivalentsAtCarryingValue'])
+  const reportedDebt = firstNumber(latestBalance, ['shortLongTermDebtTotal'])
+  const currentDebt = firstNumber(latestBalance, ['currentDebt', 'shortTermDebt'])
+  const longTermDebt = firstNumber(latestBalance, ['longTermDebt'])
+  const debtValue = reportedDebt ?? (currentDebt !== null || longTermDebt !== null ? (currentDebt ?? 0) + (longTermDebt ?? 0) : null)
+  const shares = firstNumber(latestBalance, ['commonStockSharesOutstanding'])
+  const operatingCashFlow = firstNumber(latestCashFlow, ['operatingCashflow'])
+  const capex = firstNumber(latestCashFlow, ['capitalExpenditures'])
+
+  if (revenue !== null) push(makeMetric('revenue', 'Ventas', revenue, sourceUrls, { kind: 'compact', period: incomePeriod }))
+  if (revenue !== null && previousRevenue !== null && previousRevenue !== 0) {
+    push(makeMetric('revenue-growth', 'Crecimiento de ventas interanual', ((revenue / previousRevenue) - 1) * 100, sourceUrls, {
+      kind: 'percent', period: `${recordPeriod(previousIncome, ['fiscalDateEnding']) ?? '?'} → ${incomePeriod ?? '?'}`,
+    }))
+  }
+  if (netIncome !== null) push(makeMetric('net-income', 'Beneficio neto', netIncome, sourceUrls, { kind: 'compact', period: incomePeriod }))
+  if (revenue) {
+    if (grossProfit !== null) push(makeMetric('gross-margin', 'Margen bruto', (grossProfit / revenue) * 100, sourceUrls, { kind: 'percent', period: incomePeriod }))
+    if (operatingIncome !== null) push(makeMetric('operating-margin', 'Margen operativo', (operatingIncome / revenue) * 100, sourceUrls, { kind: 'percent', period: incomePeriod }))
+    if (netIncome !== null) push(makeMetric('net-margin', 'Margen neto', (netIncome / revenue) * 100, sourceUrls, { kind: 'percent', period: incomePeriod }))
+  }
+  if (cashValue !== null) push(makeMetric('cash', 'Caja', cashValue, sourceUrls, { kind: 'compact', period: balancePeriod }))
+  if (debtValue !== null) push(makeMetric('debt', 'Deuda', debtValue, sourceUrls, { kind: 'compact', period: balancePeriod }))
+  if (cashValue !== null && debtValue !== null) push(makeMetric('net-debt', 'Deuda neta', debtValue - cashValue, sourceUrls, { kind: 'compact', period: balancePeriod, note: 'Calculada como deuda menos caja.' }))
+  if (shares !== null) push(makeMetric('shares', 'Acciones en circulación', shares, sourceUrls, { kind: 'compact', period: balancePeriod }))
+  if (operatingCashFlow !== null) push(makeMetric('operating-cash-flow', 'Flujo de caja operativo', operatingCashFlow, sourceUrls, { kind: 'compact', period: cashPeriod }))
+  if (operatingCashFlow !== null && capex !== null) push(makeMetric('free-cash-flow', 'Flujo de caja libre', operatingCashFlow - Math.abs(capex), sourceUrls, { kind: 'compact', period: cashPeriod, note: 'Calculado como flujo operativo menos capex reportado.' }))
+
+  const requestedSymbol = identitySymbol(entity.symbol)
+  const returnedSymbols = [overview?.Symbol, incomePayload?.symbol, balancePayload?.symbol, cashPayload?.symbol]
+    .filter((value): value is string => typeof value === 'string')
+    .map(identitySymbol)
+  const warnings = results.flatMap((result, index) => result.status === 'rejected'
+    ? [`Alpha Vantage ${endpointNames[index]}: ${result.reason instanceof Error ? result.reason.message : 'no respondió'}`]
+    : [])
+  if (!metrics.length && !warnings.length) warnings.push('Alpha Vantage no devolvió métricas reconocibles para este símbolo')
+  const periods = [incomePeriod, balancePeriod, cashPeriod].filter((value): value is string => Boolean(value)).sort()
+  return {
+    symbol: entity.symbol,
+    company: typeof overview?.Name === 'string' && overview.Name.trim() ? overview.Name.trim() : entity.company,
+    exchange: typeof overview?.Exchange === 'string' && overview.Exchange.trim() ? overview.Exchange.trim() : entity.exchange,
+    dataAsOf: periods.at(-1) ?? new Date().toISOString(),
+    identityVerified: Boolean(requestedSymbol && returnedSymbols.includes(requestedSymbol)),
+    metrics: mergeMetrics(metrics),
+    sources: metrics.length ? [source] : [],
+    warnings,
+  }
+}
+
+async function fetchFinancialDatasetsMetrics(entity: ResearchEntity, apiKey: string): Promise<FundamentalSnapshot> {
+  const url = new URL('https://api.financialdatasets.ai/financials/')
+  url.searchParams.set('ticker', entity.symbol)
+  url.searchParams.set('period', 'annual')
+  url.searchParams.set('limit', '3')
+  const response = await fetch(url, {
+    headers: { 'X-API-KEY': apiKey },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(15_000),
+  })
+  const payload = asRecord(await response.json().catch(() => null))
+  if (!response.ok) {
+    const providerMessage = typeof payload?.message === 'string' ? payload.message : ''
+    if (response.status === 402) throw new Error('Financial Datasets requiere un plan compatible con este endpoint')
+    throw new Error(providerMessage || `Financial Datasets respondió HTTP ${response.status}`)
+  }
+  const financials = asRecord(payload?.financials)
+  const income = orderedRecords(financials?.income_statements, 'report_period')
+  const balance = orderedRecords(financials?.balance_sheets, 'report_period')
+  const cashFlow = orderedRecords(financials?.cash_flow_statements, 'report_period')
+  const latestIncome = income[0]
+  const previousIncome = income[1]
+  const latestBalance = balance[0]
+  const latestCashFlow = cashFlow[0]
+  const documentationSource = safeSource('Financial Datasets · estados financieros', 'https://docs.financialdatasets.ai/api/financials/all-financial-statements')
+  if (!documentationSource) throw new Error('URL de Financial Datasets no válida')
+  const filingSource = [latestIncome, latestBalance, latestCashFlow]
+    .map((record) => typeof record?.filing_url === 'string' ? safeSource('Informe financiero presentado', record.filing_url) : null)
+    .find((source): source is ResearchSource => Boolean(source))
+  const sourceUrls = uniqueSources([filingSource ?? null, documentationSource])
+  const metrics: ResearchMetric[] = []
+  const push = (metric: ResearchMetric | null) => { if (metric) metrics.push(metric) }
+  const incomePeriod = recordPeriod(latestIncome, ['report_period'])
+  const balancePeriod = recordPeriod(latestBalance, ['report_period'])
+  const cashPeriod = recordPeriod(latestCashFlow, ['report_period'])
+  const revenue = firstNumber(latestIncome, ['revenue'])
+  const previousRevenue = firstNumber(previousIncome, ['revenue'])
+  const grossProfit = firstNumber(latestIncome, ['gross_profit'])
+  const operatingIncome = firstNumber(latestIncome, ['operating_income'])
+  const netIncome = firstNumber(latestIncome, ['net_income', 'net_income_common_stock'])
+  const eps = firstNumber(latestIncome, ['earnings_per_share_diluted', 'earnings_per_share'])
+  const previousEps = firstNumber(previousIncome, ['earnings_per_share_diluted', 'earnings_per_share'])
+  const shares = firstNumber(latestBalance, ['outstanding_shares']) ?? firstNumber(latestIncome, ['weighted_average_shares_diluted', 'weighted_average_shares'])
+  const cashValue = firstNumber(latestBalance, ['cash_and_equivalents'])
+  const debtValue = firstNumber(latestBalance, ['total_debt']) ?? (() => {
+    const current = firstNumber(latestBalance, ['current_debt'])
+    const nonCurrent = firstNumber(latestBalance, ['non_current_debt'])
+    return current !== null || nonCurrent !== null ? (current ?? 0) + (nonCurrent ?? 0) : null
+  })()
+  const operatingCashFlow = firstNumber(latestCashFlow, ['net_cash_flow_from_operations'])
+  const capex = firstNumber(latestCashFlow, ['capital_expenditure'])
+  const freeCashFlow = firstNumber(latestCashFlow, ['free_cash_flow'])
+
+  if (revenue !== null) push(makeMetric('revenue', 'Ventas', revenue, sourceUrls, { kind: 'compact', period: incomePeriod }))
+  if (revenue !== null && previousRevenue !== null && previousRevenue !== 0) push(makeMetric('revenue-growth', 'Crecimiento de ventas interanual', ((revenue / previousRevenue) - 1) * 100, sourceUrls, { kind: 'percent', period: `${recordPeriod(previousIncome, ['report_period']) ?? '?'} → ${incomePeriod ?? '?'}` }))
+  if (netIncome !== null) push(makeMetric('net-income', 'Beneficio neto', netIncome, sourceUrls, { kind: 'compact', period: incomePeriod }))
+  if (eps !== null) push(makeMetric('eps', 'Beneficio por acción', eps, sourceUrls, { kind: 'number', period: incomePeriod }))
+  if (eps !== null && previousEps !== null && previousEps !== 0) push(makeMetric('eps-growth', 'Crecimiento del BPA interanual', ((eps / previousEps) - 1) * 100, sourceUrls, { kind: 'percent', period: `${recordPeriod(previousIncome, ['report_period']) ?? '?'} → ${incomePeriod ?? '?'}` }))
+  if (revenue) {
+    if (grossProfit !== null) push(makeMetric('gross-margin', 'Margen bruto', (grossProfit / revenue) * 100, sourceUrls, { kind: 'percent', period: incomePeriod }))
+    if (operatingIncome !== null) push(makeMetric('operating-margin', 'Margen operativo', (operatingIncome / revenue) * 100, sourceUrls, { kind: 'percent', period: incomePeriod }))
+    if (netIncome !== null) push(makeMetric('net-margin', 'Margen neto', (netIncome / revenue) * 100, sourceUrls, { kind: 'percent', period: incomePeriod }))
+  }
+  if (cashValue !== null) push(makeMetric('cash', 'Caja', cashValue, sourceUrls, { kind: 'compact', period: balancePeriod }))
+  if (debtValue !== null) push(makeMetric('debt', 'Deuda', debtValue, sourceUrls, { kind: 'compact', period: balancePeriod }))
+  if (cashValue !== null && debtValue !== null) push(makeMetric('net-debt', 'Deuda neta', debtValue - cashValue, sourceUrls, { kind: 'compact', period: balancePeriod, note: 'Calculada como deuda menos caja.' }))
+  if (shares !== null) push(makeMetric('shares', 'Acciones en circulación', shares, sourceUrls, { kind: 'compact', period: balancePeriod ?? incomePeriod }))
+  if (operatingCashFlow !== null) push(makeMetric('operating-cash-flow', 'Flujo de caja operativo', operatingCashFlow, sourceUrls, { kind: 'compact', period: cashPeriod }))
+  if (freeCashFlow !== null) push(makeMetric('free-cash-flow', 'Flujo de caja libre', freeCashFlow, sourceUrls, { kind: 'compact', period: cashPeriod }))
+  else if (operatingCashFlow !== null && capex !== null) push(makeMetric('free-cash-flow', 'Flujo de caja libre', operatingCashFlow - Math.abs(capex), sourceUrls, { kind: 'compact', period: cashPeriod, note: 'Calculado como flujo operativo menos capex reportado.' }))
+
+  const requestedSymbol = identitySymbol(entity.symbol)
+  const returnedSymbols = [...income, ...balance, ...cashFlow]
+    .map((record) => typeof record.ticker === 'string' ? identitySymbol(record.ticker) : '')
+    .filter(Boolean)
+  const periods = [incomePeriod, balancePeriod, cashPeriod].filter((value): value is string => Boolean(value)).sort()
+  return {
+    symbol: entity.symbol,
+    company: entity.company,
+    exchange: entity.exchange,
+    dataAsOf: periods.at(-1) ?? new Date().toISOString(),
+    identityVerified: Boolean(requestedSymbol && returnedSymbols.includes(requestedSymbol)),
+    metrics: mergeMetrics(metrics),
+    sources: metrics.length ? sourceUrls : [],
+    warnings: metrics.length ? [] : ['Financial Datasets no devolvió estados financieros reconocibles para este símbolo'],
+  }
+}
+
+async function fetchYahooMarketSnapshot(entity: ResearchEntity): Promise<FundamentalSnapshot> {
+  const url = new URL(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(entity.symbol)}`)
+  url.searchParams.set('range', '5d')
+  url.searchParams.set('interval', '1d')
+  url.searchParams.set('events', 'history')
+  const summaryPromise = fetchYahooQuoteSummary(entity.symbol)
+    .then((summary) => ({ summary, warning: '' }))
+    .catch((error) => ({
+      summary: null,
+      warning: error instanceof Error ? error.message : 'Yahoo Finance no devolvió fundamentales',
+    }))
+  const response = await fetch(url, {
+    headers: { 'User-Agent': YAHOO_USER_AGENT },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(12_000),
+  })
+  if (!response.ok) throw new Error(`Yahoo Finance respondió HTTP ${response.status}`)
+  const payload = asRecord(await response.json().catch(() => null))
+  const chart = asRecord(payload?.chart)
+  const result = asRecordArray(chart?.result)[0]
+  const meta = asRecord(result?.meta)
+  const returnedSymbol = typeof meta?.symbol === 'string' ? meta.symbol : ''
+  const price = firstNumber(meta ?? undefined, ['regularMarketPrice'])
+  const previousClose = firstNumber(meta ?? undefined, ['chartPreviousClose', 'previousClose'])
+  const timestamp = firstNumber(meta ?? undefined, ['regularMarketTime'])
+  const marketCurrency = typeof meta?.currency === 'string' ? meta.currency.trim() : ''
+  const marketSource = safeSource('Yahoo Finance · mercado', url.toString())
+  const fundamentalsSource = safeSource('Yahoo Finance · fundamentales', `https://finance.yahoo.com/quote/${encodeURIComponent(entity.symbol)}/`)
+  if (!marketSource || !fundamentalsSource) throw new Error('URL de Yahoo Finance no válida')
+  const metrics: ResearchMetric[] = []
+  if (price !== null && price > 0) {
+    const changePercent = previousClose && previousClose > 0 ? ((price / previousClose) - 1) * 100 : null
+    const priceMetric = makeMetric('price', 'Precio de mercado', price, [marketSource], {
+      kind: 'number',
+      period: timestamp && timestamp > 1_000_000_000 ? new Date(timestamp * 1000).toISOString() : 'último dato disponible',
+      note: changePercent === null ? undefined : `Variación frente al cierre anterior: ${formatPercent(changePercent)}.`,
+    })
+    metrics.push(marketCurrency ? { ...priceMetric, value: `${priceMetric.value} ${marketCurrency}`, unit: marketCurrency } : priceMetric)
+  }
+  const { summary, warning: summaryWarning } = await summaryPromise
+  const financialData = asRecord(summary?.financialData)
+  const statistics = asRecord(summary?.defaultKeyStatistics)
+  const summaryDetail = asRecord(summary?.summaryDetail)
+  const financialCurrency = typeof financialData?.financialCurrency === 'string' ? financialData.financialCurrency.trim() : ''
+  const ttmMetrics: Array<{
+    key: ResearchMetricKey
+    label: string
+    record: JsonRecord | null
+    field: string
+    kind: 'percent' | 'multiple' | 'number' | 'compact'
+  }> = [
+    { key: 'market-cap', label: 'Capitalización', record: summaryDetail, field: 'marketCap', kind: 'compact' },
+    { key: 'revenue', label: 'Ventas TTM', record: financialData, field: 'totalRevenue', kind: 'compact' },
+    { key: 'revenue-growth', label: 'Crecimiento de ventas interanual', record: financialData, field: 'revenueGrowth', kind: 'percent' },
+    { key: 'eps', label: 'Beneficio por acción', record: statistics, field: 'trailingEps', kind: 'number' },
+    { key: 'eps-growth', label: 'Crecimiento del beneficio interanual', record: financialData, field: 'earningsGrowth', kind: 'percent' },
+    { key: 'gross-margin', label: 'Margen bruto', record: financialData, field: 'grossMargins', kind: 'percent' },
+    { key: 'operating-margin', label: 'Margen operativo', record: financialData, field: 'operatingMargins', kind: 'percent' },
+    { key: 'net-margin', label: 'Margen neto', record: financialData, field: 'profitMargins', kind: 'percent' },
+    { key: 'operating-cash-flow', label: 'Flujo de caja operativo', record: financialData, field: 'operatingCashflow', kind: 'compact' },
+    { key: 'free-cash-flow', label: 'Flujo de caja libre', record: financialData, field: 'freeCashflow', kind: 'compact' },
+    { key: 'cash', label: 'Caja', record: financialData, field: 'totalCash', kind: 'compact' },
+    { key: 'debt', label: 'Deuda', record: financialData, field: 'totalDebt', kind: 'compact' },
+    { key: 'shares', label: 'Acciones en circulación', record: statistics, field: 'sharesOutstanding', kind: 'compact' },
+    { key: 'pe', label: 'PER', record: summaryDetail, field: 'trailingPE', kind: 'multiple' },
+    { key: 'ps', label: 'Precio / ventas', record: summaryDetail, field: 'priceToSalesTrailing12Months', kind: 'multiple' },
+    { key: 'roe', label: 'ROE', record: financialData, field: 'returnOnEquity', kind: 'percent' },
+  ]
+  for (const definition of ttmMetrics) {
+    const value = yahooNumber(definition.record, definition.field)
+    if (value !== null && isUsableMetricValue(definition.key, value)) {
+      const metric = makeMetric(definition.key, definition.label, value, [fundamentalsSource], {
+        kind: definition.kind,
+        period: 'TTM o último dato publicado',
+      })
+      const financialKeys: ResearchMetricKey[] = ['revenue', 'operating-cash-flow', 'free-cash-flow', 'cash', 'debt']
+      const currency = definition.key === 'market-cap' ? marketCurrency : financialKeys.includes(definition.key) ? financialCurrency : ''
+      const unit = definition.key === 'eps' && financialCurrency ? `${financialCurrency}/acción` : currency
+      metrics.push(unit ? { ...metric, value: `${metric.value} ${unit}`, unit } : metric)
+    }
+  }
+  const cashValue = metrics.find((metric) => metric.key === 'cash')?.numericValue
+  const debtValue = metrics.find((metric) => metric.key === 'debt')?.numericValue
+  if (cashValue !== undefined && debtValue !== undefined) {
+    const metric = makeMetric('net-debt', 'Deuda neta', debtValue - cashValue, [fundamentalsSource], {
+      kind: 'compact', period: 'último dato publicado', note: 'Calculada como deuda menos caja.',
+    })
+    metrics.push(financialCurrency ? { ...metric, value: `${metric.value} ${financialCurrency}`, unit: financialCurrency } : metric)
+  }
+  const incomeHistory = asRecord(summary?.incomeStatementHistory)
+  const annualIncome = orderedRecords(incomeHistory?.incomeStatementHistory, 'endDate')
+  const latestIncome = annualIncome[0]
+  const netIncome = yahooNumber(latestIncome ? asRecord(latestIncome.netIncome) : null, 'raw')
+  const statementPeriodRaw = asRecord(latestIncome?.endDate)
+  const statementTimestamp = firstNumber(statementPeriodRaw ?? undefined, ['raw'])
+  const statementPeriod = statementTimestamp && statementTimestamp > 1_000_000_000
+    ? new Date(statementTimestamp * 1000).toISOString().slice(0, 10)
+    : typeof statementPeriodRaw?.fmt === 'string' ? statementPeriodRaw.fmt : undefined
+  if (netIncome !== null) {
+    const metric = makeMetric('net-income', 'Beneficio neto', netIncome, [fundamentalsSource], {
+      kind: 'compact', period: statementPeriod ?? 'último ejercicio publicado',
+    })
+    metrics.push(financialCurrency ? { ...metric, value: `${metric.value} ${financialCurrency}`, unit: financialCurrency } : metric)
+  }
+  const requestedSymbol = identitySymbol(entity.symbol)
+  const company = [meta?.longName, meta?.shortName]
+    .find((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+  const exchange = [meta?.fullExchangeName, meta?.exchangeName]
+    .find((value): value is string => typeof value === 'string' && Boolean(value.trim()))
+  return {
+    symbol: returnedSymbol || entity.symbol,
+    company: company?.trim() || entity.company,
+    exchange: exchange?.trim() || entity.exchange,
+    dataAsOf: timestamp && timestamp > 1_000_000_000 ? new Date(timestamp * 1000).toISOString() : new Date().toISOString(),
+    identityVerified: Boolean(requestedSymbol && identitySymbol(returnedSymbol) === requestedSymbol && metrics.length),
+    price,
+    changePercent: price !== null && previousClose && previousClose > 0 ? ((price / previousClose) - 1) * 100 : null,
+    metrics: mergeMetrics(metrics),
+    sources: metrics.length ? uniqueSources([marketSource, summary ? fundamentalsSource : null]) : [],
+    warnings: [
+      metrics.length ? '' : 'Yahoo Finance no devolvió un precio utilizable para este símbolo',
+      summaryWarning,
+    ].filter(Boolean),
+  }
+}
+
 export async function collectFundamentals(entity: ResearchEntity, credentials: SourceCredentials): Promise<FundamentalSnapshot> {
-  const tasks: Promise<FundamentalSnapshot>[] = []
+  const tasks: Promise<FundamentalSnapshot>[] = [fetchYahooMarketSnapshot(entity)]
   if (credentials.finnhubToken) tasks.push(fetchFinnhubMetrics(entity, credentials.finnhubToken))
   if (credentials.secContactEmail) tasks.push(fetchSecMetrics(entity, credentials.secContactEmail))
   if (credentials.fiscalApiKey) tasks.push(fetchFiscalMetrics(entity, credentials.fiscalApiKey))
+  if (credentials.alphaVantageApiKey) tasks.push(fetchAlphaVantageMetrics(entity, credentials.alphaVantageApiKey))
+  if (credentials.financialDatasetsApiKey) tasks.push(fetchFinancialDatasetsMetrics(entity, credentials.financialDatasetsApiKey))
 
   if (!tasks.length) {
     return {

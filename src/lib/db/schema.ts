@@ -1,5 +1,6 @@
 import { sqliteTable, text, integer, real, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import { sql, relations } from 'drizzle-orm'
+import { DEFAULT_OPENROUTER_MODEL } from '@/lib/ai/model-routing'
 
 // ─── USUARIOS ────────────────────────────────────────────────────────────────
 export const usuarios = sqliteTable('usuarios', {
@@ -18,7 +19,7 @@ export const configuraciones_ia = sqliteTable(
     usuario_id: integer('usuario_id').notNull().references(() => usuarios.id),
     proveedor: text('proveedor').notNull().default('openrouter'),
     api_key_cifrada: text('api_key_cifrada').notNull(),
-    modelo: text('modelo').notNull().default('openrouter/free'),
+    modelo: text('modelo').notNull().default(DEFAULT_OPENROUTER_MODEL),
     modelo_busqueda_gratuita: text('modelo_busqueda_gratuita'),
     modelo_busqueda_premium: text('modelo_busqueda_premium'),
     modelo_analisis_cartera: text('modelo_analisis_cartera'),

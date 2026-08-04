@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 import { getAiCredentials, type AiCredentials } from '@/lib/ai/provider-config'
+import { buildOpenRouterModelChain, normalizeOpenRouterFreeModel } from '@/lib/ai/model-routing'
 import { decryptSecret } from '@/lib/ai/secret-crypto'
 import { db } from '@/lib/db'
 import { configuraciones_fuentes_inversion } from '@/lib/db/schema'
@@ -16,15 +17,18 @@ import {
   type ResearchMetric,
   type ResearchResult,
   type ResearchSource,
+  type LynchResearchProfile,
 } from '@/lib/buscador-acciones/lynchFramework'
 import {
   buildResearchScorecard,
   collectFundamentals,
   mergeFundamentalSnapshots,
   resolveFinnhubEntity,
+  resolveYahooEntity,
   type FundamentalSnapshot,
   type ResearchEntity,
 } from '@/lib/buscador-acciones/researchData'
+import { getLynchBookContext } from '@/lib/buscador-acciones/lynchBook'
 
 export const runtime = 'nodejs'
 
@@ -34,6 +38,14 @@ const inputSchema = z.object({
   horizon: z.enum(['3-5', '5-10', '10+']).default('5-10'),
   risk: z.enum(['prudente', 'moderado', 'alto']).default('moderado'),
   tier: z.enum(['free', 'premium']).default('free'),
+  profile: z.object({
+    observation: z.string().trim().max(800).default(''),
+    business: z.string().trim().max(1200).default(''),
+    category: z.enum(['slow-grower', 'stalwart', 'fast-grower', 'cyclical', 'turnaround', 'asset-play', 'undecided']).default('undecided'),
+    metricFocus: z.array(z.enum(['growth', 'profitability', 'cash-flow', 'balance-sheet', 'valuation', 'dilution'])).max(6).default([]),
+    thesis: z.string().trim().max(1200).default(''),
+    invalidation: z.string().trim().max(1200).default(''),
+  }).optional(),
 })
 
 const candidateSchema = z.object({
@@ -45,8 +57,10 @@ const candidateSchema = z.object({
   category: z.enum(['slow-grower', 'stalwart', 'fast-grower', 'cyclical', 'turnaround', 'asset-play']),
   fit: z.number().int().min(0).max(100),
   thesis: z.string().min(1).max(2000),
-  evidence: z.array(z.string().min(1).max(600)).min(1).max(4),
-  risks: z.array(z.string().min(1).max(600)).min(1).max(4),
+  evidence: z.array(z.string().min(1).max(600)).max(4).optional().default([]),
+  risks: z.array(z.string().min(1).max(600)).max(4).optional().default([]),
+  monitoring: z.array(z.string().min(1).max(600)).max(4).optional().default([]),
+  exitSignals: z.array(z.string().min(1).max(600)).max(4).optional().default([]),
   firstSource: z.string().min(1).max(400),
   stage: z.enum(['Universo', 'Preselección', 'Revisión']),
   categoryReason: z.string().max(800).optional().default(''),
@@ -91,6 +105,8 @@ const RESPONSE_SCHEMA = {
           thesis: { type: 'string' },
           evidence: { type: 'array', items: { type: 'string' } },
           risks: { type: 'array', items: { type: 'string' } },
+          monitoring: { type: 'array', items: { type: 'string' } },
+          exitSignals: { type: 'array', items: { type: 'string' } },
           firstSource: { type: 'string' },
           stage: { type: 'string', enum: ['Universo', 'Preselección', 'Revisión'] },
           categoryReason: { type: 'string' },
@@ -108,7 +124,7 @@ const RESPONSE_SCHEMA = {
           },
           dataAsOf: { type: 'string' },
         },
-        required: ['ticker', 'company', 'exchange', 'title', 'subtitle', 'category', 'fit', 'thesis', 'evidence', 'risks', 'firstSource', 'stage', 'sourceUrls', 'dataAsOf'],
+    required: ['ticker', 'company', 'exchange', 'title', 'subtitle', 'category', 'fit', 'thesis', 'firstSource', 'stage', 'sourceUrls', 'dataAsOf'],
       },
     },
   },
@@ -119,14 +135,23 @@ const BASE_SYSTEM_PROMPT = `Eres un analista de investigación bursátil para un
 
 El marco está inspirado en ideas generales de "Un paso por delante de Wall Street" de Peter Lynch: entender la historia del negocio, clasificarlo en una de seis categorías (slow grower, stalwart, fast grower, cyclical, turnaround o asset play), comprobar ventas/beneficio/caja/deuda/acciones, revisar la valoración y escribir qué invalidaría la tesis.
 
+Protocolo de investigación:
+- Empieza por la historia: qué vende la empresa, quién paga, por qué vuelve el cliente, qué tamaño tiene la oportunidad y qué ventaja puede defender.
+- Elige la categoría antes de interpretar los números. Un crecimiento rápido exige ventas y BPA comparables; una cíclica exige mirar el ciclo y no extrapolar el pico; una turnaround exige una causa concreta, liquidez y señales de recuperación; un asset play exige activos identificables y un catalizador.
+- Comprueba como mínimo ventas y crecimiento, beneficio y BPA, márgenes, flujo de caja operativo y libre, caja, deuda/deuda neta, acciones en circulación y PER o precio/ventas cuando estén disponibles. El PER solo tiene sentido junto al crecimiento, la calidad del beneficio, el ciclo y la deuda.
+- Separa una empresa barata de una empresa deteriorada. Una caída de precio no es por sí sola una tesis ni una señal de salida.
+- Escribe qué observar después y qué rompería la tesis. Usa "revisar", "invalidar" o "comprobar"; nunca conviertas esas condiciones en una orden automática de comprar o vender.
+
 Reglas obligatorias:
 - No eres asesor financiero. Nunca digas comprar, vender, mantener, entrada, precio objetivo ni asignes una probabilidad de conseguir 10x.
 - Devuelve empresas para investigar, no recomendaciones. El campo fit es solo encaje cualitativo con el marco, no rentabilidad esperada.
 - Los DATOS FINANCIEROS VERIFICADOS son los que aparecen en FUENTES Y MÉTRICAS. No inventes cifras, fechas, múltiplos, crecimiento, ticker ni URLs.
 - Si falta una métrica, dilo explícitamente en evidence o risks; no la rellenes con una estimación mental.
+- Si no puedes respaldar identidad, cifra, fecha o fuente con el contexto recibido, devuelve candidates vacío o deja la afirmación como pregunta pendiente; nunca completes el hueco con conocimiento general o una conjetura.
 - Diferencia siempre hechos (con fuente y periodo) de interpretación (tesis, categoría y riesgos).
 - El ticker, empresa y mercado deben salir de EMPRESAS VERIFICADAS o de una fuente web del contexto; si no puedes verificar la identidad, no devuelvas ese candidato.
 - El campo fit no es una puntuación de calidad: la aplicación lo sustituirá por su propio scorecard determinista. No lo uses para sugerir rentabilidad.
+- El PERFIL LYNCH DEL USUARIO contiene hipótesis y prioridades, no hechos. Úsalo para personalizar preguntas y seguimiento, pero corrígelo cuando contradiga las métricas verificadas.
 - Señala la fecha de los datos y recuerda que la cotización y la tesis pueden cambiar.
 - No copies texto del libro. Aplícalo como protocolo de razonamiento propio.
 - Responde exclusivamente con el JSON solicitado, sin markdown.`
@@ -150,13 +175,15 @@ const JSON_OUTPUT_CONTRACT = `La respuesta debe ser exclusivamente un objeto JSO
     "thesis": "tesis",
     "evidence": ["comprobación 1", "comprobación 2"],
     "risks": ["riesgo 1", "riesgo 2"],
+    "monitoring": ["dato que seguir"],
+    "exitSignals": ["condición que invalidaría la tesis"],
     "firstSource": "fuente para revisar",
     "stage": "Universo | Preselección | Revisión",
     "sourceUrls": [{"label": "fuente", "url": "https://example.com"}],
     "dataAsOf": "fecha o No verificado en tiempo real"
   }]
 }
-Incluye entre 1 y 5 candidatos, al menos 2 elementos en evidence y risks, y no añadas texto fuera del JSON.`
+Incluye entre 0 y 5 candidatos, al menos 2 elementos en evidence y risks cuando haya candidatos, y no añadas texto fuera del JSON.`
 
 function systemPrompt(tier: 'free' | 'premium', openDiscovery = false) {
   if (tier === 'premium') {
@@ -202,6 +229,8 @@ ${discoveryRule}
     "thesis": "texto",
     "evidence": ["comprobación 1", "comprobación 2"],
     "risks": ["riesgo 1", "riesgo 2"],
+    "monitoring": ["dato que seguir"],
+    "exitSignals": ["condición que invalidaría la tesis"],
     "firstSource": "fuente para revisar",
     "stage": "Universo",
     "sourceUrls": [{"label": "fuente oficial", "url": "https://..."}],
@@ -234,13 +263,12 @@ function chatCompletionsUrl(configured: string, fallback: string) {
 
 function aiProviderConfig(credentials: AiCredentials | null, tier: 'free' | 'premium'): AiProviderConfig | null {
   if (credentials?.provider === 'openrouter') {
-    const configuredFreeModel = credentials.models.searchFree === 'openrouter/free' || credentials.models.searchFree.endsWith(':free')
     return {
       apiStyle: 'chat-completions',
       apiKey: credentials.apiKey,
       endpoint: chatCompletionsUrl(process.env.OPENROUTER_BASE_URL ?? '', 'https://openrouter.ai/api/v1'),
       model: tier === 'free'
-        ? (configuredFreeModel ? credentials.models.searchFree : 'openrouter/free')
+        ? normalizeOpenRouterFreeModel(credentials.models.searchFree)
         : credentials.models.searchPremium,
       engine: tier === 'free' ? 'openrouter-free' : 'openrouter-firecrawl',
       label: 'OpenRouter',
@@ -339,6 +367,51 @@ function parseJsonResponse(text: string) {
       return null
     }
   }
+}
+
+function normalizeStringArray(value: unknown): string[] {
+  if (typeof value === 'string') {
+    const normalized = value.trim()
+    return normalized ? [normalized] : []
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>
+    const nested = ['items', 'values', 'points'].find((key) => Array.isArray(record[key]))
+    if (nested) return normalizeStringArray(record[nested])
+    for (const key of ['text', 'detail', 'description', 'reason', 'statement', 'risk', 'fact', 'value', 'name', 'title']) {
+      if (typeof record[key] === 'string') return normalizeStringArray(record[key])
+    }
+    return []
+  }
+  if (!Array.isArray(value)) return []
+  return value.flatMap((item) => normalizeStringArray(item)).slice(0, 4)
+}
+
+function normalizeAiPayload(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return payload
+  const record = { ...(payload as Record<string, unknown>) }
+
+  if (typeof record.questions === 'string') record.questions = normalizeStringArray(record.questions)
+
+  if (Array.isArray(record.candidates)) {
+    record.candidates = record.candidates.map((candidate) => {
+      if (!candidate || typeof candidate !== 'object') return candidate
+      const normalized = { ...(candidate as Record<string, unknown>) }
+      for (const key of ['evidence', 'risks', 'monitoring', 'exitSignals']) {
+        if (!(key in normalized)) continue
+        const value = normalized[key]
+        const items = normalizeStringArray(value)
+        if (items.length || typeof value === 'string' || Array.isArray(value)) {
+          normalized[key] = items
+        } else {
+          delete normalized[key]
+        }
+      }
+      return normalized
+    })
+  }
+
+  return record
 }
 
 function repairSourceUrls(payload: unknown, context: ResearchContext) {
@@ -452,12 +525,50 @@ function fallbackCategory(snapshot: FundamentalSnapshot): { category: LynchCateg
   }
 }
 
+function fallbackMonitoringPlan(category: LynchCategoryKey, profile?: LynchResearchProfile) {
+  const categoryPlans: Record<LynchCategoryKey, { monitoring: string[]; exitSignals: string[] }> = {
+    'fast-grower': {
+      monitoring: ['Ventas y BPA mantienen una tendencia comparable, no solo un trimestre aislado.', 'El mercado sigue teniendo espacio y el crecimiento no depende únicamente de adquisiciones.'],
+      exitSignals: ['El crecimiento se desacelera sin que la valoración o la tesis se reajusten.', 'La deuda, la dilución o el consumo de caja financian el crecimiento en lugar de la operación.'],
+    },
+    stalwart: {
+      monitoring: ['Ritmo de crecimiento, cuota y capacidad de convertir beneficio en caja.', 'Deuda, margen y valoración siguen siendo razonables para una empresa madura.'],
+      exitSignals: ['Pérdida estructural de cuota o deterioro del negocio principal.', 'La deuda aumenta mientras ventas, caja o margen dejan de acompañar.'],
+    },
+    'slow-grower': {
+      monitoring: ['Caja, dividendo si existe y evolución de cuota frente a la expectativa pagada.', 'La valoración sigue siendo coherente con un crecimiento modesto.'],
+      exitSignals: ['El negocio entra en declive y no compensa con caja, activos o dividendo.', 'El precio descuenta un crecimiento que la empresa no puede sostener.'],
+    },
+    cyclical: {
+      monitoring: ['Inventarios, demanda, márgenes y señales del punto del ciclo.', 'Deuda y liquidez permiten atravesar la fase débil sin financiación urgente.'],
+      exitSignals: ['Se interpreta el beneficio de un pico cíclico como si fuera permanente.', 'La deuda o los inventarios convierten la fase débil en un problema de solvencia.'],
+    },
+    turnaround: {
+      monitoring: ['La causa del deterioro mejora en datos operativos y no solo en el discurso.', 'Liquidez, deuda y hitos del plan de recuperación se cumplen.'],
+      exitSignals: ['No aparece una mejora medible dentro del horizonte que justificaba la tesis.', 'La empresa necesita nueva deuda o dilución para sobrevivir al plan.'],
+    },
+    'asset-play': {
+      monitoring: ['El activo identificable sigue teniendo valor y existe un catalizador concreto.', 'La deuda, costes de mantenimiento y descuento no se comen el valor del activo.'],
+      exitSignals: ['El activo vale menos de lo supuesto o no hay camino razonable para reconocerlo.', 'El descuento se mantiene porque existe un problema estructural que la tesis ignoraba.'],
+    },
+  }
+  const plan = categoryPlans[category]
+  const userSignal = profile?.invalidation.trim()
+  return {
+    monitoring: plan.monitoring,
+    exitSignals: userSignal && !/^proponer señales?$/i.test(userSignal)
+      ? [userSignal, ...plan.exitSignals.slice(0, 1)]
+      : plan.exitSignals,
+  }
+}
+
 function dataDrivenFallback(
   input: ResearchInput,
-  provider: AiProviderConfig,
+  provider: AiProviderConfig | null,
   context: ResearchContext,
   providerNote: string,
 ): ResearchResult {
+  const providerIdentity = provider ? `${provider.label} · ${provider.model}` : 'IA no configurada'
   const leads = context.fundamentals
     .filter((snapshot) => snapshot.identityVerified && snapshot.metrics.some((metric) => metric.status === 'verified'))
     .slice(0, 5)
@@ -465,6 +576,7 @@ function dataDrivenFallback(
       const sources = sourceListForCandidate([], snapshot, context)
       if (!sources.length) return []
       const { category, reason } = fallbackCategory(snapshot)
+      const monitoringPlan = fallbackMonitoringPlan(category, input.profile)
       const evidence = metricEvidence(snapshot)
       const risks = metricRisks(snapshot)
       const scorecard = buildResearchScorecard(snapshot, {
@@ -489,6 +601,8 @@ function dataDrivenFallback(
           : 'Cribado determinista construido con las métricas verificadas de las fuentes configuradas. La interpretación del negocio y la valoración relativa siguen pendientes de revisión.',
         evidence: evidence.length ? evidence : ['Hay métricas verificadas disponibles; revisa el detalle y su periodo antes de interpretarlas.'],
         risks,
+        monitoring: monitoringPlan.monitoring,
+        exitSignals: monitoringPlan.exitSignals,
         firstSource: sources[0]?.label ?? 'Fuente financiera configurada',
         stage: scorecard.verdict === 'investigar' ? 'Preselección' : 'Revisión',
         ticker: snapshot.symbol,
@@ -503,11 +617,30 @@ function dataDrivenFallback(
 
   const sourceNote = context.sourcesUsed.length ? ` · fuentes: ${context.sourcesUsed.join(' · ')}` : ''
   const warningNote = context.warnings.length ? ` · avisos: ${context.warnings.slice(0, 4).join(' · ')}` : ''
-  if (!leads.length) return localFallback(input, `${providerNote}${sourceNote}${warningNote}`)
+  if (!leads.length) {
+    const generated = generateResearchResult(input)
+    const verifiedCompanies = context.fundamentals.filter((snapshot) => snapshot.identityVerified).length
+    return {
+      ...generated,
+      title: input.query.trim() ? `Sin candidatos verificables para ${input.query.trim()}` : generated.title,
+      summary: 'La búsqueda se ha ejecutado, pero no hay una empresa con identidad, métricas y fuentes suficientes para mostrar. La aplicación no rellena los huecos con una hipótesis.',
+      methodNote: `${providerNote} Se conserva únicamente la información que han devuelto las fuentes configuradas.`,
+      engine: 'data-fallback',
+      generatedAt: new Date().toISOString(),
+      profile: input.profile,
+      providerNote: `${providerIdentity} · datos de APIs sin texto IA${sourceNote}${warningNote}`,
+      screening: {
+        companiesFound: verifiedCompanies,
+        candidatesReturned: 0,
+        candidatesDiscarded: verifiedCompanies,
+        note: 'No se ha mostrado ningún candidato: faltan identidad, métricas o fuentes suficientes para pasar el filtro.',
+      },
+    } satisfies ResearchResult
+  }
   return {
     title: `Cribado con datos verificables para ${input.query.trim() || 'empresas cotizadas'}`,
-    summary: 'La IA no devolvió una respuesta utilizable, así que se muestran únicamente empresas identificadas y métricas obtenidas de las fuentes configuradas. No se ha rellenado ningún dato ausente.',
-    methodNote: 'Fallback determinista: identidad, métricas, periodos y enlaces proceden de las APIs disponibles. La categoría y la tesis son etiquetas provisionales para ordenar la revisión, no recomendaciones.',
+    summary: 'La IA no devolvió una respuesta utilizable. Por seguridad, no se genera ningún nombre, cifra, fecha o fuente sin respaldo: solo se muestran empresas identificadas y métricas obtenidas de las fuentes configuradas.',
+    methodNote: 'Fallback determinista: la identidad, las métricas, los periodos y los enlaces proceden de las APIs disponibles.',
     questions: [
       `¿Puedes explicar el negocio de ${input.query.trim() || 'la empresa'} en dos minutos sin usar palabras de moda?`,
       '¿Qué métrica verificada debería mantenerse o mejorar para que la historia siga en pie?',
@@ -515,9 +648,10 @@ function dataDrivenFallback(
     ],
     nextStep: 'Abre cada fuente primaria, confirma los periodos y completa la historia del negocio antes de tomar una decisión.',
     leads,
-    engine: 'local-fallback',
+    engine: 'data-fallback',
     generatedAt: new Date().toISOString(),
-    providerNote: `${provider.label} · ${provider.model} · datos de APIs sin texto IA${sourceNote}${warningNote} · ${providerNote}`,
+    profile: input.profile,
+    providerNote: `${providerIdentity} · datos de APIs sin texto IA${sourceNote}${warningNote} · ${providerNote}`,
     screening: {
       companiesFound: context.fundamentals.filter((snapshot) => snapshot.identityVerified).length,
       candidatesReturned: leads.length,
@@ -558,6 +692,7 @@ type FinnhubMatch = {
   company: string
   exchange: string
   type: string
+  identityVerified?: boolean
 }
 
 type FinnhubContext = {
@@ -747,8 +882,12 @@ function discoverySeedSources(mode: ResearchInput['mode']): FirecrawlResult[] {
 function isOpenDiscoveryQuery(query: string, mode: ResearchInput['mode']) {
   if (mode === 'ipo') return true
   const normalized = query.trim()
-  const tokenCount = normalized ? normalized.split(/\s+/).length : 0
-  return tokenCount >= 3 || /\b(nuev|nadie|pinta|oportun|empresa|cotiz|small|growth|stock|acción|acciones|sector|producto|aburr|servicio|distribu|recién)\b/i.test(normalized)
+  if (!normalized) return true
+  return /\b(nuev\w*|nadie|pinta|oportun\w*|empresas?|cotiz\w*|small\s*cap|growth|stocks?|acciones?|sectores?|productos?|aburr\w*|servicios?|distribu\w*|reci[eé]n|ideas?|descubrir|encuentra|buscar?)\b/i.test(normalized)
+}
+
+function looksLikeUrlLabel(value: string) {
+  return /^(?:https?:\/\/)?(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}(?:[/:?#]|$)/i.test(value.trim())
 }
 
 async function discoverWebSources(
@@ -768,7 +907,7 @@ function extractFirecrawlEntities(sources: FirecrawlResult[]): FinnhubMatch[] {
   const add = (symbol: string, company: string, exchange = 'Firecrawl') => {
     const normalizedSymbol = symbol.trim().toUpperCase().replace(/[^A-Z0-9.:-]/g, '')
     const normalizedCompany = company.replace(/\s+/g, ' ').trim()
-    if (!normalizedSymbol || normalizedSymbol.length > 12 || !normalizedCompany || normalizedCompany.length < 2) return
+    if (!normalizedSymbol || normalizedSymbol.length > 12 || !normalizedCompany || normalizedCompany.length < 2 || looksLikeUrlLabel(normalizedCompany)) return
     if (/^(IPO|ETF|URL|HTTP|HTTPS|HTML|MARKDOWN|STOCK|COMPANY|DATE)$/i.test(normalizedSymbol)) return
     const key = normalizedSymbol
     if (seen.has(key)) return
@@ -833,7 +972,7 @@ function extractWebCandidateRecords(sources: FirecrawlResult[]): WebCandidateRec
       note: string,
     ): ResearchMetric | null => {
       const numericValue = webNumber(raw)
-      if (numericValue === null) return null
+      if (numericValue === null || ((key === 'price' || key === 'pe' || key === 'ps') && numericValue <= 0)) return null
       return {
         key,
         label,
@@ -841,7 +980,7 @@ function extractWebCandidateRecords(sources: FirecrawlResult[]): WebCandidateRec
         numericValue,
         unit: raw.includes('%') ? '%' : undefined,
         period: 'Dato publicado por la fuente web',
-        status: 'verified',
+        status: 'partial',
         sourceUrls: [sourceUrl],
         note,
       }
@@ -1017,45 +1156,72 @@ async function searchWithNewsApi(
 }
 
 async function searchWithFinnhub(
-  row: typeof configuraciones_fuentes_inversion.$inferSelect,
+  row: typeof configuraciones_fuentes_inversion.$inferSelect | undefined,
   query: string,
   mode: ResearchInput['mode'],
 ): Promise<FinnhubContext> {
-  if (!row.finnhub_token_cifrado || (!query.trim() && mode !== 'ipo')) return { market: [], news: [], fundamentals: [], warnings: [] }
+  const credentials = sourceCredentials(row)
+  if (!query.trim() && mode !== 'ipo') return { market: [], news: [], fundamentals: [], warnings: [] }
 
-  const apiKey = decryptSecret(row.finnhub_token_cifrado)
-  const genericQuery = query.split(/\s+/).filter(Boolean).length > 4
-    || /\b(nuev|nadie|pinta|oportun|empresa|cotiz|small|growth|stock|acción|acciones|sector|producto|aburr|servicio|distribu|recién)\b/i.test(query)
+  const apiKey = credentials.finnhubToken
+  const genericQuery = isOpenDiscoveryQuery(query, mode)
+  const discoveryWarnings: string[] = []
   let matches: FinnhubMatch[] = []
   if (mode !== 'ipo' && query.trim() && !genericQuery) {
-    const searchUrl = new URL('https://finnhub.io/api/v1/search')
-    searchUrl.searchParams.set('q', query.trim().slice(0, 120))
-    searchUrl.searchParams.set('token', apiKey)
-    const searchResponse = await fetch(searchUrl, {
-      cache: 'no-store',
-      signal: AbortSignal.timeout(12_000),
-    })
-    if (!searchResponse.ok) throw new Error(`Finnhub respondió HTTP ${searchResponse.status}`)
+    const words = query.trim().split(/\s+/).filter(Boolean)
+    const queryAttempts = [
+      query.trim().slice(0, 120),
+      words.slice(0, 3).join(' '),
+      words.slice(0, 2).join(' '),
+    ].filter((value, index, all) => value && all.indexOf(value) === index)
+    if (apiKey) {
+      try {
+        for (const queryAttempt of queryAttempts) {
+          const searchUrl = new URL('https://finnhub.io/api/v1/search')
+          searchUrl.searchParams.set('q', queryAttempt)
+          searchUrl.searchParams.set('token', apiKey)
+          const searchResponse = await fetch(searchUrl, {
+            cache: 'no-store',
+            signal: AbortSignal.timeout(12_000),
+          })
+          if (!searchResponse.ok) throw new Error(`Finnhub respondió HTTP ${searchResponse.status}`)
 
-    const searchPayload = await searchResponse.json().catch(() => null) as { result?: unknown } | null
-    const rawMatches = Array.isArray(searchPayload?.result) ? searchPayload.result : []
-    matches = rawMatches.flatMap((item) => {
-      if (!item || typeof item !== 'object') return []
-      const match = item as { symbol?: unknown; description?: unknown; displaySymbol?: unknown; type?: unknown; exchange?: unknown }
-      if (typeof match.symbol !== 'string' || typeof match.description !== 'string') return []
-      const type = typeof match.type === 'string' ? match.type : 'Cotizada'
-      if (!['Common Stock', 'ETP', 'ADR', 'REIT'].includes(type)) return []
-      return [{
-        symbol: match.displaySymbol && typeof match.displaySymbol === 'string' ? match.displaySymbol : match.symbol,
-        company: match.description,
-        exchange: typeof match.exchange === 'string' && match.exchange.trim() ? match.exchange : 'Finnhub',
-        type,
-      }]
-    }).slice(0, 3)
+          const searchPayload = await searchResponse.json().catch(() => null) as { result?: unknown } | null
+          const rawMatches = Array.isArray(searchPayload?.result) ? searchPayload.result : []
+          matches = rawMatches.flatMap((item) => {
+            if (!item || typeof item !== 'object') return []
+            const match = item as { symbol?: unknown; description?: unknown; displaySymbol?: unknown; type?: unknown; exchange?: unknown }
+            if (typeof match.symbol !== 'string' || typeof match.description !== 'string') return []
+            const type = typeof match.type === 'string' ? match.type : 'Cotizada'
+            if (!['Common Stock', 'ETP', 'ADR', 'REIT'].includes(type)) return []
+            return [{
+              symbol: match.displaySymbol && typeof match.displaySymbol === 'string' ? match.displaySymbol : match.symbol,
+              company: match.description,
+              exchange: typeof match.exchange === 'string' && match.exchange.trim() ? match.exchange : 'Finnhub',
+              type,
+              identityVerified: true,
+            }]
+          }).slice(0, 3)
+          if (matches.length) break
+        }
+      } catch {
+        discoveryWarnings.push('Finnhub no respondió; se intentó resolver la empresa con Yahoo Finance')
+      }
+    }
+    if (!matches.length) {
+      const yahooEntity = await resolveYahooEntity({
+        symbol: '',
+        company: query.trim(),
+        exchange: '',
+        type: 'Common Stock',
+      }).catch(() => null)
+      if (yahooEntity) matches = [yahooEntity]
+    }
   }
 
-  const discoveryWarnings: string[] = []
   if (mode === 'ipo') {
+    if (!apiKey) discoveryWarnings.push('Finnhub es necesario para consultar el calendario de nuevas cotizadas')
+    else {
     try {
       const from = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000)
       const to = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000)
@@ -1079,6 +1245,7 @@ async function searchWithFinnhub(
           company: rowData.name.trim(),
           exchange: typeof rowData.exchange === 'string' && rowData.exchange.trim() ? rowData.exchange.trim() : 'Finnhub IPO calendar',
           type: 'Common Stock',
+          identityVerified: true,
           date: typeof rowData.date === 'string' ? rowData.date : '',
         }]
       })
@@ -1089,22 +1256,12 @@ async function searchWithFinnhub(
     } catch {
       discoveryWarnings.push('Finnhub no devolvió el calendario de nuevas cotizadas')
     }
+    }
   }
 
-  let fiscalApiKey: string | undefined
-  try {
-    fiscalApiKey = row.fiscal_api_key_cifrada ? decryptSecret(row.fiscal_api_key_cifrada) : undefined
-  } catch {
-    fiscalApiKey = undefined
-  }
+  const fundamentalsPromise = Promise.all(matches.map((match) => collectFundamentals(match, credentials)))
 
-  const fundamentalsPromise = Promise.all(matches.map((match) => collectFundamentals(match, {
-    finnhubToken: apiKey,
-    secContactEmail: row.sec_contact_email ?? undefined,
-    fiscalApiKey,
-  })))
-
-  const newsPromise = matches[0]
+  const newsPromise = matches[0] && apiKey
     ? (async () => {
       const to = new Date()
       const from = new Date(to.getTime() - 30 * 24 * 60 * 60 * 1000)
@@ -1168,19 +1325,22 @@ async function gatherResearchContext(
   entityQuery: string,
   mode: ResearchInput['mode'],
 ): Promise<ResearchContext> {
-  if (!row) return { webSources: [], news: [], market: [], fundamentals: [], sourcesUsed: [], warnings: [] }
+  const credentials = sourceCredentials(row)
+  if (!row && !Object.values(credentials).some(Boolean)) {
+    return { webSources: [], news: [], market: [], fundamentals: [], sourcesUsed: [], warnings: [] }
+  }
 
   const openDiscovery = isOpenDiscoveryQuery(entityQuery, mode)
   const tasks = [
-    row.firecrawl_base_url
+    row?.firecrawl_base_url
       ? openDiscovery
         ? discoverWebSources(row, webQuery, mode)
         : searchWithFirecrawl(row, webQuery)
       : Promise.resolve([] as FirecrawlResult[]),
-    row.finnhub_token_cifrado && (entityQuery.trim() || mode === 'ipo')
+    (entityQuery.trim() || mode === 'ipo')
       ? searchWithFinnhub(row, entityQuery, mode)
       : Promise.resolve({ market: [], news: [], fundamentals: [], warnings: [] } as FinnhubContext),
-    row.newsapi_key_cifrada && entityQuery.trim()
+    row?.newsapi_key_cifrada && entityQuery.trim()
       ? searchWithNewsApi(row, entityQuery)
       : Promise.resolve([] as NewsApiResult[]),
   ] as const
@@ -1192,7 +1352,7 @@ async function gatherResearchContext(
     ? marketResult.value
     : { market: [], news: [], fundamentals: [], warnings: [] }
   const hasUsableFundamentals = finnhubContextSource.fundamentals.some((snapshot) => snapshot.identityVerified && snapshot.metrics.some((metric) => metric.status === 'verified'))
-  if (row.firecrawl_base_url && openDiscovery && !hasUsableFundamentals && !webSources.some((source) => (source.content ?? '').trim())) {
+  if (row?.firecrawl_base_url && openDiscovery && !hasUsableFundamentals && !webSources.some((source) => (source.content ?? '').trim())) {
     const knownUrls = new Set(webSources.map((source) => source.url))
     const seededSources = await hydrateFirecrawlResults(row, discoverySeedSources(mode).filter((source) => !knownUrls.has(source.url)))
     webSources = [...webSources, ...seededSources]
@@ -1229,7 +1389,11 @@ async function gatherResearchContext(
   warnings.push(...finnhubContext.warnings)
 
   const fiscalReady = finnhubContext.fundamentals.some((snapshot) => snapshot.sources.some((source) => source.url.includes('fiscal.ai')))
+  const finnhubReady = finnhubContext.fundamentals.some((snapshot) => snapshot.sources.some((source) => source.url.includes('finnhub.io')))
   const secReady = finnhubContext.fundamentals.some((snapshot) => snapshot.sources.some((source) => source.url.includes('sec.gov')))
+  const alphaVantageReady = finnhubContext.fundamentals.some((snapshot) => snapshot.sources.some((source) => source.url.includes('alphavantage.co')))
+  const financialDatasetsReady = finnhubContext.fundamentals.some((snapshot) => snapshot.sources.some((source) => source.url.includes('financialdatasets.ai')))
+  const yahooReady = finnhubContext.fundamentals.some((snapshot) => snapshot.sources.some((source) => source.url.includes('finance.yahoo.com')))
 
   return {
     webSources,
@@ -1238,11 +1402,14 @@ async function gatherResearchContext(
     fundamentals: finnhubContext.fundamentals,
     sourcesUsed: [
       webSources.length ? 'Firecrawl propio' : '',
-      market.length ? 'Finnhub' : '',
+      finnhubReady ? 'Finnhub' : '',
       finnhubContext.news.length ? 'Finnhub noticias' : '',
       newsApiNews.length ? 'NewsAPI' : '',
       secReady ? 'SEC EDGAR' : '',
       fiscalReady ? 'Fiscal.ai' : '',
+      alphaVantageReady ? 'Alpha Vantage' : '',
+      financialDatasetsReady ? 'Financial Datasets' : '',
+      yahooReady ? 'Yahoo Finance' : '',
     ].filter(Boolean),
     warnings,
   }
@@ -1273,6 +1440,7 @@ function promptResearchContext(context: ResearchContext) {
         clave: metric.key,
         nombre: metric.label,
         valor: metric.value,
+        unidad: metric.unit ?? 'no indicada',
         periodo: metric.period ?? 'no indicado',
         fuentes: metric.sourceUrls.slice(0, 2),
       })),
@@ -1281,6 +1449,19 @@ function promptResearchContext(context: ResearchContext) {
     })),
     limitaciones: context.warnings.slice(0, 8),
   }
+}
+
+function fundamentalSourceNames(fundamentals: FundamentalSnapshot[]) {
+  const names = new Set<string>()
+  for (const source of fundamentals.flatMap((snapshot) => snapshot.sources)) {
+    if (source.url.includes('finance.yahoo.com')) names.add('Yahoo Finance')
+    else if (source.url.includes('finnhub.io')) names.add('Finnhub')
+    else if (source.url.includes('sec.gov')) names.add('SEC EDGAR')
+    else if (source.url.includes('fiscal.ai')) names.add('Fiscal.ai')
+    else if (source.url.includes('alphavantage.co')) names.add('Alpha Vantage')
+    else if (source.url.includes('financialdatasets.ai')) names.add('Financial Datasets')
+  }
+  return [...names]
 }
 
 function normalizeSymbol(value: string) {
@@ -1293,23 +1474,19 @@ function symbolKey(value: string) {
 }
 
 function sourceCredentials(row: typeof configuraciones_fuentes_inversion.$inferSelect | undefined) {
-  if (!row) return {}
-  let finnhubToken: string | undefined
-  let fiscalApiKey: string | undefined
-  try {
-    finnhubToken = row.finnhub_token_cifrado ? decryptSecret(row.finnhub_token_cifrado) : undefined
-  } catch {
-    finnhubToken = undefined
-  }
-  try {
-    fiscalApiKey = row.fiscal_api_key_cifrada ? decryptSecret(row.fiscal_api_key_cifrada) : undefined
-  } catch {
-    fiscalApiKey = undefined
+  const decryptConfigured = (value: string | null | undefined, environmentValue?: string) => {
+    try {
+      return value ? decryptSecret(value) : environmentValue?.trim() || undefined
+    } catch {
+      return environmentValue?.trim() || undefined
+    }
   }
   return {
-    finnhubToken,
-    fiscalApiKey,
-    secContactEmail: row.sec_contact_email ?? undefined,
+    finnhubToken: decryptConfigured(row?.finnhub_token_cifrado, process.env.FINNHUB_API_KEY ?? process.env.FINNHUB_TOKEN),
+    fiscalApiKey: decryptConfigured(row?.fiscal_api_key_cifrada, process.env.FISCAL_API_KEY),
+    alphaVantageApiKey: decryptConfigured(row?.alpha_vantage_api_key_cifrada, process.env.ALPHA_VANTAGE_API_KEY),
+    financialDatasetsApiKey: decryptConfigured(row?.financial_datasets_api_key_cifrada, process.env.FINANCIAL_DATASETS_API_KEY),
+    secContactEmail: row?.sec_contact_email ?? process.env.SEC_CONTACT_EMAIL ?? undefined,
   }
 }
 
@@ -1320,7 +1497,14 @@ async function discoverFundamentalsFromWeb(
   openDiscovery = false,
 ) {
   const credentials = sourceCredentials(row)
-  if (!credentials.finnhubToken || !webSources.length) return existing
+  const hasFundamentalSource = Boolean(
+    credentials.finnhubToken
+      || credentials.secContactEmail
+      || credentials.fiscalApiKey
+      || credentials.alphaVantageApiKey
+      || credentials.financialDatasetsApiKey,
+  )
+  if (!hasFundamentalSource || !webSources.length) return existing
   const known = new Set(existing.map((snapshot) => symbolKey(snapshot.symbol)))
   const records = extractWebCandidateRecords(webSources)
   const fallbackEntities = openDiscovery
@@ -1335,7 +1519,7 @@ async function discoverFundamentalsFromWeb(
     if (!record) return snapshot
     return {
       ...snapshot,
-      identityVerified: snapshot.identityVerified || record.metrics.length >= 2,
+      identityVerified: snapshot.identityVerified,
       metrics: [...snapshot.metrics, ...record.metrics.filter((metric) => !snapshot.metrics.some((knownMetric) => knownMetric.key === metric.key))],
       sources: [...snapshot.sources, record.source],
     }
@@ -1343,26 +1527,17 @@ async function discoverFundamentalsFromWeb(
 
   const discovered = await Promise.all(entities.map(async ({ entity, record }) => {
     try {
-      // Finnhub puede tardar en incorporar un ticker recién listado en su
-      // buscador, aunque sus endpoints de cotización/fundamentales ya lo
-      // conozcan. En ese caso exigimos al menos una métrica real antes de
-      // considerar válida la identidad descubierta en la fuente web.
-      const direct = await collectFundamentals(entity, credentials)
-      if (direct.metrics.some((metric) => metric.status === 'verified')) return withWebMetrics(direct, record)
-      const verified = await resolveFinnhubEntity(entity, credentials.finnhubToken as string)
-      if (verified) return withWebMetrics(await collectFundamentals(verified, credentials), record)
-      if (record && record.metrics.length >= 2) {
-        return {
-          symbol: entity.symbol,
-          company: entity.company,
-          exchange: entity.exchange,
-          dataAsOf: new Date().toISOString(),
-          identityVerified: true,
-          metrics: record.metrics,
-          sources: [record.source],
-          warnings: ['No hay fundamentales adicionales en Finnhub; se conservan los datos publicados por la fuente web para revisión.'],
-        } satisfies FundamentalSnapshot
+      // Resolvemos primero el ticker para no convertir el título de una URL
+      // de Firecrawl en el nombre de una empresa. Si Finnhub aún no conoce el
+      // símbolo, exigimos métricas publicadas y un nombre que no sea una URL.
+      const verified = credentials.finnhubToken
+        ? await resolveFinnhubEntity(entity, credentials.finnhubToken).catch(() => null)
+        : null
+      const direct = await collectFundamentals(verified ?? entity, credentials)
+      if (direct.identityVerified && direct.metrics.some((metric) => metric.status === 'verified') && !looksLikeUrlLabel(direct.company)) {
+        return withWebMetrics(direct, record)
       }
+      if (verified) return withWebMetrics(await collectFundamentals(verified, credentials), record)
       return null
     } catch {
       return null
@@ -1393,27 +1568,26 @@ async function enrichCandidateFundamentals(
 
   const credentials = sourceCredentials(row)
   const unresolved: string[] = []
-  if (!credentials.finnhubToken) {
-    return { snapshots: existing, unresolved: candidates.map((candidate) => candidate.ticker) }
-  }
 
   const resolved = await Promise.all(entities.map(async ({ candidate, entity }) => {
     try {
-      let verifiedEntity = await resolveFinnhubEntity(entity, credentials.finnhubToken as string)
+      let verifiedEntity = credentials.finnhubToken
+        ? await resolveFinnhubEntity(entity, credentials.finnhubToken)
+        : null
       // Los modelos pueden devolver el ticker de otra plaza o una variante de
       // formato. Si el nombre de la empresa sí está claro, dejamos que Finnhub
       // lo resuelva por nombre antes de descartar el candidato.
-      if (!verifiedEntity && candidate.company.trim()) {
+      if (!verifiedEntity && credentials.finnhubToken && candidate.company.trim()) {
         verifiedEntity = await resolveFinnhubEntity({
           symbol: '',
           company: candidate.company,
           exchange: candidate.exchange,
           type: 'Common Stock',
-        }, credentials.finnhubToken as string)
+        }, credentials.finnhubToken)
       }
       if (!verifiedEntity) {
         const direct = await collectFundamentals(entity, credentials)
-        if (direct.metrics.some((metric) => metric.status === 'verified')) return direct
+        if (direct.identityVerified && direct.metrics.some((metric) => metric.status === 'verified')) return direct
         unresolved.push(candidate.ticker)
         return null
       }
@@ -1451,27 +1625,48 @@ function sourceListForCandidate(
   }).slice(0, 6)
 }
 
+function candidateSnapshot(
+  candidate: z.infer<typeof candidateSchema>,
+  context: ResearchContext,
+) {
+  const exact = context.fundamentals.find((item) => symbolKey(item.symbol) === symbolKey(candidate.ticker))
+  if (exact) return exact
+  const candidateKey = symbolKey(candidate.ticker)
+  const candidateStem = candidateKey.split('.')[0]
+  const companyTokens = new Set(candidate.company.toLowerCase().match(/[a-záéíóúüñ0-9]{3,}/g) ?? [])
+  const aliases = context.fundamentals.filter((item) => {
+    if (!item.identityVerified || symbolKey(item.symbol).split('.')[0] !== candidateStem) return false
+    const snapshotTokens = item.company.toLowerCase().match(/[a-záéíóúüñ0-9]{3,}/g) ?? []
+    return snapshotTokens.filter((token) => companyTokens.has(token)).length >= 1
+  })
+  return aliases.length === 1 ? aliases[0] : undefined
+}
+
 function toResearchResult(
   raw: z.infer<typeof aiResultSchema>,
   provider: AiProviderConfig,
   context: ResearchContext,
   screening: { unresolved: string[]; companiesFound: number } = { unresolved: [], companiesFound: context.fundamentals.filter((snapshot) => snapshot.identityVerified).length },
+  profile?: LynchResearchProfile,
 ): ResearchResult {
   const mappedLeads = raw.candidates.map((candidate, index) => {
     const sourceUrls = candidate.sourceUrls.map(safeSource).filter((source): source is ResearchSource => source !== null)
-    const snapshot = context.fundamentals.find((item) => symbolKey(item.symbol) === symbolKey(candidate.ticker))
+    const snapshot = candidateSnapshot(candidate, context)
     const verifiedSources = sourceListForCandidate(sourceUrls, snapshot, context)
+    const verifiedEvidence = snapshot ? metricEvidence(snapshot) : []
+    const verifiedRisks = snapshot ? metricRisks(snapshot) : []
     const scorecard = buildResearchScorecard(snapshot, {
       category: candidate.category,
       categoryReason: candidate.categoryReason,
-      evidence: candidate.evidence,
-      risks: candidate.risks,
+      evidence: verifiedEvidence,
+      risks: verifiedRisks,
     }, {
       webSources: verifiedSources,
       newsSources: verifiedSources,
     })
     if (!snapshot?.identityVerified || !snapshot.metrics.length || scorecard.verdict === 'sin-datos' || !verifiedSources.length) return null
     const stage: ResearchLead['stage'] = scorecard.verdict === 'investigar' ? 'Preselección' : 'Revisión'
+    const monitoringPlan = fallbackMonitoringPlan(candidate.category, profile)
     return {
       id: `ai-${candidate.ticker.toLowerCase().replace(/[^a-z0-9]+/g, '-') || index}`,
       title: candidate.title,
@@ -1479,8 +1674,10 @@ function toResearchResult(
       category: candidate.category,
       fit: scorecard.score,
       thesis: candidate.thesis,
-      evidence: candidate.evidence,
-      risks: candidate.risks,
+      evidence: verifiedEvidence.length ? verifiedEvidence : ['No hay una comprobación financiera verificable suficiente para resumir aquí.'],
+      risks: verifiedRisks.length ? verifiedRisks : ['No hay riesgos financieros verificables suficientes; revisar las fuentes primarias.'],
+      monitoring: candidate.monitoring.length ? candidate.monitoring : monitoringPlan.monitoring,
+      exitSignals: candidate.exitSignals.length ? candidate.exitSignals : monitoringPlan.exitSignals,
       firstSource: candidate.firstSource,
       stage,
       ticker: snapshot.symbol,
@@ -1503,15 +1700,24 @@ function toResearchResult(
   const methodNote = leads.length
     ? `La app ha validado la identidad de los tickers mostrados y conserva únicamente métricas con una fuente trazable. La cobertura indica cuánto falta por completar; las proyecciones editoriales y los datos web no sustituyen los estados financieros oficiales. ${raw.methodNote}`
     : raw.methodNote
+  const verifiedMetricCount = leads.reduce((total, lead) => (
+    total + (lead.scorecard?.metrics.filter((metric) => metric.status === 'verified').length ?? 0)
+  ), 0)
+  const contradictsVerifiedMetrics = verifiedMetricCount > 0
+    && /(?:no se (?:pudieron|han podido|pueden) verificar|sin (?:datos|m[eé]tricas) financieras?|sin datos verificables)/i.test(raw.summary)
+  const alignedSummary = contradictsVerifiedMetrics
+    ? `La búsqueda ha identificado ${leads.length} ${leads.length === 1 ? 'empresa' : 'empresas'} y ha conservado ${verifiedMetricCount} métricas con fuente trazable. La categoría, la tesis y los riesgos son interpretación para revisar; las cifras y periodos aparecen en el detalle verificable.`
+    : raw.summary
   return {
     title: raw.title,
-    summary: raw.summary,
+    summary: alignedSummary,
     methodNote,
     questions: raw.questions,
     nextStep: raw.nextStep,
     leads,
     engine: provider.engine,
     generatedAt: new Date().toISOString(),
+    profile,
     screening: {
       companiesFound: screening.companiesFound,
       candidatesReturned: leads.length,
@@ -1547,14 +1753,8 @@ export async function POST(request: Request) {
   }
 
   const provider = aiProviderConfig(aiCredentials, input.tier)
-  if (!provider || process.env.BUSCADOR_ACCIONES_DISABLE_AI === '1') {
-    const providerNote = process.env.BUSCADOR_ACCIONES_DISABLE_AI === '1'
-      ? 'Proveedor IA desactivado para esta prueba: se muestra el marco local sin datos actuales.'
-      : 'Proveedor IA no configurado: se muestra el marco local sin datos actuales.'
-    return NextResponse.json(localFallback(input, providerNote))
-  }
-
-  const entityQuery = input.query.trim()
+  const profileObservation = input.profile?.observation.trim() ?? ''
+  const entityQuery = input.query.trim() || profileObservation
   const modeHint = {
     boring: 'small caps listed companies with boring recurring businesses and understandable economics',
     ipo: 'recent IPOs spin-offs and newly listed public companies with verifiable financial information',
@@ -1564,17 +1764,32 @@ export async function POST(request: Request) {
   const researchQuery = `${entityQuery || 'empresas cotizadas para investigar'} ${modeHint} investment stocks ticker annual report recent results`
   const researchContext = await gatherResearchContext(sourceSettings, researchQuery, entityQuery, input.mode)
   if (input.tier === 'premium' && !researchContext.webSources.length) {
-    return NextResponse.json(localFallback(input, 'Tu Firecrawl no devolvió resultados web; no se activó ninguna búsqueda de pago.'))
+    return NextResponse.json(dataDrivenFallback(input, provider, researchContext, 'Tu Firecrawl no devolvió resultados web; se conservan únicamente los datos trazables de las demás fuentes.'))
+  }
+  if (!provider || process.env.BUSCADOR_ACCIONES_DISABLE_AI === '1') {
+    const providerNote = process.env.BUSCADOR_ACCIONES_DISABLE_AI === '1'
+      ? 'Proveedor IA desactivado para esta prueba; las fuentes sí se han consultado.'
+      : 'Proveedor IA no configurado; las fuentes sí se han consultado.'
+    return NextResponse.json(dataDrivenFallback(input, provider, researchContext, providerNote))
   }
 
   const openDiscovery = Boolean(entityQuery) && isOpenDiscoveryQuery(entityQuery, input.mode)
-  const activeSystemPrompt = systemPrompt(input.tier, openDiscovery)
+  const lynchBookContext = await getLynchBookContext(entityQuery, input.profile)
+  if (lynchBookContext.mode === 'fallback') {
+    researchContext.warnings.unshift('El índice local de Lynch no estuvo disponible; se usó el marco resumido de respaldo')
+  }
+  const lynchContextStatus = lynchBookContext.mode === 'indexed'
+    ? `Contexto Lynch indexado · páginas internas ${lynchBookContext.pages.join(', ')}`
+    : 'Contexto Lynch resumido de respaldo'
+  const activeSystemPrompt = `${systemPrompt(input.tier, openDiscovery)}\n\n${lynchContextStatus}\n${lynchBookContext.text}\n\nUsa esta referencia como guía interna. Parafrasea sus ideas y no reproduzcas ni cites pasajes del libro. Los hechos actuales solo pueden proceder de las fuentes y métricas de esta consulta.`
   const userPrompt = JSON.stringify({
-    pista: input.query || 'Exploración abierta: encuentra candidatos que encajen con este modo.',
+    pista: input.query || profileObservation || 'Exploración abierta: encuentra candidatos que encajen con este modo.',
     modo: input.mode,
     tipoDeBusqueda: openDiscovery ? 'descubrimiento temático: extrae candidatos de las fuentes y verifícalos después' : 'verificación de empresas identificadas',
     horizonte: input.horizon,
     tolerancia: input.risk,
+    perfilLynchDelUsuario: input.profile ?? null,
+    instruccionesDelPerfil: 'Usa este perfil para personalizar la investigación. Sus textos son hipótesis del usuario, no datos verificados; contrástalos y convierte las dudas en preguntas pendientes.',
     fechaDeConsulta: new Date().toISOString(),
     empresasVerificadas: researchContext.fundamentals
       .filter((snapshot) => snapshot.identityVerified)
@@ -1588,6 +1803,15 @@ export async function POST(request: Request) {
     strict: true,
     schema: RESPONSE_SCHEMA,
   } as const
+  const chatResponseFormat = {
+    type: 'json_schema',
+    json_schema: {
+      name: 'lynch_stock_research',
+      description: 'Candidatos bursátiles investigables, con riesgos y fuentes verificables.',
+      strict: true,
+      schema: RESPONSE_SCHEMA,
+    },
+  } as const
   const requestPayload = provider.apiStyle === 'chat-completions'
     ? input.tier === 'free'
       ? {
@@ -1598,6 +1822,8 @@ export async function POST(request: Request) {
         ],
         max_tokens: 2600,
         reasoning: { effort: 'none', exclude: true },
+        response_format: chatResponseFormat,
+        provider: { require_parameters: true },
       }
       : {
       model: provider.model,
@@ -1606,10 +1832,7 @@ export async function POST(request: Request) {
         { role: 'user', content: userPrompt },
       ],
       tools: provider.tools,
-      response_format: {
-        type: 'json_schema',
-        json_schema: jsonFormat,
-      },
+      response_format: chatResponseFormat,
       provider: { require_parameters: true },
     }
     : {
@@ -1618,7 +1841,7 @@ export async function POST(request: Request) {
       safety_identifier: safetyIdentifier(authResult.userId),
       tools: provider.tools,
       input: [
-        { role: 'system', content: [{ type: 'input_text', text: systemPrompt(input.tier) }] },
+        { role: 'system', content: [{ type: 'input_text', text: activeSystemPrompt }] },
         { role: 'user', content: [{ type: 'input_text', text: userPrompt }] },
       ],
       text: {
@@ -1626,30 +1849,32 @@ export async function POST(request: Request) {
       },
     }
 
-  const fallbackModel = input.tier === 'free' && provider.apiStyle === 'chat-completions'
-    ? 'openrouter/free'
-    : provider.model
   const fallbackRequestPayload = provider.apiStyle === 'chat-completions'
     ? {
-      model: fallbackModel,
+      model: provider.model,
       messages: [
         { role: 'system', content: `${activeSystemPrompt}\n\n${JSON_OUTPUT_CONTRACT}` },
         { role: 'user', content: userPrompt },
       ],
       max_tokens: 4200,
       reasoning: { effort: 'none', exclude: true },
+      response_format: chatResponseFormat,
+      provider: { require_parameters: true },
     }
     : requestPayload
 
   try {
-    const attempts = input.tier === 'free' || provider.apiStyle === 'chat-completions' ? 2 : 1
+    const modelAttempts = provider.apiStyle === 'chat-completions'
+      ? buildOpenRouterModelChain(provider.model)
+      : [provider.model]
     const providerDescriptor = `${provider.label} · ${provider.model}`
-    let lastFailure = `${providerDescriptor} no estuvo disponible; se muestra el marco local para no inventar datos.`
+    let lastFailure = `${providerDescriptor} no estuvo disponible; se conserva el cribado de fuentes y no se inventan datos.`
 
-    for (let attempt = 0; attempt < attempts; attempt += 1) {
-      const attemptPayload = attempt > 0 && provider.apiStyle === 'chat-completions'
-          ? fallbackRequestPayload
-          : requestPayload
+    for (let attempt = 0; attempt < modelAttempts.length; attempt += 1) {
+      const attemptModel = modelAttempts[attempt]
+      const attemptPayload = provider.apiStyle === 'chat-completions'
+        ? { ...(attempt > 0 ? fallbackRequestPayload : requestPayload), model: attemptModel }
+        : requestPayload
       const response = await fetch(provider.endpoint, {
         method: 'POST',
         headers: {
@@ -1663,20 +1888,20 @@ export async function POST(request: Request) {
       })
 
       if (!response.ok) {
-        lastFailure = `${providerDescriptor} no estuvo disponible; se muestra el marco local para no inventar datos.`
+        lastFailure = `${provider.label} · ${attemptModel} no estuvo disponible; se probará el siguiente modelo sin inventar datos.`
         continue
       }
 
       const payload = await response.json().catch(() => null)
       const text = extractOutputText(payload)
       if (!text) {
-        lastFailure = 'El modelo gratuito no generó texto verificable; se muestra el marco local.'
+        lastFailure = 'El modelo gratuito no generó texto verificable; se conserva el cribado de fuentes y no se inventan datos.'
         continue
       }
 
-      const candidatePayload = repairSourceUrls(parseJsonResponse(text), researchContext)
+      const candidatePayload = normalizeAiPayload(repairSourceUrls(parseJsonResponse(text), researchContext))
       if (!candidatePayload) {
-        lastFailure = 'La respuesta IA no llegó en el formato verificable esperado; se muestra el marco local.'
+        lastFailure = 'La respuesta IA no llegó en el formato verificable esperado; se conserva el cribado de fuentes y no se inventan datos.'
         continue
       }
 
@@ -1684,12 +1909,12 @@ export async function POST(request: Request) {
       if (!validated.success) {
         const issue = validated.error.issues[0]
         const field = issue?.path.join('.') || 'respuesta'
-        lastFailure = `La respuesta IA no superó la validación en ${field}; se muestra el marco local.`
+        lastFailure = `La respuesta IA no superó la validación en ${field}; se conserva el cribado de fuentes y no se inventan datos.`
         continue
       }
 
-      const successfulProvider = attempt > 0 && fallbackModel !== provider.model
-        ? { ...provider, model: fallbackModel }
+      const successfulProvider = attemptModel !== provider.model
+        ? { ...provider, model: attemptModel }
         : provider
       const allowedDiscoverySymbols = openDiscovery
         ? new Set(researchContext.fundamentals.filter((snapshot) => snapshot.identityVerified).map((snapshot) => symbolKey(snapshot.symbol)))
@@ -1705,11 +1930,19 @@ export async function POST(request: Request) {
       const enrichedContext: ResearchContext = {
         ...researchContext,
         fundamentals: enrichedFundamentals.snapshots,
+        sourcesUsed: [...new Set([
+          ...researchContext.sourcesUsed,
+          ...fundamentalSourceNames(enrichedFundamentals.snapshots),
+        ])],
+        warnings: [...new Set([
+          ...researchContext.warnings,
+          ...enrichedFundamentals.snapshots.flatMap((snapshot) => snapshot.warnings),
+        ])],
       }
       const result = toResearchResult({ ...validated.data, candidates: candidatesForResult }, successfulProvider, enrichedContext, {
         unresolved: enrichedFundamentals.unresolved,
         companiesFound: enrichedContext.fundamentals.filter((snapshot) => snapshot.identityVerified).length,
-      })
+      }, input.profile)
       return NextResponse.json(result.leads.length
         ? result
         : dataDrivenFallback(input, successfulProvider, enrichedContext, 'La IA respondió, pero sus candidatos no pasaron el filtro de identidad, métricas y fuentes.'))
