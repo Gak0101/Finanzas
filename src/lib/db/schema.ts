@@ -200,21 +200,33 @@ export const inversiones_excel_filas = sqliteTable(
 
 // ─── INVERSIONES / OPERACIONES ──────────────────────────────────────────────
 // Registro de compras, ventas, dividendos, aportaciones y traspasos.
-export const inversiones_operaciones = sqliteTable('inversiones_operaciones', {
-  id: integer('id').primaryKey({ autoIncrement: true }),
-  usuario_id: integer('usuario_id').notNull().references(() => usuarios.id),
-  fecha: text('fecha').notNull(),
-  tipo: text('tipo').notNull(),
-  activo: text('activo').notNull(),
-  ticker: text('ticker').notNull(),
-  tipo_activo: text('tipo_activo').notNull().default('Otro'),
-  custodia: text('custodia').notNull(),
-  cantidad: real('cantidad').notNull(),
-  precio_unitario: real('precio_unitario').notNull(),
-  importe: real('importe').notNull(),
-  notas: text('notas'),
-  created_at: text('created_at').default(sql`(datetime('now'))`),
-})
+export const inversiones_operaciones = sqliteTable(
+  'inversiones_operaciones',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    usuario_id: integer('usuario_id').notNull().references(() => usuarios.id),
+    fecha: text('fecha').notNull(),
+    fecha_hora: text('fecha_hora'),
+    tipo: text('tipo').notNull(),
+    tipo_externo: text('tipo_externo'),
+    activo: text('activo').notNull(),
+    ticker: text('ticker').notNull(),
+    tipo_activo: text('tipo_activo').notNull().default('Otro'),
+    custodia: text('custodia').notNull(),
+    cantidad: real('cantidad').notNull(),
+    precio_unitario: real('precio_unitario').notNull(),
+    importe: real('importe').notNull(),
+    comision: real('comision').notNull().default(0),
+    impuesto: real('impuesto').notNull().default(0),
+    divisa: text('divisa').notNull().default('EUR'),
+    fuente: text('fuente').notNull().default('App'),
+    external_id: text('external_id'),
+    descripcion: text('descripcion'),
+    notas: text('notas'),
+    created_at: text('created_at').default(sql`(datetime('now'))`),
+  },
+  (t) => [uniqueIndex('unique_inversion_operacion_fuente_externa').on(t.usuario_id, t.fuente, t.external_id)]
+)
 
 // ─── RELACIONES ──────────────────────────────────────────────────────────────
 export const usuariosRelations = relations(usuarios, ({ many, one }) => ({

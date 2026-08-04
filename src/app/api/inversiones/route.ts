@@ -7,6 +7,7 @@ import {
 } from '@/lib/db/schema'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 import { inversionOperacionSchema } from '@/lib/validations/inversion'
+import { calculateClosedInvestmentPositions } from '@/lib/inversiones/history'
 import { priceIdentifiers } from '@/lib/inversiones/priceIdentifiers'
 
 export const dynamic = 'force-dynamic'
@@ -22,10 +23,14 @@ async function getPortfolio(userId: number) {
   })
   const operations = await db.query.inversiones_operaciones.findMany({
     where: eq(inversiones_operaciones.usuario_id, userId),
-    orderBy: [desc(inversiones_operaciones.fecha), desc(inversiones_operaciones.id)],
+    orderBy: [desc(inversiones_operaciones.fecha), desc(inversiones_operaciones.fecha_hora), desc(inversiones_operaciones.id)],
   })
 
-  return { positions, operations }
+  return {
+    positions,
+    operations,
+    closedPositions: calculateClosedInvestmentPositions(operations),
+  }
 }
 
 async function recalculateWeights(userId: number) {
@@ -126,7 +131,7 @@ export async function POST(req: Request) {
           estado_fuente: existing.estado_fuente === 'FALLBACK' ? 'FALLBACK' : 'MANUAL',
           crypto_id: existing.crypto_id ?? identifiers.cryptoId,
           market_symbol: existing.market_symbol ?? identifiers.marketSymbol,
-          fecha_apertura: existing.fecha_apertura && input.fecha < existing.fecha_apertura
+          fecha_apertura: !existing.fecha_apertura || input.fecha < existing.fecha_apertura
             ? input.fecha
             : existing.fecha_apertura,
           updated_at: now,
@@ -182,6 +187,7 @@ export async function POST(req: Request) {
       cantidad: input.cantidad,
       precio_unitario: input.precio_unitario,
       importe,
+      fuente: 'App',
       notas: input.notas,
     })
     .returning()

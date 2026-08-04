@@ -47,11 +47,13 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { InversionOperacion, InversionPosicion } from '@/lib/db/schema'
+import type { ClosedInvestmentPosition } from '@/lib/inversiones/history'
 import { StockFinder } from '@/components/buscador-acciones/StockFinder'
 
 type PortfolioData = {
   positions: InversionPosicion[]
   operations: InversionOperacion[]
+  closedPositions: ClosedInvestmentPosition[]
 }
 
 type ChartMode = 'valor' | 'pnl'
@@ -368,6 +370,82 @@ function AllocationTooltip({
   )
 }
 
+function ClosedPositionsPanel({ positions }: { positions: ClosedInvestmentPosition[] }) {
+  const [limit, setLimit] = useState(8)
+  if (positions.length === 0) return null
+
+  const realisedResult = positions.reduce((sum, position) => sum + position.resultado_realizado, 0)
+  const profitable = positions.filter((position) => position.resultado_realizado > 0).length
+  const visible = positions.slice(0, limit)
+
+  return (
+    <section className="mt-3 overflow-hidden rounded-xl bg-[#f7f5ef] text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]" id="closed-positions">
+      <div className="flex flex-col gap-5 border-b border-slate-200 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
+        <div>
+          <p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Historial / ciclos completados</p>
+          <h2 className="text-lg font-semibold tracking-[-0.04em]">Posiciones cerradas</h2>
+          <p className="mt-2 max-w-2xl text-[10px] leading-relaxed text-slate-500">
+            Calculadas exclusivamente con compras, ventas, dividendos, costes e impuestos registrados. No se rellenan huecos ni se estiman operaciones.
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-5 text-left sm:text-right">
+          <div><p className="text-[9px] uppercase tracking-[0.1em] text-slate-400">Ciclos</p><strong className="mt-1 block text-sm tabular-nums">{positions.length}</strong></div>
+          <div><p className="text-[9px] uppercase tracking-[0.1em] text-slate-400">En positivo</p><strong className="mt-1 block text-sm tabular-nums">{profitable}</strong></div>
+          <div><p className="text-[9px] uppercase tracking-[0.1em] text-slate-400">Resultado neto</p><strong className={`mt-1 block text-sm tabular-nums ${realisedResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(realisedResult)}</strong></div>
+        </div>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[980px] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-slate-200 text-[9px] uppercase tracking-[0.1em] text-slate-400">
+              <th className="px-5 py-3 font-bold sm:px-6">Activo</th>
+              <th className="px-3 py-3 font-bold">Periodo</th>
+              <th className="px-3 py-3 text-right font-bold">Compras</th>
+              <th className="px-3 py-3 text-right font-bold">Ventas</th>
+              <th className="px-3 py-3 text-right font-bold">Ingresos</th>
+              <th className="px-3 py-3 text-right font-bold">Costes</th>
+              <th className="px-3 py-3 text-right font-bold">Resultado</th>
+              <th className="px-3 py-3 pr-5 text-right font-bold sm:pr-6">Rentabilidad</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.map((position) => {
+              const income = position.dividendos + position.bonificaciones
+              const costs = position.comisiones + position.impuestos
+              return (
+                <tr key={position.id} className="border-b border-slate-100 text-[11px] last:border-0 hover:bg-[#f0eee8]">
+                  <td className="max-w-[280px] px-5 py-3 sm:px-6">
+                    <p className="truncate font-semibold text-slate-900">{position.activo}</p>
+                    <p className="mt-0.5 truncate text-[9px] text-slate-400">{position.ticker} · {position.custodia}</p>
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-3 text-slate-600">
+                    <p>{formatDate(position.fecha_apertura)} → {formatDate(position.fecha_cierre)}</p>
+                    <p className="mt-0.5 inline-flex items-center gap-1 text-[9px] text-slate-400"><Clock3 className="h-3 w-3" />{position.dias_activa} días</p>
+                  </td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-600">{formatEuro(position.importe_compras)}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-600">{formatEuro(position.importe_ventas)}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-violet-700">{income > 0 ? formatEuro(income) : '—'}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-slate-500">{costs > 0 ? formatEuro(costs) : '—'}</td>
+                  <td className={`px-3 py-3 text-right font-semibold tabular-nums ${position.resultado_realizado >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(position.resultado_realizado)}</td>
+                  <td className={`px-3 py-3 pr-5 text-right font-semibold tabular-nums sm:pr-6 ${position.resultado_realizado >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatPct(position.rentabilidad_pct)}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-col gap-2 border-t border-slate-200 px-5 py-3 text-[10px] text-slate-400 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <span>Mostrando {visible.length} de {positions.length} ciclos cerrados</span>
+        {positions.length > 8 && (
+          <button type="button" onClick={() => setLimit(limit >= positions.length ? 8 : positions.length)} className="font-semibold text-slate-600 hover:text-slate-900">
+            {limit >= positions.length ? 'Mostrar menos' : 'Ver todas las posiciones cerradas'}
+          </button>
+        )}
+      </div>
+    </section>
+  )
+}
+
 export function InvestmentPortfolio() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -426,6 +504,7 @@ export function InvestmentPortfolio() {
 
   const positions = data?.positions ?? []
   const operations = data?.operations ?? []
+  const closedPositions = data?.closedPositions ?? []
   const portfolioLastUpdated = useMemo(() => {
     const timestamps = positions
       .map((position) => position.updated_at ?? position.snapshot_at)
@@ -513,6 +592,7 @@ export function InvestmentPortfolio() {
       color: TYPE_COLORS[name] ?? TYPE_COLORS.Otro,
     }))
   }, [summary.byType, summary.totalValue])
+
 
   function abrirDialog() {
     setFecha(new Date().toISOString().slice(0, 10))
@@ -869,6 +949,8 @@ export function InvestmentPortfolio() {
 
           <div className="flex flex-col rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)] sm:p-6" id="quality-panel"><div className="flex items-start justify-between"><div><p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Control / confianza</p><h2 className="text-lg font-semibold tracking-[-0.04em]">Calidad de datos</h2></div><span className="text-xs font-bold tabular-nums text-amber-600">{qualityScore} / 10</span></div><p className="mt-4 text-[11px] leading-relaxed text-slate-500">La cartera está disponible, pero hay precios que conviene revisar antes de tomar decisiones.</p><div className="mt-5 grid gap-3 md:grid-cols-3">{qualityItems.map((item) => <div key={item.title} className="grid grid-cols-[14px_1fr_auto] items-start gap-2.5 border-b border-slate-200 pb-3 md:border-b-0 md:border-r md:pb-0 md:pr-3 md:last:border-r-0"><span className="mt-0.5">{item.ok ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />}</span><div><p className="text-[10px] font-semibold text-slate-900">{item.title}</p><p className="mt-1 text-[9px] leading-relaxed text-slate-400">{item.detail}</p></div><span className="text-[9px] text-slate-400">{item.tag}</span></div>)}</div><div className="mt-5 flex justify-end"><Button variant="outline" size="sm" className="border-slate-200 bg-transparent text-slate-700 hover:bg-white" onClick={actualizarPrecios} disabled={updatingPrices}><RefreshCw className={updatingPrices ? 'animate-spin' : ''} />{updatingPrices ? 'Consultando…' : 'Volver a consultar APIs'}</Button></div></div>
         </section>
+
+        <ClosedPositionsPanel positions={closedPositions} />
 
         <section className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,.8fr)]">
           <div className="min-w-0 rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)] sm:p-6">
