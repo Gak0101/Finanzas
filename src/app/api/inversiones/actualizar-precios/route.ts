@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { inversiones_posiciones } from '@/lib/db/schema'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
+import { persistDailyInvestmentSnapshots } from '@/lib/inversiones/snapshots'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -22,9 +23,11 @@ type PriceResult = {
   sourceUrl: string
   provider: string
   asOf?: string
+  nativeCurrency?: string
+  fxRate?: number
 }
 
-async function fetchYahooClose(symbol: string): Promise<PriceResult> {
+async function fetchYahooCloseRaw(symbol: string): Promise<PriceResult> {
   const sourceUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d&events=history`
   const response = await fetch(sourceUrl, {
     cache: 'no-store',
@@ -46,6 +49,28 @@ async function fetchYahooClose(symbol: string): Promise<PriceResult> {
     sourceUrl,
     provider: `Yahoo Finance · ${symbol} · último cierre`,
     asOf: asOfTimestamp ? new Date(asOfTimestamp * 1000).toISOString() : undefined,
+    nativeCurrency: result?.meta?.currency,
+  }
+}
+
+async function fetchYahooClose(symbol: string): Promise<PriceResult> {
+  const result = await fetchYahooCloseRaw(symbol)
+  let currency = result.nativeCurrency
+  let nativePrice = result.price
+
+  if (!currency || currency === 'EUR') return result
+  if (currency === 'GBp') {
+    currency = 'GBP'
+    nativePrice /= 100
+  }
+
+  const fx = await fetchYahooCloseRaw(`${currency}EUR=X`)
+  return {
+    ...result,
+    price: nativePrice * fx.price,
+    nativeCurrency: currency,
+    fxRate: fx.price,
+    provider: `${result.provider} · convertido ${currency}/EUR`,
   }
 }
 
@@ -122,6 +147,8 @@ export async function POST() {
         ultimo_valido: update.result.price,
         proveedor: update.result.provider,
         fuente_url: update.result.sourceUrl,
+        snapshot_at: update.result.asOf ?? updatedAt,
+        divisa: 'EUR',
         updated_at: updatedAt,
       })
       .where(eq(inversiones_posiciones.id, update.id))
@@ -152,6 +179,8 @@ export async function POST() {
       eq(inversiones_posiciones.incluido_resumen, true)
     ),
   })
+
+  await persistDailyInvestmentSnapshots(auth.userId, positionsUpdated)
 
   return NextResponse.json({
     positions: positionsUpdated,

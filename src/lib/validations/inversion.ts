@@ -27,6 +27,8 @@ export const inversionOperacionSchema = z.object({
   cantidad: z.number().positive('La cantidad debe ser mayor que 0'),
   precio_unitario: z.number().nonnegative('El precio no puede ser negativo'),
   importe: z.number().nonnegative('El importe no puede ser negativo').optional(),
+  comision: z.number().nonnegative('La comisión no puede ser negativa').default(0),
+  impuesto: z.number().nonnegative('El impuesto no puede ser negativo').default(0),
   notas: z.string().max(500).optional(),
 })
 

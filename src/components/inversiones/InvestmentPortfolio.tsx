@@ -6,8 +6,6 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
-  ArrowUpRight,
-  BarChart3,
   CalendarDays,
   CheckCircle2,
   ChevronDown,
@@ -22,18 +20,6 @@ import {
   ShieldCheck,
   Wallet,
 } from 'lucide-react'
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -48,15 +34,18 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { InversionOperacion, InversionPosicion } from '@/lib/db/schema'
 import type { ClosedInvestmentPosition } from '@/lib/inversiones/history'
+import type { InvestmentAnalytics } from '@/lib/inversiones/analytics'
 import { StockFinder } from '@/components/buscador-acciones/StockFinder'
+import { InvestmentAnalyticsPanel } from '@/components/inversiones/InvestmentAnalyticsPanel'
+import { PositionDetailDialog } from '@/components/inversiones/PositionDetailDialog'
 
 type PortfolioData = {
   positions: InversionPosicion[]
   operations: InversionOperacion[]
   closedPositions: ClosedInvestmentPosition[]
+  analytics: InvestmentAnalytics
 }
 
-type ChartMode = 'valor' | 'pnl'
 type OperationType = 'Compra' | 'Venta' | 'Dividendo' | 'Aportación' | 'Traspaso'
 type InvestmentTab = 'portfolio' | 'buscador'
 type PositionSort =
@@ -257,15 +246,6 @@ function formatEuro(value: number | null | undefined) {
   }).format(value)
 }
 
-function formatCompactEuro(value: number) {
-  return new Intl.NumberFormat('es-ES', {
-    style: 'currency',
-    currency: 'EUR',
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(value)
-}
-
 function formatPct(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return '—'
   return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`
@@ -329,50 +309,17 @@ function sourceDotClass(status: string) {
   return 'bg-[#9aa5ae]'
 }
 
-function ChartTooltip({
-  active,
-  payload,
-  label,
-  mode,
-}: {
-  active?: boolean
-  payload?: Array<{ payload?: { activo: string; valor: number; pnl: number | null }; value?: number }>
-  label?: string
-  mode: ChartMode
-}) {
-  if (!active || !payload?.length || !payload[0]?.payload) return null
-  const item = payload[0].payload
-  const value = mode === 'valor' ? item.valor : item.pnl
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg">
-      <p className="max-w-56 truncate font-semibold text-slate-900">{item.activo}</p>
-      <p className="mt-1 tabular-nums text-slate-600">{mode === 'valor' ? formatEuro(value) : formatEuro(value)}</p>
-      {mode === 'pnl' && <p className="mt-0.5 text-[10px] text-slate-400">{label}</p>}
-    </div>
-  )
-}
-
-function AllocationTooltip({
-  active,
-  payload,
-}: {
-  active?: boolean
-  payload?: Array<{ payload?: { name: string; value: number; percent: number } }>
-}) {
-  if (!active || !payload?.length || !payload[0]?.payload) return null
-  const item = payload[0].payload
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg">
-      <p className="font-semibold text-slate-900">{item.name}</p>
-      <p className="mt-1 tabular-nums text-slate-600">{formatEuro(item.value)}</p>
-      <p className="text-[10px] text-slate-400">{(item.percent * 100).toFixed(1)}% del portfolio</p>
-    </div>
-  )
-}
-
 function ClosedPositionsPanel({ positions }: { positions: ClosedInvestmentPosition[] }) {
   const [limit, setLimit] = useState(8)
-  if (positions.length === 0) return null
+  if (positions.length === 0) {
+    return (
+      <section className="mt-3 rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)] sm:p-6" id="closed-positions">
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Historial / ciclos completados</p>
+        <h2 className="mt-2 text-lg font-semibold tracking-[-0.04em]">Todavía no hay posiciones cerradas</h2>
+        <p className="mt-2 text-[11px] leading-relaxed text-slate-500">Cuando una venta cierre por completo una posición, aparecerá aquí con su resultado registrado, costes y tiempo en cartera.</p>
+      </section>
+    )
+  }
 
   const realisedResult = positions.reduce((sum, position) => sum + position.resultado_realizado, 0)
   const profitable = positions.filter((position) => position.resultado_realizado > 0).length
@@ -389,7 +336,7 @@ function ClosedPositionsPanel({ positions }: { positions: ClosedInvestmentPositi
           </p>
         </div>
         <div className="grid grid-cols-3 gap-5 text-left sm:text-right">
-          <div><p className="text-[9px] uppercase tracking-[0.1em] text-slate-400">Ciclos</p><strong className="mt-1 block text-sm tabular-nums">{positions.length}</strong></div>
+          <div><p className="text-[9px] uppercase tracking-[0.1em] text-slate-400">Ciclos cerrados</p><strong className="mt-1 block text-sm tabular-nums">{positions.length}</strong></div>
           <div><p className="text-[9px] uppercase tracking-[0.1em] text-slate-400">En positivo</p><strong className="mt-1 block text-sm tabular-nums">{profitable}</strong></div>
           <div><p className="text-[9px] uppercase tracking-[0.1em] text-slate-400">Resultado neto</p><strong className={`mt-1 block text-sm tabular-nums ${realisedResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(realisedResult)}</strong></div>
         </div>
@@ -459,7 +406,6 @@ export function InvestmentPortfolio() {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [positionSort, setPositionSort] = useState<PositionSort>('value_desc')
-  const [chartMode, setChartMode] = useState<ChartMode>('valor')
   const [dateDialogOpen, setDateDialogOpen] = useState(false)
   const [datePosition, setDatePosition] = useState<InversionPosicion | null>(null)
   const [openingDate, setOpeningDate] = useState('')
@@ -474,14 +420,17 @@ export function InvestmentPortfolio() {
   const [cantidad, setCantidad] = useState('')
   const [precio, setPrecio] = useState('')
   const [notas, setNotas] = useState('')
+  const [comision, setComision] = useState('')
+  const [impuesto, setImpuesto] = useState('')
+  const [detailPositionId, setDetailPositionId] = useState<number | null>(null)
   const activeTab: InvestmentTab = searchParams.get('tab') === 'buscador' ? 'buscador' : 'portfolio'
 
   function cambiarPestana(tab: InvestmentTab) {
     router.replace(tab === 'buscador' ? '/inversiones?tab=buscador' : '/inversiones', { scroll: true })
   }
 
-  async function cargarPortfolio() {
-    setLoading(true)
+  async function cargarPortfolio(showLoading = true) {
+    if (showLoading) setLoading(true)
     setLoadError(null)
     try {
       const response = await fetch('/api/inversiones', { cache: 'no-store' })
@@ -494,7 +443,7 @@ export function InvestmentPortfolio() {
       setLoadError(message)
       toast.error(message)
     } finally {
-      setLoading(false)
+      if (showLoading) setLoading(false)
     }
   }
 
@@ -505,6 +454,9 @@ export function InvestmentPortfolio() {
   const positions = data?.positions ?? []
   const operations = data?.operations ?? []
   const closedPositions = data?.closedPositions ?? []
+  const analytics = data?.analytics ?? null
+  const detailPosition = positions.find((position) => position.id === detailPositionId) ?? null
+  const detailAnalytics = analytics?.positionAnalytics.find((item) => item.positionId === detailPositionId) ?? null
   const portfolioLastUpdated = useMemo(() => {
     const timestamps = positions
       .map((position) => position.updated_at ?? position.snapshot_at)
@@ -573,27 +525,6 @@ export function InvestmentPortfolio() {
     })
   }, [filter, positionSort, positions, search])
 
-  const chartData = useMemo(() => {
-    return [...positions]
-      .sort((a, b) => (b.valor_actual ?? 0) - (a.valor_actual ?? 0))
-      .map((position) => ({
-        activo: assetLabel(position),
-        ticker: position.price_ticker || position.ticker,
-        valor: position.valor_actual ?? 0,
-        pnl: position.pnl,
-      }))
-  }, [positions])
-
-  const allocationData = useMemo(() => {
-    return Object.entries(summary.byType).map(([name, value]) => ({
-      name,
-      value,
-      percent: summary.totalValue > 0 ? value / summary.totalValue : 0,
-      color: TYPE_COLORS[name] ?? TYPE_COLORS.Otro,
-    }))
-  }, [summary.byType, summary.totalValue])
-
-
   function abrirDialog() {
     setFecha(new Date().toISOString().slice(0, 10))
     setDialogOpen(true)
@@ -649,6 +580,8 @@ export function InvestmentPortfolio() {
     setCantidad('')
     setPrecio('')
     setNotas('')
+    setComision('')
+    setImpuesto('')
   }
 
   function seleccionarPosicion(value: string) {
@@ -681,7 +614,9 @@ export function InvestmentPortfolio() {
     event.preventDefault()
     const quantity = Number(cantidad)
     const unitPrice = Number(precio)
-    if (!fecha || !activo || !ticker || !custodia || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0) {
+    const fee = comision === '' ? 0 : Number(comision)
+    const tax = impuesto === '' ? 0 : Number(impuesto)
+    if (!fecha || !activo || !ticker || !custodia || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(fee) || fee < 0 || !Number.isFinite(tax) || tax < 0) {
       toast.error('Completa activo, custodia, cantidad y precio')
       return
     }
@@ -700,6 +635,8 @@ export function InvestmentPortfolio() {
           custodia,
           cantidad: quantity,
           precio_unitario: unitPrice,
+          comision: fee,
+          impuesto: tax,
           notas: notas || undefined,
         }),
       })
@@ -717,6 +654,21 @@ export function InvestmentPortfolio() {
     }
   }
 
+  function actualizarPosicionLocal(updated: InversionPosicion) {
+    setData((current) => current
+      ? { ...current, positions: current.positions.map((position) => position.id === updated.id ? updated : position) }
+      : current)
+  }
+
+  function abrirOperacionRapida(type: 'Compra' | 'Venta' | 'Dividendo', position: InversionPosicion) {
+    setDetailPositionId(null)
+    setOperationType(type)
+    setFecha(new Date().toISOString().slice(0, 10))
+    seleccionarPosicion(String(position.id))
+    setCantidad(type === 'Compra' && position.coste === null ? position.cantidad.toString() : '')
+    setDialogOpen(true)
+  }
+
   async function actualizarPrecios() {
     setUpdatingPrices(true)
     try {
@@ -725,6 +677,7 @@ export function InvestmentPortfolio() {
       if (!response.ok) throw new Error(getErrorMessage(payload, 'No se pudieron actualizar los precios'))
       if (!hasPositionsPayload(payload)) throw new Error(invalidApiResponseMessage(response))
       setData((current) => current ? { ...current, positions: payload.positions } : current)
+      await cargarPortfolio(false)
       if (typeof payload.updatedAt === 'string') setLastPriceUpdate(payload.updatedAt)
       const updated = typeof payload.updated === 'number' ? payload.updated : 0
       const errors = Array.isArray(payload.errors) ? payload.errors.filter((error: unknown): error is string => typeof error === 'string') : []
@@ -792,7 +745,12 @@ export function InvestmentPortfolio() {
     )
   }
 
-  const qualityScore = positions.length > 0 ? Math.round((summary.apiOkCount / positions.length) * 10) : 0
+  const priceCoverage = positions.length > 0 ? analytics?.performance.coverage.valuedPositions ?? summary.apiOkCount : 0
+  const costCoverage = analytics?.performance.coverage.costPositions ?? (positions.length - summary.missingCostCount)
+  const dateCoverage = analytics?.performance.coverage.datedPositions ?? positions.filter((position) => Boolean(position.fecha_apertura)).length
+  const qualityScore = positions.length > 0
+    ? Math.round(((priceCoverage + costCoverage + dateCoverage) / (positions.length * 3)) * 10)
+    : 0
   const qualityItems = [
     {
       ok: summary.fallbackCount === 0,
@@ -807,10 +765,10 @@ export function InvestmentPortfolio() {
       tag: summary.missingCostCount === 0 ? 'OK' : 'Parcial',
     },
     {
-      ok: true,
-      title: 'ETFs con último cierre disponible',
-      detail: 'El precio puede diferir del broker o de la cotización intradía.',
-      tag: 'Contexto',
+      ok: dateCoverage === positions.length,
+      title: dateCoverage === positions.length ? 'Fechas de apertura completas' : `${positions.length - dateCoverage} posiciones sin fecha`,
+      detail: dateCoverage === positions.length ? 'La antigüedad puede calcularse en toda la cartera.' : 'La rentabilidad anualizada queda pendiente en esas posiciones.',
+      tag: dateCoverage === positions.length ? 'OK' : 'Completar',
     },
   ]
 
@@ -819,8 +777,8 @@ export function InvestmentPortfolio() {
         <section className="flex flex-col gap-7 py-8 lg:flex-row lg:items-end lg:justify-between" id="inversiones">
           <div>
             <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Portfolio / visión general</p>
-            <h1 className="max-w-2xl text-4xl font-medium leading-[0.98] tracking-[-0.06em] text-slate-50 sm:text-5xl lg:text-6xl">Tu patrimonio<br /><span className="text-[#c8f56a]">en movimiento.</span></h1>
-            <p className="mt-4 max-w-xl text-sm text-slate-400">Una lectura clara de tus posiciones, su valor actual y la calidad de cada precio.</p>
+            <h1 className="max-w-2xl text-4xl font-medium leading-[0.98] tracking-[-0.06em] text-slate-50 sm:text-5xl lg:text-6xl">Tu cartera de inversión<br /><span className="text-[#c8f56a]">en movimiento.</span></h1>
+            <p className="mt-4 max-w-xl text-sm text-slate-400">Valor actual, resultado de la cartera abierta, histórico y trazabilidad de cada posición.</p>
           </div>
           <div className="flex flex-col gap-4 lg:items-end">
             <div className="text-left lg:text-right"><p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Última actualización</p><p className="mt-1 text-xs font-medium text-slate-200">{formatDateTime(lastPriceUpdate ?? portfolioLastUpdated)}</p><p className="mt-1 text-[10px] text-slate-500">{lastPriceUpdate ? 'CoinGecko + Yahoo/Xetra' : 'Precios y posiciones guardados en la app'}</p>{lastPriceUpdate && <p className="mt-1 text-[10px] text-slate-500">ETFs: último cierre de mercado como referencia gratuita.</p>}</div>
@@ -832,10 +790,10 @@ export function InvestmentPortfolio() {
         </section>
 
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label="Resumen del portfolio">
-          <div className="rounded-xl bg-[#c8f56a] p-5 text-[#172016] shadow-[0_12px_30px_rgba(0,0,0,.14)] md:col-span-2 xl:col-span-1"><div className="flex items-center justify-between text-xs font-semibold text-[#536a38]"><span>Valor actual</span><CircleDollarSign className="h-5 w-5" /></div><p className="mt-5 text-4xl font-semibold tracking-[-0.06em] tabular-nums">{formatEuro(summary.totalValue)}</p><p className="mt-4 text-[10px] text-[#617946]">{positions.length} posiciones · EUR · cartera de la app</p></div>
-          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Coste conocido</span><Wallet className="h-4 w-4" /></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{formatEuro(summary.knownCost)}</p><p className="mt-4 text-[10px] text-slate-400">Excluye posiciones sin coste</p></div>
-          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>P / L conocido</span><span className={summary.knownPnl >= 0 ? 'text-emerald-700' : 'text-red-600'}>{summary.knownPnl >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${summary.knownPnl >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{summary.knownPnl >= 0 ? '+' : ''}{formatEuro(summary.knownPnl)}</p><p className="mt-4 text-[10px] text-slate-400">Sobre coste conocido</p></div>
-          <div className="rounded-xl bg-[#e5edde] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Rentabilidad</span><ArrowUpRight className="h-4 w-4 text-emerald-700" /></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums text-emerald-700">{formatPct(summary.knownReturn)}</p><p className="mt-4 text-[10px] text-slate-500">Rendimiento comparable</p></div>
+          <div className="rounded-xl bg-[#c8f56a] p-5 text-[#172016] shadow-[0_12px_30px_rgba(0,0,0,.14)] md:col-span-2 xl:col-span-1"><div className="flex items-center justify-between text-xs font-semibold text-[#536a38]"><span>Valor actual</span><CircleDollarSign className="h-5 w-5" /></div><p className="mt-5 text-4xl font-semibold tracking-[-0.06em] tabular-nums">{formatEuro(analytics?.performance.totalValue ?? summary.totalValue)}</p><p className="mt-4 text-[10px] text-[#617946]">{positions.length} posiciones · valoración en EUR</p></div>
+          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Capital actual conocido</span><Wallet className="h-4 w-4" /></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{formatEuro(analytics?.performance.knownCost ?? summary.knownCost)}</p><p className="mt-4 text-[10px] text-slate-400">{analytics ? `${analytics.performance.coverage.costPositions} de ${analytics.performance.coverage.totalPositions} posiciones con coste` : 'Calculando cobertura…'}</p></div>
+          <div className="rounded-xl bg-[#e5edde] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado cartera abierta</span><span className={(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.unrealisedPnl ?? summary.knownPnl)}</p><p className="mt-4 text-[10px] text-slate-500">Solo posiciones actuales · {formatPct(analytics?.performance.currentReturnPct ?? summary.knownReturn)}</p></div>
+          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado histórico</span><span className={(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.historicalNetResult ?? 0)}</p><p className="mt-4 text-[10px] text-slate-400">Ventas + ingresos − costes · combinado: {formatEuro(analytics?.performance.totalNetResult ?? summary.knownPnl)}</p></div>
         </section>
 
         <section className="mt-3 grid gap-3">
@@ -868,7 +826,32 @@ export function InvestmentPortfolio() {
                 </div>
               </div>
             </div>
-            <div className="overflow-x-auto">
+            <div className="grid gap-2 p-4 lg:hidden">
+              {filteredPositions.map((position) => (
+                <button
+                  key={position.id}
+                  type="button"
+                  onClick={() => setDetailPositionId(position.id)}
+                  className="grid grid-cols-[1fr_auto] gap-3 rounded-lg border border-slate-200 bg-[#eeece5] p-4 text-left transition hover:border-slate-400"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold text-slate-900">{assetLabel(position)}</span>
+                    <span className="mt-1 block truncate text-[11px] text-slate-500">{position.price_ticker || position.ticker} · {position.tipo} · {position.custodia}</span>
+                    <span className="mt-2 block text-[11px] text-slate-400">{position.fecha_apertura ? `Desde ${formatDate(position.fecha_apertura)}` : 'Fecha de compra pendiente'}</span>
+                  </span>
+                  <span className="text-right">
+                    <strong className="block text-sm tabular-nums text-slate-900">{formatEuro(position.valor_actual)}</strong>
+                    <span className={`mt-1 block text-[11px] font-semibold tabular-nums ${position.pnl === null ? 'text-slate-400' : position.pnl >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{position.pnl === null ? 'P/L pendiente' : `${formatEuro(position.pnl)} · ${formatPct(position.pnl_pct)}`}</span>
+                  </span>
+                </button>
+              ))}
+              {filteredPositions.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-slate-300 p-5 text-center text-[11px] text-slate-500">
+                  No hay posiciones que coincidan. <button type="button" className="font-semibold text-slate-900" onClick={() => { setSearch(''); setFilter('all') }}>Limpiar filtros</button>
+                </div>
+              ) : null}
+            </div>
+            <div className="hidden overflow-x-auto lg:block">
               <table className="w-full min-w-[1160px] border-collapse text-left">
                 <thead>
                   <tr className="border-b border-slate-200 text-[9px] uppercase tracking-[0.1em] text-slate-400">
@@ -886,7 +869,14 @@ export function InvestmentPortfolio() {
                   {filteredPositions.map((position) => {
                     const metrics = positionReturnMetrics(position)
                     return (
-                      <tr key={position.id} className="border-b border-slate-100 text-[11px] last:border-0 hover:bg-[#f0eee8]">
+                      <tr
+                        key={position.id}
+                        tabIndex={0}
+                        aria-label={`Abrir detalle de ${assetLabel(position)}`}
+                        onClick={() => setDetailPositionId(position.id)}
+                        onKeyDown={(event) => { if (event.key === 'Enter') setDetailPositionId(position.id) }}
+                        className="cursor-pointer border-b border-slate-100 text-[11px] outline-none last:border-0 hover:bg-[#f0eee8] focus-visible:bg-[#e9e7df]"
+                      >
                         <td className="px-5 py-3 sm:px-6">
                           <div className="flex min-w-[210px] items-center gap-2.5">
                             <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[9px] font-bold" style={{ backgroundColor: `${TYPE_COLORS[position.tipo] ?? TYPE_COLORS.Otro}33`, color: position.tipo === 'Crypto' ? '#587c2a' : '#5963ba' }}>{(position.price_ticker || position.ticker).slice(0, 4)}</span>
@@ -908,12 +898,12 @@ export function InvestmentPortfolio() {
                         </td>
                         <td className="px-3 py-3">
                           {position.fecha_apertura && metrics ? (
-                            <button type="button" onClick={() => abrirFechaPosicion(position)} className="group/date text-left" title="Editar fecha de apertura">
+                            <button type="button" onClick={(event) => { event.stopPropagation(); abrirFechaPosicion(position) }} className="group/date text-left" title="Editar fecha de apertura">
                               <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-medium text-slate-700 group-hover/date:text-slate-950"><CalendarDays className="h-3.5 w-3.5" />{formatDate(position.fecha_apertura)}</span>
                               <span className="mt-1 flex items-center gap-1 text-[9px] text-slate-400"><Clock3 className="h-3 w-3" />{metrics.elapsedDays} {metrics.elapsedDays === 1 ? 'día' : 'días'} activa</span>
                             </button>
                           ) : (
-                            <button type="button" onClick={() => abrirFechaPosicion(position)} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-dashed border-slate-300 px-2 py-1.5 text-[9px] font-semibold text-slate-500 hover:border-slate-500 hover:text-slate-900">
+                            <button type="button" onClick={(event) => { event.stopPropagation(); abrirFechaPosicion(position) }} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-dashed border-slate-300 px-2 py-1.5 text-[9px] font-semibold text-slate-500 hover:border-slate-500 hover:text-slate-900">
                               <CalendarDays className="h-3 w-3" />Añadir fecha
                             </button>
                           )}
@@ -947,25 +937,34 @@ export function InvestmentPortfolio() {
             </div>
           </div>
 
-          <div className="flex flex-col rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)] sm:p-6" id="quality-panel"><div className="flex items-start justify-between"><div><p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Control / confianza</p><h2 className="text-lg font-semibold tracking-[-0.04em]">Calidad de datos</h2></div><span className="text-xs font-bold tabular-nums text-amber-600">{qualityScore} / 10</span></div><p className="mt-4 text-[11px] leading-relaxed text-slate-500">La cartera está disponible, pero hay precios que conviene revisar antes de tomar decisiones.</p><div className="mt-5 grid gap-3 md:grid-cols-3">{qualityItems.map((item) => <div key={item.title} className="grid grid-cols-[14px_1fr_auto] items-start gap-2.5 border-b border-slate-200 pb-3 md:border-b-0 md:border-r md:pb-0 md:pr-3 md:last:border-r-0"><span className="mt-0.5">{item.ok ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />}</span><div><p className="text-[10px] font-semibold text-slate-900">{item.title}</p><p className="mt-1 text-[9px] leading-relaxed text-slate-400">{item.detail}</p></div><span className="text-[9px] text-slate-400">{item.tag}</span></div>)}</div><div className="mt-5 flex justify-end"><Button variant="outline" size="sm" className="border-slate-200 bg-transparent text-slate-700 hover:bg-white" onClick={actualizarPrecios} disabled={updatingPrices}><RefreshCw className={updatingPrices ? 'animate-spin' : ''} />{updatingPrices ? 'Consultando…' : 'Volver a consultar APIs'}</Button></div></div>
+          <div className="flex flex-col rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)] sm:p-6" id="quality-panel"><div className="flex items-start justify-between"><div><p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Control / confianza</p><h2 className="text-lg font-semibold tracking-[-0.04em]">Calidad de datos</h2></div><span className={`text-xs font-bold tabular-nums ${qualityScore >= 8 ? 'text-emerald-700' : 'text-amber-600'}`}>{qualityScore} / 10</span></div><p className="mt-4 text-[11px] leading-relaxed text-slate-500">{qualityScore >= 8 ? 'La cartera tiene una cobertura alta de precios, costes y fechas.' : 'Completa los datos señalados para comparar el rendimiento con mayor confianza.'}</p><div className="mt-5 grid gap-3 md:grid-cols-3">{qualityItems.map((item) => <div key={item.title} className="grid grid-cols-[14px_1fr_auto] items-start gap-2.5 border-b border-slate-200 pb-3 md:border-b-0 md:border-r md:pb-0 md:pr-3 md:last:border-r-0"><span className="mt-0.5">{item.ok ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />}</span><div><p className="text-[10px] font-semibold text-slate-900">{item.title}</p><p className="mt-1 text-[9px] leading-relaxed text-slate-400">{item.detail}</p></div><span className="text-[9px] text-slate-400">{item.tag}</span></div>)}</div><div className="mt-5 flex justify-end"><Button variant="outline" size="sm" className="border-slate-200 bg-transparent text-slate-700 hover:bg-white" onClick={actualizarPrecios} disabled={updatingPrices}><RefreshCw className={updatingPrices ? 'animate-spin' : ''} />{updatingPrices ? 'Consultando…' : 'Volver a consultar APIs'}</Button></div></div>
         </section>
+
+        {analytics ? (
+          <InvestmentAnalyticsPanel
+            analytics={analytics}
+            positions={positions}
+            closedPositions={closedPositions}
+            onRefresh={() => void actualizarPrecios()}
+            onOpenPosition={setDetailPositionId}
+          />
+        ) : null}
 
         <ClosedPositionsPanel positions={closedPositions} />
-
-        <section className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,.8fr)]">
-          <div className="min-w-0 rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)] sm:p-6">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Mercado / valor</p><h2 className="text-lg font-semibold tracking-[-0.04em]">Mapa de tu cartera</h2></div><div className="flex rounded-md border border-slate-200 bg-[#eeece5] p-1"><button type="button" onClick={() => setChartMode('valor')} className={`rounded px-3 py-1.5 text-[10px] font-semibold ${chartMode === 'valor' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900'}`}>Valor actual</button><button type="button" onClick={() => setChartMode('pnl')} className={`rounded px-3 py-1.5 text-[10px] font-semibold ${chartMode === 'pnl' ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-900'}`}>P / L</button></div></div>
-            <div className="mt-6 flex items-end justify-between"><div><p className="text-2xl font-semibold tracking-[-0.05em] tabular-nums">{chartMode === 'valor' ? formatEuro(summary.totalValue) : formatEuro(summary.knownPnl)}</p><p className="mt-1 text-[10px] text-slate-400">{chartMode === 'valor' ? 'valor actual por posición' : 'solo posiciones con coste conocido'}</p></div><div className="flex items-center gap-2 text-[10px] text-slate-400"><BarChart3 className="h-3.5 w-3.5" /> hover para inspeccionar</div></div>
-            <div className="mt-4 h-[290px] w-full min-w-0"><ResponsiveContainer width="100%" height="100%"><BarChart data={chartData} margin={{ top: 8, right: 8, bottom: 8, left: 8 }}><CartesianGrid vertical={false} stroke="#e3e1d9" strokeDasharray="3 3" /><XAxis dataKey="ticker" axisLine={false} tickLine={false} tick={{ fill: '#88939d', fontSize: 9 }} interval={0} angle={-22} textAnchor="end" height={52} /><YAxis axisLine={false} tickLine={false} tick={{ fill: '#88939d', fontSize: 9 }} tickFormatter={(value) => value >= 1000 ? `${(value / 1000).toFixed(0)}k` : `${value}`} width={34} /><Tooltip content={<ChartTooltip mode={chartMode} />} cursor={{ fill: '#f0eee8' }} /><Bar dataKey={chartMode === 'valor' ? 'valor' : 'pnl'} radius={[4, 4, 0, 0]}>{chartData.map((entry) => <Cell key={`${entry.ticker}-${entry.activo}`} fill={chartMode === 'pnl' ? (entry.pnl !== null && entry.pnl < 0 ? '#c75253' : '#168261') : '#7e8bff'} />)}</Bar></BarChart></ResponsiveContainer></div>
-            <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3 text-[10px] text-slate-400"><span className="h-1.5 w-1.5 rounded-full bg-[#7e8bff]" /> Datos calculados desde la cartera actual <span className="ml-auto">Recharts · interacción local</span></div>
-          </div>
-
-          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)] sm:p-6"><div className="flex items-start justify-between"><div><p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Composición</p><h2 className="text-lg font-semibold tracking-[-0.04em]">Dónde está tu dinero</h2></div><button type="button" onClick={() => document.getElementById('quality-panel')?.scrollIntoView({ behavior: 'smooth' })} className="text-[10px] font-semibold text-slate-500 hover:text-slate-900">Ver calidad →</button></div><div className="mt-3 h-[230px] w-full min-w-0"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={allocationData} dataKey="value" nameKey="name" innerRadius={67} outerRadius={95} paddingAngle={3} stroke="none">{allocationData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}</Pie><Tooltip content={<AllocationTooltip />} /></PieChart></ResponsiveContainer><div className="pointer-events-none relative -mt-[154px] flex flex-col items-center text-center"><span className="text-xl font-semibold tracking-[-0.06em]">{formatCompactEuro(summary.totalValue)}</span><span className="mt-1 text-[10px] text-slate-400">total</span></div></div><div className="mt-5 grid gap-2.5">{allocationData.map((item) => <div key={item.name} className="grid grid-cols-[8px_1fr_auto_auto] items-center gap-2 text-[11px]"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: item.color }} /><span className="text-slate-600">{item.name}</span><strong className="tabular-nums text-slate-900">{formatEuro(item.value)}</strong><span className="tabular-nums text-slate-400">{(item.percent * 100).toFixed(1)}%</span></div>)}</div><div className="mt-5 flex gap-2 border-t border-slate-200 pt-3 text-[10px] text-slate-500"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />La cripto representa una parte relevante del total.</div></div>
-        </section>
 
         <section className="mt-3 overflow-hidden rounded-xl bg-[#f7f5ef] text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]" id="activity-panel"><div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6"><div><p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Registro / historial</p><h2 className="text-lg font-semibold tracking-[-0.04em]">Actividad reciente</h2><p className="mt-2 max-w-2xl text-[10px] leading-relaxed text-slate-500">Conserva el histórico inicial y añade automáticamente cada compra, venta, dividendo, aportación o traspaso que registres desde la app.</p></div><div className="flex items-center justify-between gap-5 text-[10px] text-slate-400 sm:justify-end"><span>{operations.length} movimientos</span><button type="button" onClick={exportarOperaciones} className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900"><Download className="h-3 w-3" />Exportar JSON</button></div></div><div className="overflow-x-auto"><table className="w-full min-w-[740px] border-collapse text-left"><thead><tr className="border-b border-slate-200 text-[9px] uppercase tracking-[0.1em] text-slate-400"><th className="px-5 py-3 font-bold sm:px-6">Fecha</th><th className="px-3 py-3 font-bold">Tipo</th><th className="px-3 py-3 font-bold">Activo</th><th className="px-3 py-3 font-bold">Custodia</th><th className="px-3 py-3 text-right font-bold">Cantidad</th><th className="px-3 py-3 text-right font-bold">Importe</th><th className="px-3 py-3 pr-5 font-bold sm:pr-6">Nota</th></tr></thead><tbody>{operations.slice(0, 8).map((operation) => <tr key={operation.id} className="border-b border-slate-100 text-[11px] last:border-0 hover:bg-[#f0eee8]"><td className="whitespace-nowrap px-5 py-3 text-slate-500 sm:px-6">{formatDate(operation.fecha)}</td><td className="px-3 py-3"><span className={`font-semibold ${operation.tipo === 'Compra' ? 'text-emerald-700' : operation.tipo === 'Venta' ? 'text-red-600' : 'text-slate-500'}`}>{operation.tipo}</span></td><td className="max-w-[240px] truncate px-3 py-3 font-medium text-slate-900">{operation.activo}</td><td className="px-3 py-3 text-slate-500">{operation.custodia}</td><td className="px-3 py-3 text-right tabular-nums text-slate-700">{formatQuantity(operation.cantidad)}</td><td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-900">{formatEuro(operation.importe)}</td><td className="max-w-[280px] truncate px-3 py-3 pr-5 text-slate-400 sm:pr-6">{operation.notas || '—'}</td></tr>)}</tbody></table></div>{operations.length === 0 && <div className="flex flex-col gap-1 p-6 text-[11px] text-slate-400"><strong className="text-slate-900">Aún no hay operaciones.</strong><span>Registra una compra, venta, dividendo o traspaso para construir tu historial.</span></div>}</section>
 
         <footer className="flex flex-col gap-1 py-5 text-[10px] text-slate-500 sm:flex-row sm:items-center sm:justify-between"><span>FIN · cartera gestionada en la app · no es asesoramiento financiero</span><span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3 w-3" />Operaciones persistidas en tu cuenta</span></footer>
+
+      <PositionDetailDialog
+        position={detailPosition}
+        analytics={detailAnalytics}
+        operations={operations}
+        open={detailPosition !== null}
+        onOpenChange={(open) => { if (!open) setDetailPositionId(null) }}
+        onUpdated={(updated) => { actualizarPosicionLocal(updated); void cargarPortfolio(false) }}
+        onStartOperation={abrirOperacionRapida}
+      />
 
       <Dialog open={dateDialogOpen} onOpenChange={(open) => { setDateDialogOpen(open); if (!open) setDatePosition(null) }}>
         <DialogContent className="border-slate-200 bg-[#f7f5ef] text-slate-900 sm:max-w-md">
@@ -1001,6 +1000,7 @@ export function InvestmentPortfolio() {
             <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,.6fr)]"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-asset">Activo</Label><Input id="operation-asset" value={activo} onChange={(event) => setActivo(event.target.value)} placeholder="Nombre del activo" required /></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-ticker">Ticker</Label><Input id="operation-ticker" value={ticker} onChange={(event) => setTicker(event.target.value)} placeholder="BTC, SXR8…" required /></div></div>
             <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-type-asset">Tipo de activo</Label><select id="operation-type-asset" value={tipoActivo} onChange={(event) => setTipoActivo(event.target.value)} className="h-9 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-500"><option value="Crypto">Crypto</option><option value="Crypto / Staking">Crypto / Staking</option><option value="ETF">ETF</option><option value="Acción">Acción</option><option value="Fondo">Fondo</option><option value="Otro">Otro</option></select></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-custody">Custodia / broker</Label><Input id="operation-custody" list="broker-suggestions" value={custodia} onChange={(event) => setCustodia(event.target.value)} placeholder="Trade Republic, XTB…" required /><datalist id="broker-suggestions"><option value="Trade Republic" /><option value="XTB" /><option value="Cold wallet" /><option value="Otro" /></datalist><p className="text-[9px] leading-relaxed text-slate-400">Indica dónde está custodiada; la cotización se actualiza por proveedor de mercado.</p></div></div>
             <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-quantity">Cantidad</Label><Input id="operation-quantity" type="number" min="0" step="any" value={cantidad} onChange={(event) => setCantidad(event.target.value)} placeholder="0,00" required /></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-price">Precio unitario (€)</Label><Input id="operation-price" type="number" min="0" step="any" value={precio} onChange={(event) => setPrecio(event.target.value)} placeholder="0,00" required /></div></div>
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-fee">Comisión (€) <span className="font-normal text-slate-400">(opcional)</span></Label><Input id="operation-fee" type="number" min="0" step="any" value={comision} onChange={(event) => setComision(event.target.value)} placeholder="0,00" /></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-tax">Impuesto / retención (€) <span className="font-normal text-slate-400">(opcional)</span></Label><Input id="operation-tax" type="number" min="0" step="any" value={impuesto} onChange={(event) => setImpuesto(event.target.value)} placeholder="0,00" /></div></div>
             <div className="grid min-w-0 gap-2"><Label htmlFor="operation-notes">Nota <span className="font-normal text-slate-400">(opcional)</span></Label><textarea id="operation-notes" value={notas} onChange={(event) => setNotas(event.target.value)} rows={3} placeholder="Comisión, motivo, referencia…" className="min-w-0 resize-y rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-slate-500" /></div>
             <div className="flex min-w-0 gap-2 rounded-md bg-[#eeece5] px-3 py-2.5 text-[10px] leading-relaxed text-slate-500"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="min-w-0">La operación queda guardada en tu cuenta. No envía órdenes al broker.</span></div>
             <DialogFooter><Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" className="bg-slate-900 text-white hover:bg-slate-700" disabled={savingOperation}>{savingOperation ? 'Guardando…' : 'Guardar operación'}</Button></DialogFooter>

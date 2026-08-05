@@ -71,6 +71,13 @@
       "when": 1785886315406,
       "tag": "0009_trade_republic_history",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1785891560674,
+      "tag": "0010_sloppy_stryfe",
+      "breakpoints": true
     }
   ]
 }

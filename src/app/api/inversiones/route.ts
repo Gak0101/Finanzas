@@ -1,35 +1,48 @@
 import { NextResponse } from 'next/server'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
   inversiones_operaciones,
   inversiones_posiciones,
+  inversiones_snapshots_diarios,
 } from '@/lib/db/schema'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 import { inversionOperacionSchema } from '@/lib/validations/inversion'
 import { calculateClosedInvestmentPositions } from '@/lib/inversiones/history'
 import { priceIdentifiers } from '@/lib/inversiones/priceIdentifiers'
+import { calculateInvestmentAnalytics } from '@/lib/inversiones/analytics'
+import { persistDailyInvestmentSnapshots } from '@/lib/inversiones/snapshots'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-async function getPortfolio(userId: number) {
-  const positions = await db.query.inversiones_posiciones.findMany({
-    where: and(
-      eq(inversiones_posiciones.usuario_id, userId),
-      eq(inversiones_posiciones.incluido_resumen, true)
-    ),
-    orderBy: [desc(inversiones_posiciones.valor_actual), desc(inversiones_posiciones.id)],
-  })
-  const operations = await db.query.inversiones_operaciones.findMany({
-    where: eq(inversiones_operaciones.usuario_id, userId),
-    orderBy: [desc(inversiones_operaciones.fecha), desc(inversiones_operaciones.fecha_hora), desc(inversiones_operaciones.id)],
+async function getPortfolio(userId: number, captureToday = false) {
+  const [positions, operations] = await Promise.all([
+    db.query.inversiones_posiciones.findMany({
+      where: and(
+        eq(inversiones_posiciones.usuario_id, userId),
+        eq(inversiones_posiciones.incluido_resumen, true)
+      ),
+      orderBy: [desc(inversiones_posiciones.valor_actual), desc(inversiones_posiciones.id)],
+    }),
+    db.query.inversiones_operaciones.findMany({
+      where: eq(inversiones_operaciones.usuario_id, userId),
+      orderBy: [desc(inversiones_operaciones.fecha), desc(inversiones_operaciones.fecha_hora), desc(inversiones_operaciones.id)],
+    }),
+  ])
+
+  if (captureToday) await persistDailyInvestmentSnapshots(userId, positions)
+
+  const snapshots = await db.query.inversiones_snapshots_diarios.findMany({
+    where: eq(inversiones_snapshots_diarios.usuario_id, userId),
+    orderBy: [asc(inversiones_snapshots_diarios.fecha_valoracion), asc(inversiones_snapshots_diarios.posicion_id)],
   })
 
   return {
     positions,
     operations,
     closedPositions: calculateClosedInvestmentPositions(operations),
+    analytics: calculateInvestmentAnalytics(positions, operations, snapshots),
   }
 }
 
@@ -59,7 +72,7 @@ export async function GET() {
   const auth = await getAuthenticatedUserId()
   if (isNextResponse(auth)) return auth
 
-  return NextResponse.json(await getPortfolio(auth.userId))
+  return NextResponse.json(await getPortfolio(auth.userId, true))
 }
 
 export async function POST(req: Request) {
@@ -187,12 +200,14 @@ export async function POST(req: Request) {
       cantidad: input.cantidad,
       precio_unitario: input.precio_unitario,
       importe,
+      comision: input.comision,
+      impuesto: input.impuesto,
       fuente: 'App',
       notas: input.notas,
     })
     .returning()
 
   await recalculateWeights(auth.userId)
-  const portfolio = await getPortfolio(auth.userId)
+  const portfolio = await getPortfolio(auth.userId, true)
   return NextResponse.json({ ...portfolio, operation }, { status: 201 })
 }
