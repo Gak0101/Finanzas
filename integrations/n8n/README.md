@@ -24,15 +24,35 @@ ambos según la regla guardada en la aplicación.
    TELEGRAM_CHAT_ID=tu-chat-id
    ALERT_EMAIL_FROM=alertas@tudominio.com
    ALERT_EMAIL_TO=tu-destino@tudominio.com
+   N8N_BLOCK_ENV_ACCESS_IN_NODE=false
    ```
 
 4. Asigna las credenciales de n8n:
 
-   - `Finanzas Telegram`: bot creado con `@BotFather`.
-   - `Finanzas SMTP`: proveedor SMTP o Gmail con contraseña de aplicación.
+   - Telegram: una credencial `telegramApi` existente o el bot creado con
+     `@BotFather`.
+   - Email: una credencial `smtp` llamada `Finanzas SMTP`, usando el proveedor
+     SMTP o Gmail con contraseña de aplicación.
 
-5. Prueba el nodo `Consultar Finanzas` manualmente y activa el workflow cuando
-   el mensaje de prueba llegue correctamente.
+5. Activa el workflow cuando las credenciales estén disponibles.
+
+## Prueba manual protegida
+
+El workflow incluye el webhook `POST /webhook/finanzas-alertas-test`. Requiere el
+mismo secreto de automatización en el header `x-finanzas-test-token` y dispara
+la consulta completa de Finanzas:
+
+```bash
+curl -X POST https://n8n.tudominio.com/webhook/finanzas-alertas-test \
+  -H "x-finanzas-test-token: $FINANZAS_AUTOMATION_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+Para ver un envío real, crea temporalmente una regla con un umbral que ya se
+haya cruzado y el canal deseado; después elimina esa regla de prueba. El
+workflow devuelve `200` al aceptar la ejecución y n8n conserva el resultado en
+el historial de ejecuciones.
 
 Las credenciales no se guardan en Finanzas ni en Git. El endpoint solo devuelve
 alertas nuevas al cruzar el umbral; mientras el activo siga por encima o por
