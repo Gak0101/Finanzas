@@ -16,6 +16,12 @@ const KNOWN_ISINS_BY_SYMBOL: Record<string, string> = {
   '0P00012JRK': 'LU1046421795',
 }
 
+const KNOWN_TRADINGVIEW_SYMBOLS_BY_ISIN: Record<string, string> = {
+  // Yahoo puede devolver ATYM.L, ATYML.XC o E5S1.* para el mismo emisor.
+  // El widget gratuito de TradingView sí expone la cotización alemana.
+  CY0106002112: 'FWB:E5S1',
+}
+
 export function normalizeIsin(value: string | null | undefined) {
   const normalized = value?.trim().toUpperCase().replace(/\s+/g, '')
   return normalized && ISIN_PATTERN.test(normalized) ? normalized : null
@@ -38,6 +44,48 @@ export function inferIsin(...values: Array<string | null | undefined>) {
       if (knownIsin) return knownIsin
     }
   }
+  return null
+}
+
+const TRADINGVIEW_EXCHANGES_BY_YAHOO_SUFFIX: Record<string, string> = {
+  AS: 'EURONEXT',
+  DE: 'XETR',
+  L: 'LSE',
+  MC: 'BME',
+  MI: 'MIL',
+  PA: 'EURONEXT',
+  SW: 'SIX',
+  TO: 'TSX',
+  VI: 'VIE',
+}
+
+function normalizeMarketSymbol(value: string) {
+  return value.trim().toUpperCase().replace(/\s+/g, '')
+}
+
+/**
+ * Converts the provider's market identifier into a TradingView symbol.
+ * Unknown Yahoo suffixes are rejected instead of sending a symbol that the
+ * embedded chart will render as "Este símbolo no existe".
+ */
+export function inferTradingViewSymbol(...values: Array<string | null | undefined>) {
+  const isin = inferIsin(...values)
+  if (isin && KNOWN_TRADINGVIEW_SYMBOLS_BY_ISIN[isin]) return KNOWN_TRADINGVIEW_SYMBOLS_BY_ISIN[isin]
+
+  for (const value of values) {
+    if (!value?.trim()) continue
+    const normalized = normalizeMarketSymbol(value)
+    if (normalizeIsin(normalized)) continue
+    if (normalized.includes(':')) return normalized
+
+    const match = normalized.match(/^(.+)\.([A-Z0-9]+)$/)
+    if (!match) return normalized
+
+    const [, base, suffix] = match
+    const exchange = TRADINGVIEW_EXCHANGES_BY_YAHOO_SUFFIX[suffix]
+    if (exchange) return `${exchange}:${base}`
+  }
+
   return null
 }
 

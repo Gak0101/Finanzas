@@ -15,7 +15,6 @@ import {
   WalletCards,
 } from 'lucide-react'
 import {
-  Area,
   CartesianGrid,
   ComposedChart,
   Line,
@@ -39,6 +38,7 @@ import {
 import type { InversionPosicion } from '@/lib/db/schema'
 import type { ClosedInvestmentPosition } from '@/lib/inversiones/history'
 import { BENCHMARKS, type BenchmarkKey, type BenchmarkPoint } from '@/lib/inversiones/benchmark'
+import { inferTradingViewSymbol } from '@/lib/inversiones/instrumentIdentity'
 import type {
   AllocationPoint,
   InvestmentAlert,
@@ -73,6 +73,7 @@ type MarketSearchResult = {
   tipo_activo: string
   price_ticker: string
   market_symbol: string | null
+  isin: string | null
   exchange: string | null
   poseido: boolean
   posicion_id: number | null
@@ -82,6 +83,13 @@ type ComparisonPoint = {
   date: string
   portfolioReturnPct: number | null
   benchmarkReturnPct: number | null
+}
+
+type PortfolioCandlePoint = InvestmentSnapshotPoint & {
+  open: number
+  close: number
+  high: number
+  low: number
 }
 
 const SNAPSHOT_RANGES: Array<{ value: SnapshotRange; label: string }> = [
@@ -201,6 +209,36 @@ function filterSnapshots(history: InvestmentSnapshotPoint[], range: SnapshotRang
   })
 }
 
+function buildPortfolioCandleSeries(points: InvestmentSnapshotPoint[], fullHistory: InvestmentSnapshotPoint[]) {
+  const valued = points.filter((point): point is InvestmentSnapshotPoint & { value: number } => point.value !== null && point.value > 0)
+  const allValued = fullHistory
+    .filter((point): point is InvestmentSnapshotPoint & { value: number } => point.value !== null && point.value > 0)
+    .toSorted((left, right) => left.date.localeCompare(right.date))
+
+  return valued.map((point) => {
+    const previous = allValued[allValued.findIndex((candidate) => candidate.date === point.date) - 1]
+    const open = previous?.value ?? point.value
+    const close = point.value
+    return {
+      ...point,
+      open,
+      close,
+      high: Math.max(open, close),
+      low: Math.min(open, close),
+    }
+  }) satisfies PortfolioCandlePoint[]
+}
+
+function snapshotRangeSummary(range: SnapshotRange, snapshots: InvestmentSnapshotPoint[], totalSnapshots: number) {
+  if (snapshots.length === 0) return 'No hay valoraciones guardadas en este periodo.'
+  const label = SNAPSHOT_RANGES.find((option) => option.value === range)?.label ?? range
+  const dates = `${formatSnapshotDate(snapshots[0].date)} → ${formatSnapshotDate(snapshots.at(-1)!.date)}`
+  const coverageNote = range !== 'ALL' && snapshots.length === totalSnapshots
+    ? ' · Todo el histórico disponible cabe aquí'
+    : ''
+  return `${label} · ${snapshots.length} ${snapshots.length === 1 ? 'valoración' : 'valoraciones'} · ${dates}${coverageNote}`
+}
+
 function compactAllocation(points: AllocationPoint[]) {
   if (points.length <= 6) return points
   const primary = points.slice(0, 5)
@@ -262,28 +300,6 @@ function alertStyle(severity: InvestmentAlert['severity']) {
   }
 }
 
-function SnapshotTooltip({
-  active,
-  payload,
-}: {
-  active?: boolean
-  payload?: Array<{ payload?: InvestmentSnapshotPoint }>
-}) {
-  const point = payload?.[0]?.payload
-  if (!active || !point) return null
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3 text-[11px] text-slate-600 shadow-xl">
-      <p className="font-semibold text-slate-900">{formatSnapshotDate(point.date)}</p>
-      <div className="mt-2 grid gap-1.5 tabular-nums">
-        <p className="flex justify-between gap-6"><span>Valor</span><strong>{formatEuro(point.value)}</strong></p>
-        <p className="flex justify-between gap-6"><span>Coste conocido</span><strong>{formatEuro(point.knownCost)}</strong></p>
-        <p className="flex justify-between gap-6"><span>P/L no realizado</span><strong>{formatEuro(point.unrealisedPnl)}</strong></p>
-        <p className="flex justify-between gap-6"><span>Cobertura</span><strong>{formatPercent(point.coveragePct)}</strong></p>
-      </div>
-    </div>
-  )
-}
-
 function BenchmarkTooltip({
   active,
   payload,
@@ -304,10 +320,67 @@ function BenchmarkTooltip({
   )
 }
 
+function PortfolioCandlestickChart({ points }: { points: PortfolioCandlePoint[] }) {
+  const chart = { left: 68, right: 986, top: 14, bottom: 258, labelY: 292 }
+  const values = points.flatMap((point) => [point.high, point.low, point.knownCost]).filter((value) => Number.isFinite(value) && value > 0)
+  const rawMin = Math.min(...values)
+  const rawMax = Math.max(...values)
+  const padding = Math.max((rawMax - rawMin) * 0.08, rawMax * 0.01, 1)
+  const minValue = Math.max(0, rawMin - padding)
+  const maxValue = rawMax + padding
+  const scale = (value: number) => chart.top + ((maxValue - value) / (maxValue - minValue)) * (chart.bottom - chart.top)
+  const xForIndex = (index: number) => points.length === 1
+    ? (chart.left + chart.right) / 2
+    : chart.left + (index / (points.length - 1)) * (chart.right - chart.left)
+  const candleWidth = Math.max(10, Math.min(28, (chart.right - chart.left) / Math.max(points.length * 2.5, 1)))
+  const ticks = Array.from({ length: 5 }, (_, index) => maxValue - ((maxValue - minValue) * index) / 4)
+  const knownCostPoints = points.filter((point) => point.knownCost > 0)
+  const knownCostPath = knownCostPoints.length > 0
+    ? knownCostPoints.map((point) => {
+        const index = points.findIndex((candidate) => candidate.date === point.date)
+        return `${index === 0 ? 'M' : 'L'} ${xForIndex(index)} ${scale(point.knownCost)}`
+      }).join(' ')
+    : ''
+  const labelStride = Math.max(1, Math.ceil(points.length / 5))
+
+  return (
+    <div className="h-[310px] w-full min-w-0 overflow-hidden rounded-lg bg-white">
+      <svg viewBox="0 0 1000 310" className="h-full w-full" preserveAspectRatio="none" role="img" aria-label="Velas de variación del valor de la cartera">
+        <title>Velas de variación del valor de la cartera</title>
+        {ticks.map((tick) => {
+          const y = scale(tick)
+          return (
+            <g key={tick}>
+              <line x1={chart.left} x2={chart.right} y1={y} y2={y} stroke="#e3e1d9" strokeDasharray="3 3" />
+              <text x={chart.left - 10} y={y + 4} textAnchor="end" fill="#7b8791" fontSize="11">{formatCompactEuro(tick)}</text>
+            </g>
+          )
+        })}
+        {knownCostPath ? <path d={knownCostPath} fill="none" stroke="#66727d" strokeDasharray="5 4" strokeWidth="1.5" /> : null}
+        {points.map((point, index) => {
+          const x = xForIndex(index)
+          const openY = scale(point.open)
+          const closeY = scale(point.close)
+          const bodyTop = Math.min(openY, closeY)
+          const bodyHeight = Math.max(Math.abs(closeY - openY), 4)
+          const color = point.close >= point.open ? '#168261' : '#e0555d'
+          return (
+            <g key={point.date}>
+              <title>{`${formatSnapshotDate(point.date)} · Apertura ${formatEuro(point.open)} · Cierre ${formatEuro(point.close)}`}</title>
+              <line x1={x} x2={x} y1={scale(point.high)} y2={scale(point.low)} stroke={color} strokeWidth="2" />
+              <rect x={x - candleWidth / 2} y={bodyTop - (bodyHeight === 4 ? 2 : 0)} width={candleWidth} height={bodyHeight} rx="1" fill={color} />
+              {(index % labelStride === 0 || index === points.length - 1) ? <text x={x} y={chart.labelY} textAnchor="middle" fill="#7b8791" fontSize="11">{formatSnapshotDate(point.date)}</text> : null}
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
 function tradingViewUrl(symbol: string) {
-  const tradingViewSymbol = symbol.endsWith('.DE') ? `XETR:${symbol.slice(0, -3)}` : symbol
   const query = new URLSearchParams({
-    symbol: tradingViewSymbol,
+    symbol,
     interval: 'D',
     hidesidetoolbar: '1',
     symboledit: '0',
@@ -338,6 +411,14 @@ function positionMatchesMarketResult(position: InversionPosicion, result: Market
     .some((identifier) => resultIdentifiers.includes(identifier))
 }
 
+function positionTradingViewSymbol(position: InversionPosicion) {
+  return inferTradingViewSymbol(position.isin, position.market_symbol, position.price_ticker, position.ticker)
+}
+
+function marketResultTradingViewSymbol(result: MarketSearchResult) {
+  return inferTradingViewSymbol(result.isin, result.market_symbol, result.price_ticker, result.ticker)
+}
+
 function FiscalMetric({ label, value, tone = 'default' }: { label: string; value: number; tone?: 'default' | 'positive' | 'negative' }) {
   const color = tone === 'positive' ? 'text-emerald-700' : tone === 'negative' ? 'text-red-600' : 'text-slate-900'
   return (
@@ -366,6 +447,10 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
   const snapshots = useMemo(
     () => filterSnapshots(analytics.snapshotHistory, snapshotRange),
     [analytics.snapshotHistory, snapshotRange]
+  )
+  const candleSeries = useMemo(
+    () => buildPortfolioCandleSeries(snapshots, analytics.snapshotHistory),
+    [analytics.snapshotHistory, snapshots]
   )
   const uniqueSnapshotDates = useMemo(() => new Set(snapshots.map((point) => point.date)).size, [snapshots])
   const firstSnapshot = snapshots[0] ?? null
@@ -440,14 +525,18 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
           : analytics.risk.byCountry
   const allocationData = useMemo(() => compactAllocation(allocationSource), [allocationSource])
   const marketPositions = useMemo(
-    () => positions.filter((position) => Boolean(position.market_symbol)),
+    () => positions.filter((position) => Boolean(positionTradingViewSymbol(position))),
     [positions]
   )
   const marketPosition = marketPositions.find((position) => position.id === selectedMarketPositionId) ?? marketPositions[0] ?? null
   const selectedMarketOwnedPosition = selectedMarketSearchResult
     ? marketPositions.find((position) => positionMatchesMarketResult(position, selectedMarketSearchResult)) ?? null
     : null
-  const marketChartSymbol = selectedMarketSearchResult?.market_symbol ?? marketPosition?.market_symbol ?? null
+  const marketChartSymbol = selectedMarketSearchResult
+    ? marketResultTradingViewSymbol(selectedMarketSearchResult)
+    : marketPosition
+      ? positionTradingViewSymbol(marketPosition)
+      : null
   const marketChartName = selectedMarketSearchResult?.activo ?? marketPosition?.activo ?? ''
   const marketChartTicker = selectedMarketSearchResult?.ticker ?? marketPosition?.price_ticker ?? marketPosition?.ticker ?? ''
   const marketChartIsOwned = selectedMarketSearchResult
@@ -476,7 +565,11 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
           if (!response.ok || !Array.isArray(payload.results)) {
             throw new Error(payload.error || 'No se pudo buscar el instrumento')
           }
-          setMarketSearchResults(payload.results.filter((result) => Boolean(result.market_symbol)))
+          const chartableResults = payload.results.filter((result) => Boolean(marketResultTradingViewSymbol(result)))
+          setMarketSearchResults(chartableResults.filter((result, index, results) => {
+            const symbol = marketResultTradingViewSymbol(result)
+            return results.findIndex((candidate) => marketResultTradingViewSymbol(candidate) === symbol) === index
+          }))
           setMarketSearchState('ready')
         })
         .catch((error: unknown) => {
@@ -660,7 +753,7 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
                 <p className="mt-1 text-[11px] text-slate-500">Necesitas dos valoraciones para comparar</p>
               )}
             </div>
-            <div className="flex flex-wrap rounded-lg border border-slate-200 bg-[#eeece5] p-1" aria-label="Periodo del gráfico">
+            <div className="flex flex-wrap rounded-lg border border-slate-200 bg-[#eeece5] p-1" role="group" aria-label="Periodo del gráfico">
               {SNAPSHOT_RANGES.map((range) => (
                 <button
                   key={range.value}
@@ -673,16 +766,17 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
                 </button>
               ))}
             </div>
+            <p className="text-right text-[10px] text-slate-400" aria-live="polite">{snapshotRangeSummary(snapshotRange, snapshots, analytics.snapshotHistory.length)}</p>
           </CardHeader>
           <CardContent className="px-5 py-5 sm:px-6">
             <p className="mb-4 max-w-2xl text-[11px] leading-relaxed text-slate-500">Suma de los activos abiertos con una valoración guardada en la app. Las posiciones cerradas no entran en esta curva.</p>
-            {uniqueSnapshotDates < 2 ? (
+            {candleSeries.length < 2 ? (
               <div className="grid min-h-[300px] place-items-center rounded-xl border border-dashed border-slate-300 bg-white/50 p-6 text-center">
                 <div className="max-w-md">
                   <CalendarDays className="mx-auto h-8 w-8 text-slate-400" />
                   <p className="mt-4 text-base font-semibold text-slate-900">El histórico empieza hoy</p>
                   <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-                    Es normal que todavía no haya una curva: solo existe una valoración diaria para tus posiciones abiertas. Mañana se añadirá otra y podrás comparar la evolución real. No reconstruimos ni estimamos precios ausentes.
+                    Necesitas al menos dos valoraciones diarias con valor para dibujar las velas. Mañana se añadirá otra si todavía falta histórico; no reconstruimos ni estimamos precios ausentes.
                   </p>
                   {snapshots.length === 1 ? (
                     <p className="mt-3 text-[11px] font-medium text-slate-700">1 valoración guardada · {formatSnapshotDate(snapshots[0].date)} · {formatEuro(snapshots[0].value)}</p>
@@ -692,30 +786,13 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
             ) : (
               <>
                 <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-slate-500">
-                  <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#7e8bff]" />Valor cartera abierta</span>
+                  <span className="inline-flex items-center gap-2"><span className="h-3 w-2 rounded-sm bg-[#168261]" />Velas de variación</span>
                   <span className="inline-flex items-center gap-2"><span className="h-0.5 w-4 bg-slate-500" />Coste conocido</span>
-                  <span className="ml-auto tabular-nums">{snapshots.length} fechas</span>
+                  <span className="ml-auto tabular-nums">{candleSeries.length} fechas con valor</span>
                 </div>
-                <div className="h-[310px] w-full min-w-0">
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 1, height: 1 }}>
-                    <ComposedChart data={snapshots} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
-                      <defs>
-                        <linearGradient id="investment-value-gradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#7e8bff" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#7e8bff" stopOpacity={0.02} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid vertical={false} stroke="#e3e1d9" strokeDasharray="3 3" />
-                      <XAxis dataKey="date" axisLine={false} tickLine={false} minTickGap={28} tick={{ fill: '#7b8791', fontSize: 11 }} tickFormatter={formatSnapshotDate} />
-                      <YAxis axisLine={false} tickLine={false} width={52} tick={{ fill: '#7b8791', fontSize: 11 }} tickFormatter={formatCompactEuro} />
-                      <Tooltip content={<SnapshotTooltip />} />
-                      <Area type="monotone" dataKey="value" stroke="#7e8bff" strokeWidth={2.5} fill="url(#investment-value-gradient)" connectNulls={false} />
-                      <Line type="monotone" dataKey="knownCost" stroke="#66727d" strokeWidth={1.5} strokeDasharray="5 4" dot={false} />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
+                <PortfolioCandlestickChart points={candleSeries} />
                 <p className="mt-3 flex items-start gap-2 border-t border-slate-200 pt-3 text-[11px] leading-relaxed text-slate-500">
-                  <Info className="mt-0.5 h-4 w-4 shrink-0" />Solo se muestran valoraciones diarias realmente guardadas; los huecos permanecen vacíos y los ciclos cerrados quedan fuera.
+                  <Info className="mt-0.5 h-4 w-4 shrink-0" />Cada vela compara el cierre guardado anterior con la siguiente valoración diaria. No son velas intradía ni reconstruyen precios que la aplicación no haya guardado.
                 </p>
               </>
             )}
@@ -856,7 +933,7 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
                 <Badge className={marketChartIsOwned ? 'border-0 bg-[#dfffa1] text-[10px] font-bold uppercase tracking-[0.08em] text-[#35501d]' : 'border border-slate-200 bg-white text-[10px] font-semibold text-slate-500'}>
                   {marketChartIsOwned ? 'En cartera' : 'Vista externa'}
                 </Badge>
-                <span className="text-[10px] font-semibold text-slate-500">{marketChartTicker}</span>
+                <span className="text-[10px] font-semibold text-slate-500">TradingView · {marketChartSymbol}</span>
               </div>
             ) : null}
           </div>
