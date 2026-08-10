@@ -14,6 +14,9 @@ App web de gestión de finanzas personales. Gestiona categorías de gasto con po
   interactivas.
 - **Cartera inicial app-native**: Incluye la cartera actual y el histórico como
   datos de arranque; después todo se gestiona desde SQLite y las APIs de precios.
+- **Alertas externas de inversiones**: Configura umbrales para la cartera completa,
+  cada posición o cualquier acción, ETF o crypto en seguimiento. n8n consulta las
+  alertas y puede enviarlas por Telegram, email o ambos.
 
 ## Stack
 
@@ -91,6 +94,21 @@ el proveedor, la URL y la fecha del último dato usado.
 
 La cartera actual alimenta el resumen. Las posiciones históricas se conservan
 fuera del total para evitar duplicar activos.
+
+### Alertas por Telegram y email
+
+La página de inversiones incluye el bloque **Alertas por Telegram y email**. Cada
+regla puede vigilar la rentabilidad de la cartera completa o de una posición
+individual. El selector también busca acciones, ETF y crypto que todavía no
+formen parte de la cartera; en ese caso guarda una referencia de precio y crea
+una watchlist sin registrar ninguna operación.
+
+El workflow importable está en
+`integrations/n8n/finanzas-alertas-telegram-email.json` y su configuración en
+`integrations/n8n/README.md`. En Finanzas solo hay que definir
+`AUTOMATION_SECRET` y, si hay más de un usuario, `AUTOMATION_USER_ID`. El bot de
+Telegram, SMTP, chat y destinatario permanecen como credenciales y variables de
+n8n.
 
 ### Buscador de inversiones con IA
 
@@ -172,6 +190,8 @@ operando solo con la app.
 | `NEXTAUTH_URL` | `https://tudominio.com` |
 | `PORT` | `3000` |
 | `HOSTNAME` | `0.0.0.0` |
+| `AUTOMATION_SECRET` | Secreto largo compartido únicamente con n8n |
+| `AUTOMATION_USER_ID` | ID del usuario que vigilará n8n; opcional con un único usuario |
 | `BUSCADOR_ACCIONES_PROVIDER` | `openrouter` |
 | `OPENROUTER_API_KEY` | Clave secreta creada en OpenRouter |
 | `OPENROUTER_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` o un modelo fijado |

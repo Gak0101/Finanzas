@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { and, asc, desc, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
+  inversiones_alertas,
   inversiones_operaciones,
   inversiones_posiciones,
   inversiones_snapshots_diarios,
@@ -17,7 +18,7 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 async function getPortfolio(userId: number, captureToday = false) {
-  const [positions, operations] = await Promise.all([
+  const [positions, operations, notificationAlerts] = await Promise.all([
     db.query.inversiones_posiciones.findMany({
       where: and(
         eq(inversiones_posiciones.usuario_id, userId),
@@ -28,6 +29,10 @@ async function getPortfolio(userId: number, captureToday = false) {
     db.query.inversiones_operaciones.findMany({
       where: eq(inversiones_operaciones.usuario_id, userId),
       orderBy: [desc(inversiones_operaciones.fecha), desc(inversiones_operaciones.fecha_hora), desc(inversiones_operaciones.id)],
+    }),
+    db.query.inversiones_alertas.findMany({
+      where: eq(inversiones_alertas.usuario_id, userId),
+      orderBy: [asc(inversiones_alertas.alcance), asc(inversiones_alertas.activo), asc(inversiones_alertas.id)],
     }),
   ])
 
@@ -41,6 +46,7 @@ async function getPortfolio(userId: number, captureToday = false) {
   return {
     positions,
     operations,
+    notificationAlerts,
     closedPositions: calculateClosedInvestmentPositions(operations),
     analytics: calculateInvestmentAnalytics(positions, operations, snapshots),
   }

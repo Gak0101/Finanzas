@@ -32,16 +32,18 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import type { InversionOperacion, InversionPosicion } from '@/lib/db/schema'
+import type { InversionAlerta, InversionOperacion, InversionPosicion } from '@/lib/db/schema'
 import type { ClosedInvestmentPosition } from '@/lib/inversiones/history'
 import type { InvestmentAnalytics } from '@/lib/inversiones/analytics'
 import { StockFinder } from '@/components/buscador-acciones/StockFinder'
 import { InvestmentAnalyticsPanel } from '@/components/inversiones/InvestmentAnalyticsPanel'
+import { InvestmentNotificationAlerts } from '@/components/inversiones/InvestmentNotificationAlerts'
 import { PositionDetailDialog } from '@/components/inversiones/PositionDetailDialog'
 
 type PortfolioData = {
   positions: InversionPosicion[]
   operations: InversionOperacion[]
+  notificationAlerts: InversionAlerta[]
   closedPositions: ClosedInvestmentPosition[]
   analytics: InvestmentAnalytics
 }
@@ -453,6 +455,7 @@ export function InvestmentPortfolio() {
 
   const positions = data?.positions ?? []
   const operations = data?.operations ?? []
+  const notificationAlerts = data?.notificationAlerts ?? []
   const closedPositions = data?.closedPositions ?? []
   const analytics = data?.analytics ?? null
   const detailPosition = positions.find((position) => position.id === detailPositionId) ?? null
@@ -795,6 +798,13 @@ export function InvestmentPortfolio() {
           <div className="rounded-xl bg-[#e5edde] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado cartera abierta</span><span className={(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.unrealisedPnl ?? summary.knownPnl)}</p><p className="mt-4 text-[10px] text-slate-500">Solo posiciones actuales · {formatPct(analytics?.performance.currentReturnPct ?? summary.knownReturn)}</p></div>
           <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado histórico</span><span className={(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.historicalNetResult ?? 0)}</p><p className="mt-4 text-[10px] text-slate-400">Ventas + ingresos − costes · combinado: {formatEuro(analytics?.performance.totalNetResult ?? summary.knownPnl)}</p></div>
         </section>
+
+        <InvestmentNotificationAlerts
+          rules={notificationAlerts}
+          positions={positions}
+          portfolioReturnPct={analytics?.performance.currentReturnPct ?? summary.knownReturn}
+          onChanged={() => cargarPortfolio(false)}
+        />
 
         <section className="mt-3 grid gap-3">
           <div className="min-w-0 overflow-hidden rounded-xl bg-[#f7f5ef] text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]" id="positions-panel">

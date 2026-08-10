@@ -187,6 +187,44 @@ export const inversiones_posiciones = sqliteTable(
   (t) => [uniqueIndex('unique_inversion_usuario_activo_custodia').on(t.usuario_id, t.activo, t.custodia)]
 )
 
+// Reglas de notificación externas. Las credenciales de Telegram y correo viven
+// en n8n; aquí solo se guarda qué vigilar, los umbrales y los canales elegidos.
+// `posicion_id` es nulo para una alerta de seguimiento de un activo que todavía
+// no forma parte de la cartera.
+export const inversiones_alertas = sqliteTable(
+  'inversiones_alertas',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    usuario_id: integer('usuario_id').notNull().references(() => usuarios.id),
+    alcance: text('alcance').notNull().default('activo'),
+    posicion_id: integer('posicion_id').references(() => inversiones_posiciones.id),
+    activo: text('activo'),
+    ticker: text('ticker'),
+    tipo_activo: text('tipo_activo'),
+    price_ticker: text('price_ticker'),
+    crypto_id: text('crypto_id'),
+    market_symbol: text('market_symbol'),
+    precio_referencia: real('precio_referencia'),
+    precio_actual: real('precio_actual'),
+    rendimiento_pct: real('rendimiento_pct'),
+    umbral_subida_pct: real('umbral_subida_pct'),
+    umbral_caida_pct: real('umbral_caida_pct'),
+    rearmar_pct: real('rearmar_pct').notNull().default(0.01),
+    estado: text('estado').notNull().default('normal'),
+    canal_telegram: integer('canal_telegram', { mode: 'boolean' }).notNull().default(true),
+    canal_email: integer('canal_email', { mode: 'boolean' }).notNull().default(true),
+    activa: integer('activa', { mode: 'boolean' }).notNull().default(true),
+    ultima_comprobacion_at: text('ultima_comprobacion_at'),
+    ultima_alerta_at: text('ultima_alerta_at'),
+    ultimo_error: text('ultimo_error'),
+    created_at: text('created_at').default(sql`(datetime('now'))`),
+    updated_at: text('updated_at').default(sql`(datetime('now'))`),
+  },
+  (t) => [
+    uniqueIndex('unique_inversion_alerta_usuario_alcance_posicion').on(t.usuario_id, t.alcance, t.posicion_id),
+  ]
+)
+
 // ─── INVERSIONES / SNAPSHOTS DIARIOS ─────────────────────────────────────────
 // Una fila por posición y día. El histórico comienza cuando la app captura el
 // primer snapshot: nunca se reconstruyen valoraciones pasadas sin cotizaciones.
@@ -264,6 +302,7 @@ export const usuariosRelations = relations(usuarios, ({ many, one }) => ({
   huchas: many(huchas),
   desviaciones: many(desviaciones), // Editado: 2026-03-30 — relación con desviaciones
   inversiones_posiciones: many(inversiones_posiciones),
+  inversiones_alertas: many(inversiones_alertas),
   inversiones_snapshots_diarios: many(inversiones_snapshots_diarios),
   inversiones_operaciones: many(inversiones_operaciones),
   inversiones_excel_filas: many(inversiones_excel_filas),
@@ -324,6 +363,18 @@ export const inversionesPosicionesRelations = relations(inversiones_posiciones, 
     references: [usuarios.id],
   }),
   snapshots: many(inversiones_snapshots_diarios),
+  alertas: many(inversiones_alertas),
+}))
+
+export const inversionesAlertasRelations = relations(inversiones_alertas, ({ one }) => ({
+  usuario: one(usuarios, {
+    fields: [inversiones_alertas.usuario_id],
+    references: [usuarios.id],
+  }),
+  posicion: one(inversiones_posiciones, {
+    fields: [inversiones_alertas.posicion_id],
+    references: [inversiones_posiciones.id],
+  }),
 }))
 
 export const inversionesSnapshotsDiariosRelations = relations(inversiones_snapshots_diarios, ({ one }) => ({
@@ -367,6 +418,8 @@ export type Desviacion = typeof desviaciones.$inferSelect        // Editado: 202
 export type NuevaDesviacion = typeof desviaciones.$inferInsert   // Editado: 2026-03-30
 export type InversionPosicion = typeof inversiones_posiciones.$inferSelect
 export type NuevaInversionPosicion = typeof inversiones_posiciones.$inferInsert
+export type InversionAlerta = typeof inversiones_alertas.$inferSelect
+export type NuevaInversionAlerta = typeof inversiones_alertas.$inferInsert
 export type InversionSnapshotDiario = typeof inversiones_snapshots_diarios.$inferSelect
 export type NuevoInversionSnapshotDiario = typeof inversiones_snapshots_diarios.$inferInsert
 export type InversionOperacion = typeof inversiones_operaciones.$inferSelect

@@ -85,6 +85,13 @@
       "when": 1785926852909,
       "tag": "0011_fresh_gorilla_man",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1786394336865,
+      "tag": "0012_clever_the_fallen",
+      "breakpoints": true
     }
   ]
 }

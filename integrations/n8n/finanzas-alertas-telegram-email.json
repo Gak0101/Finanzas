@@ -1,0 +1,246 @@
+{
+  "name": "Finanzas · alertas Telegram + email",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "finanzas-schedule-hourly",
+      "name": "Cada hora",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.FINANZAS_BASE_URL + '/api/automatizaciones/inversiones/alertas'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + $env.FINANZAS_AUTOMATION_SECRET}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "finanzas-fetch-alerts",
+      "name": "Consultar Finanzas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const alerts = Array.isArray($json.notifications) ? $json.notifications : [];\n\nreturn alerts.map((alert) => {\n  const sign = alert.rendimiento_pct >= 0 ? '+' : '';\n  const type = alert.tipo === 'caida' ? '🔴 Caída' : '🟢 Subida';\n  const channelHint = [alert.canal_telegram ? 'Telegram' : null, alert.canal_email ? 'email' : null].filter(Boolean).join(' + ');\n  const text = [\n    `${type} · ${alert.activo} (${alert.ticker})`,\n    `Rentabilidad: ${sign}${(alert.rendimiento_pct * 100).toFixed(1)}%`,\n    `Umbral: ${(alert.umbral_pct * 100).toFixed(1)}%`,\n    alert.precio_actual !== null ? `Precio actual: ${Number(alert.precio_actual).toFixed(2)} €` : null,\n    alert.precio_referencia !== null ? `Referencia: ${Number(alert.precio_referencia).toFixed(2)} €` : null,\n    `Canales: ${channelHint}`,\n    `Comprobado: ${new Date(alert.checked_at).toLocaleString('es-ES')}`,\n  ].filter(Boolean).join('\\n');\n\n  return { json: { ...alert, text, subject: `Finanzas · ${type.replace(/^[^ ]+ /, '')} · ${alert.ticker}` } };\n});"
+      },
+      "id": "finanzas-expand-alerts",
+      "name": "Preparar mensajes nuevos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        740,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.canal_telegram}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "finanzas-if-telegram",
+      "name": "¿Telegram activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        980,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "leftValue": "={{$json.canal_email}}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "finanzas-if-email",
+      "name": "¿Email activo?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        980,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{$env.TELEGRAM_CHAT_ID}}",
+        "text": "={{$json.text}}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "finanzas-send-telegram",
+      "name": "Enviar Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1230,
+        120
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "o0XACo4IcoIFHH4R",
+          "name": "MatrixTradingMaster"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{$env.ALERT_EMAIL_FROM}}",
+        "toEmail": "={{$env.ALERT_EMAIL_TO}}",
+        "subject": "={{$json.subject}}",
+        "emailType": "text",
+        "message": "={{$json.text}}",
+        "options": {}
+      },
+      "id": "finanzas-send-email",
+      "name": "Enviar email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1230,
+        360
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "REEMPLAZAR_EN_N8N",
+          "name": "Finanzas SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cada hora": {
+      "main": [
+        [
+          {
+            "node": "Consultar Finanzas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Consultar Finanzas": {
+      "main": [
+        [
+          {
+            "node": "Preparar mensajes nuevos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar mensajes nuevos": {
+      "main": [
+        [
+          {
+            "node": "¿Telegram activo?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "¿Email activo?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Telegram activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "¿Email activo?": {
+      "main": [
+        [
+          {
+            "node": "Enviar email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "finanzas-alertas-v1",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
