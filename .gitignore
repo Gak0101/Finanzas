@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Datos locales y potencialmente sensibles
+data/*.db
+*.sqlite
+*.sqlite3
+administracion_20dinero.xlsx
+
+# Kivy / empaquetado
+.kivy/
+.buildozer/
+bin/
+
+# Editores y sistema operativo
+.idea/
+.vscode/
+.DS_Store
+
+# Variables y secretos
+.env
+.env.*
+!.env.example

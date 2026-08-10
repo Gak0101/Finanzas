@@ -3,12 +3,27 @@ import os
 import logging
 
 DATABASE_NAME = "finance_app.db"
-# Ajustamos la ruta: subir un nivel (..) desde la ubicación de este script (src/) y entrar a data/
-DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'data', DATABASE_NAME))
+DEFAULT_DATA_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "data")
+)
+
+
+def get_db_path() -> str:
+    """Devuelve una ruta escribible para SQLite.
+
+    ``FINANZAS_DATA_DIR`` permite que entornos efímeros (como ChatGPT/Codex
+    Cloud) guarden los datos fuera del checkout. En local se mantiene el
+    comportamiento anterior y se usa ``data/``.
+    """
+    data_dir = os.path.abspath(os.path.expanduser(
+        os.environ.get("FINANZAS_DATA_DIR", DEFAULT_DATA_DIR)
+    ))
+    os.makedirs(data_dir, exist_ok=True)
+    return os.path.join(data_dir, DATABASE_NAME)
 
 def get_db_connection():
     """Crea o conecta con la base de datos SQLite."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(get_db_path())
     # Para devolver filas como diccionarios (más fácil de usar)
     conn.row_factory = sqlite3.Row 
     return conn
