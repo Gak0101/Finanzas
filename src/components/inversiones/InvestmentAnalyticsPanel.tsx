@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   BarChart3,
@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/select'
 import type { InversionPosicion } from '@/lib/db/schema'
 import type { ClosedInvestmentPosition } from '@/lib/inversiones/history'
+import { BENCHMARKS, type BenchmarkKey, type BenchmarkPoint } from '@/lib/inversiones/benchmark'
 import type {
   AllocationPoint,
   InvestmentAlert,
@@ -53,6 +54,20 @@ type InvestmentAnalyticsPanelProps = {
 
 type SnapshotRange = '1M' | '3M' | 'YTD' | '1Y' | 'ALL'
 type AllocationMode = 'type' | 'custody' | 'currency' | 'sector' | 'country'
+
+type BenchmarkResponse = {
+  benchmark: BenchmarkKey
+  label: string
+  symbol: string
+  points: BenchmarkPoint[]
+  sourceUrl: string
+}
+
+type ComparisonPoint = {
+  date: string
+  portfolioReturnPct: number | null
+  benchmarkReturnPct: number | null
+}
 
 const SNAPSHOT_RANGES: Array<{ value: SnapshotRange; label: string }> = [
   { value: '1M', label: '1M' },
@@ -181,12 +196,38 @@ function compactAllocation(points: AllocationPoint[]) {
   return [...primary, { name: 'Otros', ...rest }]
 }
 
+function benchmarkAtOrBefore(points: BenchmarkPoint[], date: string) {
+  return points
+    .filter((point) => point.date <= date)
+    .at(-1)
+}
+
+function buildComparisonSeries(snapshots: InvestmentSnapshotPoint[], benchmarkPoints: BenchmarkPoint[]): ComparisonPoint[] {
+  const valuedSnapshots = snapshots.filter((point): point is InvestmentSnapshotPoint & { value: number } => point.value !== null && point.value > 0)
+  const firstSnapshot = valuedSnapshots[0]
+  if (!firstSnapshot || benchmarkPoints.length === 0) return []
+
+  const sortedBenchmarkPoints = benchmarkPoints.toSorted((left, right) => left.date.localeCompare(right.date))
+  const benchmarkBase = benchmarkAtOrBefore(sortedBenchmarkPoints, firstSnapshot.date)
+    ?? sortedBenchmarkPoints.find((point) => point.date >= firstSnapshot.date)
+  if (!benchmarkBase || benchmarkBase.value <= 0) return []
+
+  return valuedSnapshots.map((snapshot) => {
+    const benchmark = benchmarkAtOrBefore(sortedBenchmarkPoints, snapshot.date)
+    return {
+      date: snapshot.date,
+      portfolioReturnPct: snapshot.value / firstSnapshot.value - 1,
+      benchmarkReturnPct: benchmark ? benchmark.value / benchmarkBase.value - 1 : null,
+    }
+  })
+}
+
 function alertStyle(severity: InvestmentAlert['severity']) {
   if (severity === 'critical') {
     return {
       wrapper: 'border-red-200 bg-red-50',
       icon: 'text-red-600',
-      badge: 'border-red-200 bg-red-100 text-red-700',
+      badge: 'border-red-200 bg-red-100 !text-red-700',
       label: 'Crítica',
     }
   }
@@ -194,14 +235,14 @@ function alertStyle(severity: InvestmentAlert['severity']) {
     return {
       wrapper: 'border-amber-200 bg-amber-50',
       icon: 'text-amber-600',
-      badge: 'border-amber-200 bg-amber-100 text-amber-700',
+      badge: 'border-amber-200 bg-amber-100 !text-amber-700',
       label: 'Revisar',
     }
   }
   return {
     wrapper: 'border-sky-200 bg-sky-50',
     icon: 'text-sky-600',
-    badge: 'border-sky-200 bg-sky-100 text-sky-700',
+    badge: 'border-sky-200 bg-sky-100 !text-sky-700',
     label: 'Información',
   }
 }
@@ -223,6 +264,26 @@ function SnapshotTooltip({
         <p className="flex justify-between gap-6"><span>Coste conocido</span><strong>{formatEuro(point.knownCost)}</strong></p>
         <p className="flex justify-between gap-6"><span>P/L no realizado</span><strong>{formatEuro(point.unrealisedPnl)}</strong></p>
         <p className="flex justify-between gap-6"><span>Cobertura</span><strong>{formatPercent(point.coveragePct)}</strong></p>
+      </div>
+    </div>
+  )
+}
+
+function BenchmarkTooltip({
+  active,
+  payload,
+}: {
+  active?: boolean
+  payload?: Array<{ payload?: ComparisonPoint }>
+}) {
+  const point = payload?.[0]?.payload
+  if (!active || !point) return null
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3 text-[11px] text-slate-600 shadow-xl">
+      <p className="font-semibold text-slate-900">{formatSnapshotDate(point.date)}</p>
+      <div className="mt-2 grid gap-1.5 tabular-nums">
+        <p className="flex justify-between gap-6"><span>Tu cartera abierta</span><strong>{formatPercent(point.portfolioReturnPct)}</strong></p>
+        <p className="flex justify-between gap-6"><span>Índice</span><strong>{formatPercent(point.benchmarkReturnPct)}</strong></p>
       </div>
     </div>
   )
@@ -263,12 +324,76 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
   const [allocationMode, setAllocationMode] = useState<AllocationMode>('type')
   const [selectedFiscalYear, setSelectedFiscalYear] = useState(() => analytics.fiscalYears[0]?.year.toString() ?? '')
   const [selectedMarketPositionId, setSelectedMarketPositionId] = useState<number | null>(null)
+  const [benchmarkKey, setBenchmarkKey] = useState<BenchmarkKey>('world')
+  const [benchmarkState, setBenchmarkState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [benchmarkData, setBenchmarkData] = useState<BenchmarkResponse | null>(null)
+  const [benchmarkError, setBenchmarkError] = useState<string | null>(null)
 
   const snapshots = useMemo(
     () => filterSnapshots(analytics.snapshotHistory, snapshotRange),
     [analytics.snapshotHistory, snapshotRange]
   )
   const uniqueSnapshotDates = useMemo(() => new Set(snapshots.map((point) => point.date)).size, [snapshots])
+  const firstSnapshot = snapshots[0] ?? null
+  const latestSnapshot = snapshots.at(-1) ?? null
+  const valuedSnapshots = useMemo(
+    () => snapshots.filter((point): point is InvestmentSnapshotPoint & { value: number } => point.value !== null && point.value > 0),
+    [snapshots]
+  )
+  const benchmarkFromDate = valuedSnapshots[0]?.date ?? null
+  const benchmarkToDate = valuedSnapshots.at(-1)?.date ?? null
+  const snapshotDelta = uniqueSnapshotDates >= 2 && firstSnapshot && latestSnapshot && firstSnapshot.value !== null && latestSnapshot.value !== null
+    ? latestSnapshot.value - firstSnapshot.value
+    : null
+  const snapshotDeltaPct = firstSnapshot?.value && snapshotDelta !== null && firstSnapshot.value > 0
+    ? snapshotDelta / firstSnapshot.value
+    : null
+  const comparisonSeries = useMemo(
+    () => buildComparisonSeries(snapshots, benchmarkData?.points ?? []),
+    [snapshots, benchmarkData?.points]
+  )
+
+  useEffect(() => {
+    if (valuedSnapshots.length < 2 || !benchmarkFromDate || !benchmarkToDate) {
+      setBenchmarkState('idle')
+      setBenchmarkData(null)
+      setBenchmarkError(null)
+      return
+    }
+
+    const controller = new AbortController()
+    setBenchmarkState('loading')
+    setBenchmarkData(null)
+    setBenchmarkError(null)
+    const query = new URLSearchParams({
+      benchmark: benchmarkKey,
+      from: benchmarkFromDate,
+      to: benchmarkToDate,
+    })
+
+    void fetch(`/api/inversiones/benchmark?${query.toString()}`, { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        const payload = await response.json() as Partial<BenchmarkResponse> & { error?: string }
+        if (!response.ok || !Array.isArray(payload.points)) {
+          throw new Error(payload.error || 'Yahoo Finance no devolvió datos')
+        }
+        setBenchmarkData({
+          benchmark: benchmarkKey,
+          label: payload.label || BENCHMARKS[benchmarkKey].label,
+          symbol: payload.symbol || BENCHMARKS[benchmarkKey].symbol,
+          points: payload.points,
+          sourceUrl: payload.sourceUrl || `https://finance.yahoo.com/quote/${encodeURIComponent(BENCHMARKS[benchmarkKey].symbol)}/history`,
+        })
+        setBenchmarkState('ready')
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return
+        setBenchmarkState('error')
+        setBenchmarkError(error instanceof Error ? error.message : 'No se pudo consultar Yahoo Finance')
+      })
+
+    return () => controller.abort()
+  }, [benchmarkFromDate, benchmarkKey, benchmarkToDate, valuedSnapshots.length])
 
   const allocationSource = allocationMode === 'type'
     ? analytics.risk.byType
@@ -295,6 +420,13 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
   const incomeTotal = analytics.performance.dividends + analytics.performance.bonuses
   const bonusValue = analytics.performance.bonuses
   const historicalNetResult = analytics.performance.historicalNetResult
+  const openAnnualizedReturnPct = analytics.performance.openAnnualizedReturnPct ?? null
+  const openReturnCoverage = analytics.performance.openReturnCoverage ?? {
+    totalPositions: analytics.performance.coverage.totalPositions,
+    eligiblePositions: 0,
+    coveredValue: 0,
+    totalValue: analytics.performance.totalValue,
+  }
 
   function runAlertAction(alert: InvestmentAlert) {
     if (alert.action === 'refresh') {
@@ -317,7 +449,7 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
               <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Cartera abierta / histórico</p>
               <CardTitle className="mt-2 text-lg tracking-[-0.04em]">Qué está generando tu resultado</CardTitle>
             </div>
-            <Badge variant="outline" className="border-slate-200 bg-white text-[11px] text-slate-600">
+            <Badge variant="outline" className="shrink-0 border-slate-200 bg-white text-[11px] !text-slate-700">
               Coste de compra: {analytics.performance.coverage.costPositions}/{analytics.performance.coverage.totalPositions}
             </Badge>
           </div>
@@ -337,6 +469,30 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
               <p className="mt-2 text-[11px] leading-relaxed text-slate-400">{item.detail}</p>
             </div>
           ))}
+          <div className="sm:col-span-2 xl:col-span-2 rounded-lg border border-slate-200 bg-[#eeece5] p-4">
+            <p className="text-[11px] font-medium text-slate-600">TIR anualizada · toda la actividad</p>
+            <p className={`mt-1 text-xl font-semibold tracking-[-0.04em] tabular-nums ${analytics.performance.annualizedReturnPct !== null ? analytics.performance.annualizedReturnPct >= 0 ? 'text-emerald-700' : 'text-red-600' : 'text-slate-700'}`}>
+              {analytics.performance.annualizedReturnPct !== null ? formatPercent(analytics.performance.annualizedReturnPct) : 'Pendiente'}
+            </p>
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+              {analytics.performance.cashFlowCount > 0
+                ? `${analytics.performance.cashFlowCount} movimientos${analytics.performance.firstCashFlowDate ? ` desde ${formatSnapshotDate(analytics.performance.firstCashFlowDate)}` : ''} · incluye ventas cerradas e ingresos.`
+                : 'Necesita operaciones registradas y una valoración actual.'}
+            </p>
+            <p className="mt-3 border-t border-slate-200 pt-3 text-[11px] leading-relaxed text-slate-500">Es el ritmo anual histórico de toda la actividad, no solo de tu cartera abierta.</p>
+          </div>
+          <div className="sm:col-span-2 xl:col-span-2 rounded-lg border border-slate-200 bg-[#e8f0e3] p-4">
+            <p className="text-[11px] font-medium text-slate-600">Equivalente anual · cartera abierta</p>
+            <p className={`mt-1 text-xl font-semibold tracking-[-0.04em] tabular-nums ${openAnnualizedReturnPct !== null ? openAnnualizedReturnPct >= 0 ? 'text-emerald-700' : 'text-red-600' : 'text-slate-700'}`}>
+              {openAnnualizedReturnPct !== null ? formatPercent(openAnnualizedReturnPct) : 'Pendiente'}
+            </p>
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
+              {openReturnCoverage.eligiblePositions > 0
+                ? `${openReturnCoverage.eligiblePositions} de ${openReturnCoverage.totalPositions} posiciones · ${formatEuro(openReturnCoverage.coveredValue)} de ${formatEuro(openReturnCoverage.totalValue)} cubiertos.`
+                : 'Necesita coste, fecha y operaciones suficientes en las posiciones abiertas.'}
+            </p>
+            <p className="mt-3 border-t border-slate-200 pt-3 text-[11px] leading-relaxed text-slate-500">Anualiza lo observado en las posiciones con datos suficientes; no promete ese porcentaje para el próximo año.</p>
+          </div>
           <div className="sm:col-span-2 xl:col-span-4">
             <div className="rounded-lg border border-slate-200 bg-white/60 p-3">
               <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
@@ -358,7 +514,7 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
               <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Control / acciones</p>
               <CardTitle className="mt-2 text-lg tracking-[-0.04em]">Alertas de cartera</CardTitle>
             </div>
-            <Badge variant="outline" className="border-slate-200 bg-white text-[11px] text-slate-600">
+            <Badge variant="outline" className="shrink-0 border-slate-200 bg-white text-[11px] !text-slate-700">
               {analytics.alerts.length} {analytics.alerts.length === 1 ? 'alerta' : 'alertas'}
             </Badge>
           </div>
@@ -401,8 +557,19 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
         <Card className="min-w-0 gap-0 border-0 bg-[#f7f5ef] py-0 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]">
           <CardHeader className="gap-4 border-b border-slate-200 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Histórico / snapshots</p>
-              <CardTitle className="mt-2 text-lg tracking-[-0.04em]">Evolución de la cartera</CardTitle>
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Evolución / cartera abierta</p>
+              <CardTitle className="mt-2 text-lg tracking-[-0.04em]">Valor de la cartera abierta</CardTitle>
+            </div>
+            <div className="min-w-[170px] text-left sm:text-right">
+              <p className="text-[10px] font-medium uppercase tracking-[0.08em] text-slate-400">Última valoración</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">{formatEuro(latestSnapshot?.value)}</p>
+              {snapshotDelta !== null ? (
+                <p className={`mt-1 text-[11px] font-semibold tabular-nums ${snapshotDelta >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                  {snapshotDelta >= 0 ? '+' : ''}{formatEuro(snapshotDelta)}{snapshotDeltaPct !== null ? ` · ${formatPercent(snapshotDeltaPct)}` : ''} desde {formatSnapshotDate(firstSnapshot!.date)}
+                </p>
+              ) : (
+                <p className="mt-1 text-[11px] text-slate-500">Necesitas dos valoraciones para comparar</p>
+              )}
             </div>
             <div className="flex flex-wrap rounded-lg border border-slate-200 bg-[#eeece5] p-1" aria-label="Periodo del gráfico">
               {SNAPSHOT_RANGES.map((range) => (
@@ -419,13 +586,14 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
             </div>
           </CardHeader>
           <CardContent className="px-5 py-5 sm:px-6">
+            <p className="mb-4 max-w-2xl text-[11px] leading-relaxed text-slate-500">Suma de los activos abiertos con una valoración guardada en la app. Las posiciones cerradas no entran en esta curva.</p>
             {uniqueSnapshotDates < 2 ? (
               <div className="grid min-h-[300px] place-items-center rounded-xl border border-dashed border-slate-300 bg-white/50 p-6 text-center">
                 <div className="max-w-md">
                   <CalendarDays className="mx-auto h-8 w-8 text-slate-400" />
                   <p className="mt-4 text-base font-semibold text-slate-900">El histórico empieza hoy</p>
                   <p className="mt-2 text-[11px] leading-relaxed text-slate-500">
-                    Es normal que todavía no haya una curva: solo existe una valoración guardada. Mañana se añadirá otra y podrás comparar la evolución real de tu cartera. No reconstruimos ni estimamos precios ausentes.
+                    Es normal que todavía no haya una curva: solo existe una valoración diaria para tus posiciones abiertas. Mañana se añadirá otra y podrás comparar la evolución real. No reconstruimos ni estimamos precios ausentes.
                   </p>
                   {snapshots.length === 1 ? (
                     <p className="mt-3 text-[11px] font-medium text-slate-700">1 valoración guardada · {formatSnapshotDate(snapshots[0].date)} · {formatEuro(snapshots[0].value)}</p>
@@ -435,7 +603,7 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
             ) : (
               <>
                 <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-slate-500">
-                  <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#7e8bff]" />Valor de mercado</span>
+                  <span className="inline-flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-[#7e8bff]" />Valor cartera abierta</span>
                   <span className="inline-flex items-center gap-2"><span className="h-0.5 w-4 bg-slate-500" />Coste conocido</span>
                   <span className="ml-auto tabular-nums">{snapshots.length} fechas</span>
                 </div>
@@ -458,10 +626,79 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
                   </ResponsiveContainer>
                 </div>
                 <p className="mt-3 flex items-start gap-2 border-t border-slate-200 pt-3 text-[11px] leading-relaxed text-slate-500">
-                  <Info className="mt-0.5 h-4 w-4 shrink-0" />Solo se muestran valoraciones realmente guardadas; los huecos permanecen vacíos.
+                  <Info className="mt-0.5 h-4 w-4 shrink-0" />Solo se muestran valoraciones diarias realmente guardadas; los huecos permanecen vacíos y los ciclos cerrados quedan fuera.
                 </p>
               </>
             )}
+            <div className="mt-5 grid gap-3 border-t border-slate-200 pt-5 sm:grid-cols-3">
+              <div className="rounded-lg bg-white/60 p-3">
+                <p className="text-[11px] text-slate-500">Caída actual desde máximo</p>
+                <p className={`mt-1 text-base font-semibold tabular-nums ${analytics.risk.drawdown.currentPct !== null && analytics.risk.drawdown.currentPct < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                  {analytics.risk.drawdown.currentPct !== null ? formatPercent(analytics.risk.drawdown.currentPct) : 'Pendiente'}
+                </p>
+                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">Solo con valoraciones diarias guardadas.</p>
+              </div>
+              <div className="rounded-lg bg-white/60 p-3">
+                <p className="text-[11px] text-slate-500">Peor caída registrada</p>
+                <p className={`mt-1 text-base font-semibold tabular-nums ${analytics.risk.drawdown.maxPct !== null && analytics.risk.drawdown.maxPct < 0 ? 'text-red-600' : 'text-slate-900'}`}>
+                  {analytics.risk.drawdown.maxPct !== null ? formatPercent(analytics.risk.drawdown.maxPct) : 'Pendiente'}
+                </p>
+                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">Desde el máximo de la serie.</p>
+              </div>
+              <div className="rounded-lg bg-white/60 p-3">
+                <p className="text-[11px] text-slate-500">Máximo observado</p>
+                <p className="mt-1 text-base font-semibold tabular-nums text-slate-900">{formatEuro(analytics.risk.drawdown.peakValue)}</p>
+                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">{analytics.risk.drawdown.peakDate ? formatSnapshotDate(analytics.risk.drawdown.peakDate) : 'Necesita dos valoraciones'}</p>
+              </div>
+            </div>
+            <div className="mt-5 border-t border-slate-200 pt-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Comparativa gratuita</p>
+                  <h3 className="mt-1 text-sm font-semibold text-slate-900">¿Cómo va frente a un índice?</h3>
+                  <p className="mt-1 max-w-xl text-[11px] leading-relaxed text-slate-500">Comparación porcentual desde la primera valoración disponible. No mezcla euros de tu cartera con el índice.</p>
+                </div>
+                <Select value={benchmarkKey} onValueChange={(value) => setBenchmarkKey(value as BenchmarkKey)} disabled={valuedSnapshots.length < 2 || benchmarkState === 'loading'}>
+                  <SelectTrigger size="sm" className="min-w-40 border-slate-200 bg-white text-[11px] text-slate-700" aria-label="Índice de referencia">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="border-slate-200 bg-white text-slate-900">
+                    {(Object.entries(BENCHMARKS) as Array<[BenchmarkKey, (typeof BENCHMARKS)[BenchmarkKey]]>).map(([key, option]) => (
+                      <SelectItem key={key} value={key}>{option.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {valuedSnapshots.length < 2 ? (
+                <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-white/50 p-4 text-[11px] leading-relaxed text-slate-500">Se activa cuando existan al menos dos valoraciones reales de la cartera abierta.</div>
+              ) : benchmarkState === 'loading' ? (
+                <div className="mt-4 rounded-lg border border-slate-200 bg-white/50 p-4 text-[11px] text-slate-500">Consultando cierres gratuitos de Yahoo Finance…</div>
+              ) : benchmarkState === 'error' ? (
+                <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-[11px] leading-relaxed text-amber-900">No se pudo consultar la referencia: {benchmarkError ?? 'respuesta no disponible'}.</div>
+              ) : comparisonSeries.length >= 2 && benchmarkData ? (
+                <>
+                  <div className="mb-3 mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[11px] text-slate-500">
+                    <span className="inline-flex items-center gap-2"><span className="h-0.5 w-4 bg-[#7e8bff]" />Tu cartera abierta</span>
+                    <span className="inline-flex items-center gap-2"><span className="h-0.5 w-4 bg-[#4ba88b]" />{benchmarkData.label}</span>
+                    <a className="ml-auto text-slate-500 underline decoration-slate-300 underline-offset-2 hover:text-slate-900" href={benchmarkData.sourceUrl} target="_blank" rel="noreferrer">Fuente Yahoo Finance</a>
+                  </div>
+                  <div className="h-[230px] w-full min-w-0">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 1, height: 1 }}>
+                      <ComposedChart data={comparisonSeries} margin={{ top: 8, right: 8, bottom: 4, left: 0 }}>
+                        <CartesianGrid vertical={false} stroke="#e3e1d9" strokeDasharray="3 3" />
+                        <XAxis dataKey="date" axisLine={false} tickLine={false} minTickGap={28} tick={{ fill: '#7b8791', fontSize: 11 }} tickFormatter={formatSnapshotDate} />
+                        <YAxis axisLine={false} tickLine={false} width={44} tick={{ fill: '#7b8791', fontSize: 11 }} tickFormatter={formatPercent} />
+                        <Tooltip content={<BenchmarkTooltip />} />
+                        <Line type="monotone" dataKey="portfolioReturnPct" stroke="#7e8bff" strokeWidth={2.5} dot={{ r: 3, fill: '#7e8bff', strokeWidth: 0 }} connectNulls={false} />
+                        <Line type="monotone" dataKey="benchmarkReturnPct" stroke="#4ba88b" strokeWidth={2} dot={{ r: 2.5, fill: '#4ba88b', strokeWidth: 0 }} connectNulls={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                </>
+              ) : (
+                <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-white/50 p-4 text-[11px] leading-relaxed text-slate-500">Yahoo Finance no devolvió cierres comparables para estas fechas.</div>
+              )}
+            </div>
           </CardContent>
         </Card>
 
@@ -513,6 +750,44 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
             <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-[#eeece5] p-3 text-[11px]">
               <span className="text-slate-600">Nivel de concentración · 3 mayores: {formatPercent(analytics.risk.top3Pct)}</span>
               <Badge className={analytics.risk.level === 'Alta' ? 'bg-red-100 text-red-700' : analytics.risk.level === 'Media' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}>{analytics.risk.level}</Badge>
+            </div>
+            <div className="mt-5 border-t border-slate-200 pt-5">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Objetivos de distribución</p>
+                  <h3 className="mt-1 text-sm font-semibold text-slate-900">Rebalanceo orientativo</h3>
+                </div>
+                {analytics.risk.configuredTargetPositions > 0 ? (
+                  <span className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-700">{formatPercent(analytics.risk.targetTotalPct)} objetivo definido</span>
+                ) : null}
+              </div>
+              {analytics.risk.configuredTargetPositions === 0 ? (
+                <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-white/50 p-3 text-[11px] leading-relaxed text-slate-500">Todavía no has definido objetivos. Abre una posición y completa «Objetivo en cartera (%)» para recibir una guía de desviaciones.</div>
+              ) : (
+                <>
+                  <p className="mt-2 text-[11px] leading-relaxed text-slate-500">Compara el peso actual con el objetivo que hayas escrito en cada posición. No ejecuta compras ni ventas automáticamente.</p>
+                  <Progress value={Math.min(analytics.risk.targetTotalPct * 100, 100)} className="mt-3 h-2 bg-slate-200 [&_[data-slot=progress-indicator]]:bg-[#c8f56a]" />
+                  <p className={`mt-2 text-[10px] leading-relaxed ${Math.abs(analytics.risk.targetTotalPct - 1) > 0.01 ? 'text-amber-700' : 'text-slate-500'}`}>
+                    {Math.abs(analytics.risk.targetTotalPct - 1) > 0.01
+                      ? 'Los objetivos deberían sumar 100% para que la comparación sea completa.'
+                      : `${analytics.risk.configuredTargetPositions} posiciones con objetivo · suma completa.`}
+                  </p>
+                  <div className="mt-3 grid gap-2">
+                    {analytics.risk.rebalance.slice(0, 4).map((item) => (
+                      <button key={item.positionId} type="button" onClick={() => onOpenPosition(item.positionId)} className="rounded-lg border border-slate-200 bg-white/70 p-3 text-left transition hover:border-slate-300 hover:bg-white">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="min-w-0 truncate text-[11px] font-semibold text-slate-800">{item.ticker || item.name}</span>
+                          <span className={`shrink-0 text-[11px] font-semibold tabular-nums ${item.gapPct >= 0 ? 'text-emerald-700' : 'text-amber-700'}`}>{item.gapPct >= 0 ? '+' : ''}{formatPercent(item.gapPct)}</span>
+                        </div>
+                        <div className="mt-1 flex flex-wrap justify-between gap-x-3 gap-y-1 text-[10px] text-slate-500">
+                          <span>Actual {formatPercent(item.currentPct)} · objetivo {formatPercent(item.targetPct)}</span>
+                          <span className="tabular-nums">{item.amountDelta >= 0 ? `Faltan ${formatEuro(item.amountDelta)}` : `Sobran ${formatEuro(Math.abs(item.amountDelta))}`}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>

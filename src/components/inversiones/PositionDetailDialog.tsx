@@ -66,6 +66,7 @@ export function PositionDetailDialog({ position, analytics, operations, open, on
   const [country, setCountry] = useState('')
   const [openingDate, setOpeningDate] = useState('')
   const [targetPrice, setTargetPrice] = useState('')
+  const [targetWeight, setTargetWeight] = useState('')
   const [riseAlert, setRiseAlert] = useState('')
   const [dropAlert, setDropAlert] = useState('')
 
@@ -76,6 +77,7 @@ export function PositionDetailDialog({ position, analytics, operations, open, on
     setCountry(position.pais ?? '')
     setOpeningDate(position.fecha_apertura ?? '')
     setTargetPrice(position.objetivo_precio?.toString() ?? '')
+    setTargetWeight(position.objetivo_peso_pct === null ? '' : (position.objetivo_peso_pct * 100).toString())
     setRiseAlert(position.alerta_subida_pct === null ? '' : (position.alerta_subida_pct * 100).toString())
     setDropAlert(position.alerta_caida_pct === null ? '' : (position.alerta_caida_pct * 100).toString())
   }, [position])
@@ -107,6 +109,7 @@ export function PositionDetailDialog({ position, analytics, operations, open, on
           pais: country.trim() || null,
           fecha_apertura: openingDate || null,
           objetivo_precio: targetPrice === '' ? null : Number(targetPrice),
+          objetivo_peso_pct: targetWeight === '' ? null : Number(targetWeight) / 100,
           alerta_subida_pct: riseAlert === '' ? null : Number(riseAlert) / 100,
           alerta_caida_pct: dropAlert === '' ? null : Number(dropAlert) / 100,
         }),
@@ -195,6 +198,7 @@ export function PositionDetailDialog({ position, analytics, operations, open, on
                 <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-2"><Label htmlFor="position-sector" className="text-slate-300">Sector</Label><Input id="position-sector" value={sector} onChange={(event) => setSector(event.target.value)} className="border-white/10 bg-[#111821]" /></div><div className="grid gap-2"><Label htmlFor="position-country" className="text-slate-300">País</Label><Input id="position-country" value={country} onChange={(event) => setCountry(event.target.value)} className="border-white/10 bg-[#111821]" /></div></div>
                 <div className="grid gap-2"><Label htmlFor="position-opening-date" className="text-slate-300">Fecha de apertura</Label><Input id="position-opening-date" type="date" value={openingDate} max={new Date().toISOString().slice(0, 10)} onChange={(event) => setOpeningDate(event.target.value)} className="border-white/10 bg-[#111821]" /><p className="text-[10px] leading-relaxed text-slate-500">Necesaria para calcular cuánto tiempo lleva activa y sus equivalencias D/M/A.</p></div>
                 <div className="grid gap-2"><Label htmlFor="position-target" className="text-slate-300">Objetivo de precio (€)</Label><Input id="position-target" type="number" min="0" step="any" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} className="border-white/10 bg-[#111821]" /></div>
+                <div className="grid gap-2"><Label htmlFor="position-target-weight" className="text-slate-300">Objetivo en cartera (%)</Label><Input id="position-target-weight" type="number" min="0" max="100" step="0.1" value={targetWeight} onChange={(event) => setTargetWeight(event.target.value)} className="border-white/10 bg-[#111821]" /><p className="text-[10px] leading-relaxed text-slate-500">La app lo comparará con el peso actual y te avisará si se separa demasiado.</p></div>
                 <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-2"><Label htmlFor="position-rise" className="text-slate-300">Alerta de subida (%)</Label><Input id="position-rise" type="number" min="0" step="0.1" value={riseAlert} onChange={(event) => setRiseAlert(event.target.value)} className="border-white/10 bg-[#111821]" /></div><div className="grid gap-2"><Label htmlFor="position-drop" className="text-slate-300">Alerta de caída (%)</Label><Input id="position-drop" type="number" min="0" step="0.1" value={dropAlert} onChange={(event) => setDropAlert(event.target.value)} className="border-white/10 bg-[#111821]" /></div></div>
                 {position.coste === null ? <div className="grid gap-3 rounded-lg border border-amber-400/15 bg-amber-400/5 p-3 text-[11px] leading-relaxed text-amber-100/80"><div className="flex gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>Falta el coste de adquisición. El valor actual sí está disponible, pero el P/L de esta posición es parcial.</span></div><Button type="button" variant="outline" className="w-full border-amber-300/30 bg-transparent text-amber-50 hover:bg-amber-50/10" onClick={() => onStartOperation('Compra', position)}>Registrar primera compra</Button></div> : null}
                 <div className="flex gap-2 rounded-lg border border-amber-400/15 bg-amber-400/5 p-3 text-[11px] leading-relaxed text-amber-100/70"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />Las alertas son avisos dentro de la app; no ejecutan órdenes ni recomiendan comprar o vender.</div>

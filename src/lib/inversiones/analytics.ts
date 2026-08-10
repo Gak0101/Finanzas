@@ -26,6 +26,18 @@ export type InvestmentPerformanceSummary = {
   totalNetResult: number
   currentReturnPct: number | null
   totalReturnPct: number | null
+  annualizedReturnPct: number | null
+  cashFlowCount: number
+  firstCashFlowDate: string | null
+  openAnnualizedReturnPct: number | null
+  openCashFlowCount: number
+  openFirstCashFlowDate: string | null
+  openReturnCoverage: {
+    totalPositions: number
+    eligiblePositions: number
+    coveredValue: number
+    totalValue: number
+  }
   capitalTracked: number
   unmatchedSales: number
   coverage: {
@@ -34,6 +46,23 @@ export type InvestmentPerformanceSummary = {
     valuedPositions: number
     datedPositions: number
   }
+}
+
+export type InvestmentDrawdownSummary = {
+  currentPct: number | null
+  maxPct: number | null
+  peakValue: number | null
+  peakDate: string | null
+}
+
+export type InvestmentRebalanceItem = {
+  positionId: number
+  name: string
+  ticker: string
+  currentPct: number
+  targetPct: number
+  gapPct: number
+  amountDelta: number
 }
 
 export type InvestmentRiskSummary = {
@@ -48,6 +77,10 @@ export type InvestmentRiskSummary = {
   byCurrency: AllocationPoint[]
   bySector: AllocationPoint[]
   byCountry: AllocationPoint[]
+  drawdown: InvestmentDrawdownSummary
+  targetTotalPct: number
+  configuredTargetPositions: number
+  rebalance: InvestmentRebalanceItem[]
 }
 
 export type InvestmentFiscalYear = {
@@ -126,6 +159,181 @@ type ReplayState = {
 
 function absolute(value: number | null | undefined) {
   return Math.abs(value ?? 0)
+}
+
+type ReturnCashFlow = {
+  date: string
+  amount: number
+}
+
+function yearsBetween(start: number, end: number) {
+  return Math.max(0, (end - start) / DAY_MS / 365.25)
+}
+
+function xirr(flows: ReturnCashFlow[]) {
+  if (flows.length < 2) return null
+
+  const firstDate = new Date(`${flows[0].date}T12:00:00Z`).getTime()
+  if (!Number.isFinite(firstDate)) return null
+
+  const normalized = flows
+    .map((flow) => ({
+      amount: flow.amount,
+      years: yearsBetween(firstDate, new Date(`${flow.date}T12:00:00Z`).getTime()),
+    }))
+    .filter((flow) => Number.isFinite(flow.years) && Number.isFinite(flow.amount))
+  if (normalized.length < 2 || !normalized.some((flow) => flow.amount < 0) || !normalized.some((flow) => flow.amount > 0)) return null
+
+  const netPresentValue = (rate: number) => normalized.reduce((total, flow) => {
+    const denominator = Math.pow(1 + rate, flow.years)
+    return Number.isFinite(denominator) && denominator !== 0 ? total + flow.amount / denominator : Number.NaN
+  }, 0)
+
+  let lower = -0.9999
+  let upper = 1
+  let lowerValue = netPresentValue(lower)
+  let upperValue = netPresentValue(upper)
+  let attempts = 0
+  while (Number.isFinite(lowerValue) && Number.isFinite(upperValue) && lowerValue * upperValue > 0 && attempts < 24) {
+    upper = upper * 2 + 1
+    upperValue = netPresentValue(upper)
+    attempts += 1
+  }
+  if (!Number.isFinite(lowerValue) || !Number.isFinite(upperValue) || lowerValue * upperValue > 0) return null
+
+  for (let index = 0; index < 80; index += 1) {
+    const middle = (lower + upper) / 2
+    const middleValue = netPresentValue(middle)
+    if (!Number.isFinite(middleValue)) return null
+    if (Math.abs(middleValue) < 0.000001) return middle
+    if (lowerValue * middleValue <= 0) {
+      upper = middle
+      upperValue = middleValue
+    } else {
+      lower = middle
+      lowerValue = middleValue
+    }
+  }
+
+  return (lower + upper) / 2
+}
+
+function operationCashFlow(operation: InversionOperacion): ReturnCashFlow | null {
+  const fees = absolute(operation.comision) + absolute(operation.impuesto)
+  const amount = absolute(operation.importe)
+  if (operation.tipo === 'Compra') return { date: operation.fecha, amount: -(amount + fees) }
+  if (operation.tipo === 'Venta') return { date: operation.fecha, amount: amount - fees }
+  if (operation.tipo === 'Dividendo' || operation.tipo === 'Bonificación') return { date: operation.fecha, amount: amount - fees }
+  return null
+}
+
+function cashFlowsFromOperations(operations: InversionOperacion[]) {
+  return operations
+    .toSorted((left, right) => timestamp(left) - timestamp(right) || left.id - right.id)
+    .flatMap<ReturnCashFlow>((operation) => {
+      const flow = operationCashFlow(operation)
+      return flow ? [flow] : []
+    })
+}
+
+function valuationDate(snapshots: InversionSnapshotDiario[]) {
+  return snapshots.toSorted((left, right) => left.fecha_valoracion.localeCompare(right.fecha_valoracion)).at(-1)?.fecha_valoracion
+}
+
+function returnMetricsFromFlows(flows: ReturnCashFlow[], totalValue: number, valuationDateValue: string | undefined) {
+  const firstCashFlowDate = flows[0]?.date ?? null
+  if (!valuationDateValue || totalValue <= 0 || flows.length === 0) {
+    return { annualizedReturnPct: null, cashFlowCount: flows.length, firstCashFlowDate }
+  }
+
+  return {
+    annualizedReturnPct: xirr([...flows, { date: valuationDateValue, amount: totalValue }]),
+    cashFlowCount: flows.length,
+    firstCashFlowDate,
+  }
+}
+
+function returnMetrics(operations: InversionOperacion[], totalValue: number, snapshots: InversionSnapshotDiario[]) {
+  return returnMetricsFromFlows(cashFlowsFromOperations(operations), totalValue, valuationDate(snapshots))
+}
+
+function openReturnMetrics(positions: InversionPosicion[], operations: InversionOperacion[], snapshots: InversionSnapshotDiario[], totalValue: number) {
+  const operationsByKey = new Map<string, ReturnCashFlow[]>()
+  for (const operation of operations.toSorted((left, right) => timestamp(left) - timestamp(right) || left.id - right.id)) {
+    const flow = operationCashFlow(operation)
+    if (!flow) continue
+    const key = investmentPositionKey(operation)
+    operationsByKey.set(key, [...(operationsByKey.get(key) ?? []), flow])
+  }
+
+  const flows: ReturnCashFlow[] = []
+  let eligiblePositions = 0
+  let coveredValue = 0
+  for (const position of positions) {
+    const value = position.valor_actual ?? 0
+    if (value <= 0) continue
+    const positionFlows = [...(operationsByKey.get(investmentPositionKey(position)) ?? [])]
+    if (!positionFlows.some((flow) => flow.amount < 0) && position.coste !== null && position.coste > 0 && position.fecha_apertura) {
+      positionFlows.unshift({ date: position.fecha_apertura, amount: -position.coste })
+    }
+    if (!positionFlows.some((flow) => flow.amount < 0)) continue
+    eligiblePositions += 1
+    coveredValue += value
+    flows.push(...positionFlows)
+  }
+
+  const metrics = returnMetricsFromFlows(flows, coveredValue, valuationDate(snapshots))
+  return {
+    ...metrics,
+    coverage: {
+      totalPositions: positions.length,
+      eligiblePositions,
+      coveredValue,
+      totalValue,
+    },
+  }
+}
+
+function drawdownSummary(points: InvestmentSnapshotPoint[]): InvestmentDrawdownSummary {
+  const valued = points.filter((point): point is InvestmentSnapshotPoint & { value: number } => point.value !== null)
+  if (valued.length < 2) return { currentPct: null, maxPct: null, peakValue: null, peakDate: null }
+
+  let peakValue = valued[0].value
+  let peakDate = valued[0].date
+  let currentPct = 0
+  let maxPct = 0
+  for (const point of valued) {
+    if (point.value > peakValue) {
+      peakValue = point.value
+      peakDate = point.date
+    }
+    const drawdown = peakValue > 0 ? (point.value - peakValue) / peakValue : 0
+    currentPct = drawdown
+    maxPct = Math.min(maxPct, drawdown)
+  }
+  return { currentPct, maxPct, peakValue, peakDate }
+}
+
+function rebalanceSummary(positions: InversionPosicion[], totalValue: number) {
+  const configured = positions.filter((position) => position.objetivo_peso_pct !== null)
+  const targetTotalPct = configured.reduce((sum, position) => sum + (position.objetivo_peso_pct ?? 0), 0)
+  const items = configured
+    .map<InvestmentRebalanceItem>((position) => {
+      const currentPct = totalValue > 0 ? (position.valor_actual ?? 0) / totalValue : 0
+      const targetPct = position.objetivo_peso_pct ?? 0
+      return {
+        positionId: position.id,
+        name: position.activo,
+        ticker: position.price_ticker || position.ticker,
+        currentPct,
+        targetPct,
+        gapPct: targetPct - currentPct,
+        amountDelta: (targetPct - currentPct) * totalValue,
+      }
+    })
+    .toSorted((left, right) => Math.abs(right.gapPct) - Math.abs(left.gapPct))
+
+  return { targetTotalPct, configuredTargetPositions: configured.length, items }
 }
 
 function timestamp(operation: InversionOperacion) {
@@ -369,6 +577,22 @@ function buildAlerts(positions: InversionPosicion[], risk: InvestmentRiskSummary
     id: 'concentration', severity: 'warning', title: 'Concentración elevada',
     detail: `Las tres mayores posiciones representan ${(risk.top3Pct * 100).toFixed(1)}% de la cartera.`, action: 'review_position', positionId: largestPosition?.id,
   })
+  if (risk.configuredTargetPositions > 0 && Math.abs(risk.targetTotalPct - 1) > 0.01) {
+    const targetPosition = positions.find((position) => position.objetivo_peso_pct !== null)
+    alerts.push({
+      id: 'target-total', severity: 'info', title: 'Objetivos de cartera incompletos',
+      detail: `Has definido objetivos para ${risk.configuredTargetPositions} posiciones que suman ${(risk.targetTotalPct * 100).toFixed(1)}%. Para usar el rebalanceo como guía, deberían sumar 100%.`, action: 'review_position', positionId: targetPosition?.id,
+    })
+  } else if (risk.configuredTargetPositions > 0) {
+    const largestGap = risk.rebalance[0]
+    const deviations = risk.rebalance.filter((item) => Math.abs(item.gapPct) >= 0.03)
+    if (deviations.length > 0 && largestGap) {
+      alerts.push({
+        id: 'rebalance', severity: 'warning', title: `${deviations.length} posiciones se alejan del objetivo`,
+        detail: `${largestGap.ticker || largestGap.name} está ${Math.abs(largestGap.gapPct * 100).toFixed(1)} puntos ${largestGap.gapPct > 0 ? 'por debajo' : 'por encima'} de su objetivo.`, action: 'review_position', positionId: largestGap.positionId,
+      })
+    }
+  }
 
   for (const position of positions) {
     if (position.objetivo_precio !== null && position.precio_actual !== null && position.precio_actual >= position.objetivo_precio) {
@@ -398,6 +622,11 @@ export function calculateInvestmentAnalytics(
   const capitalTracked = replay.purchases + replay.commissions + replay.taxes
   const historicalNetResult = replay.realisedPnl + replay.dividends + replay.bonuses - replay.commissions - replay.taxes
   const totalNetResult = unrealisedPnl + historicalNetResult
+  const snapshotHistory = aggregateSnapshots(snapshots)
+  const flowReturn = returnMetrics(operations, totalValue, snapshots)
+  const openReturn = openReturnMetrics(positions, operations, snapshots, totalValue)
+  const drawdown = drawdownSummary(snapshotHistory)
+  const rebalance = rebalanceSummary(positions, totalValue)
   const performance: InvestmentPerformanceSummary = {
     totalValue,
     knownCost,
@@ -411,6 +640,13 @@ export function calculateInvestmentAnalytics(
     totalNetResult,
     currentReturnPct: knownCost > 0 ? unrealisedPnl / knownCost : null,
     totalReturnPct: capitalTracked > 0 ? totalNetResult / capitalTracked : null,
+    annualizedReturnPct: flowReturn.annualizedReturnPct,
+    cashFlowCount: flowReturn.cashFlowCount,
+    firstCashFlowDate: flowReturn.firstCashFlowDate,
+    openAnnualizedReturnPct: openReturn.annualizedReturnPct,
+    openCashFlowCount: openReturn.cashFlowCount,
+    openFirstCashFlowDate: openReturn.firstCashFlowDate,
+    openReturnCoverage: openReturn.coverage,
     capitalTracked,
     unmatchedSales: replay.unmatchedSales,
     coverage: {
@@ -439,6 +675,10 @@ export function calculateInvestmentAnalytics(
     byCurrency: allocation(positions, totalValue, (position) => position.divisa),
     bySector: allocation(positions, totalValue, (position) => position.sector),
     byCountry: allocation(positions, totalValue, (position) => position.pais),
+    drawdown,
+    targetTotalPct: rebalance.targetTotalPct,
+    configuredTargetPositions: rebalance.configuredTargetPositions,
+    rebalance: rebalance.items,
   }
 
   const positionAnalytics = positions.map((position) => {
@@ -462,7 +702,7 @@ export function calculateInvestmentAnalytics(
     performance,
     risk,
     fiscalYears: replay.fiscalYears,
-    snapshotHistory: aggregateSnapshots(snapshots),
+    snapshotHistory,
     positionAnalytics,
     alerts: buildAlerts(positions, risk),
   }

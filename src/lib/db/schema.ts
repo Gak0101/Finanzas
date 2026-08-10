@@ -156,6 +156,7 @@ export const inversiones_posiciones = sqliteTable(
     cantidad: real('cantidad').notNull(),
     precio_compra: real('precio_compra'),
     coste: real('coste'),
+    objetivo_peso_pct: real('objetivo_peso_pct'),
     precio_actual: real('precio_actual'),
     valor_actual: real('valor_actual'),
     pnl: real('pnl'),

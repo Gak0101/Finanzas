@@ -18,6 +18,7 @@ const positionUpdateSchema = z.object({
   sector: z.string().max(100).nullable().optional(),
   pais: z.string().max(100).nullable().optional(),
   objetivo_precio: z.number().nonnegative().nullable().optional(),
+  objetivo_peso_pct: z.number().min(0).max(1).nullable().optional(),
   alerta_subida_pct: z.number().min(0).max(10).nullable().optional(),
   alerta_caida_pct: z.number().min(0).max(10).nullable().optional(),
 }).refine((value) => Object.keys(value).length > 0, 'No hay cambios que guardar')

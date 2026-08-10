@@ -55,3 +55,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Artefactos locales generados por las hojas de investigación Lynch
+/outputs/
+/workbench_lynch/current_inspect/
+/workbench_lynch/*.log

@@ -1,0 +1,1 @@
+ALTER TABLE `inversiones_posiciones` ADD `objetivo_peso_pct` real;

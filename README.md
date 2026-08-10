@@ -44,6 +44,23 @@ PORT=3000
 HOSTNAME=0.0.0.0
 ```
 
+### Continuar en Codex Cloud
+
+El repositorio usa `package-lock.json`, por lo que un checkout limpio debe
+instalarse con `npm ci`. Después, configura las variables de `.env.example` en
+el entorno de trabajo —como mínimo `DATABASE_URL`, `NEXTAUTH_SECRET` y
+`NEXTAUTH_URL`— y ejecuta las migraciones si vas a usar una base SQLite nueva:
+
+```bash
+npm ci
+node scripts/migrate.mjs
+npm run build
+```
+
+No hay scripts formales de lint, typecheck ni tests en `package.json`; `npm run
+build` es la comprobación automatizada disponible. Las claves de proveedores
+externos se configuran como secretos del entorno y no se suben al repositorio.
+
 ### 3. Crear base de datos y usuario inicial
 
 ```bash
