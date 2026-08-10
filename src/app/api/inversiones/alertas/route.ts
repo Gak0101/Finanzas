@@ -7,6 +7,7 @@ import { fetchAssetPrice } from '@/lib/inversiones/marketData'
 import { priceIdentifiers } from '@/lib/inversiones/priceIdentifiers'
 import { inversionAlertaSchema } from '@/lib/validations/inversionAlerta'
 import { listInvestmentAlertRules } from '@/lib/inversiones/alertRules'
+import { inferIsin, normalizeIsin } from '@/lib/inversiones/instrumentIdentity'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -32,6 +33,10 @@ export async function POST(req: Request) {
   }
 
   const input = parsed.data
+  const explicitIsin = input.isin?.trim() || null
+  if (explicitIsin && !normalizeIsin(explicitIsin)) {
+    return NextResponse.json({ error: 'El ISIN debe tener 12 caracteres y un formato válido' }, { status: 400 })
+  }
   const now = new Date().toISOString()
   let position: typeof inversiones_posiciones.$inferSelect | undefined
 
@@ -71,6 +76,9 @@ export async function POST(req: Request) {
   if (input.alcance === 'activo' && position && referencePrice === null && position.coste === null) {
     referencePrice = position.precio_actual
   }
+  if (input.alcance === 'activo' && input.precio_objetivo !== null && input.precio_objetivo !== undefined && referencePrice === null && position) {
+    referencePrice = position.precio_compra ?? position.precio_actual
+  }
 
   const existingRules = await listInvestmentAlertRules(auth.userId)
   const existing = existingRules.find((rule) => {
@@ -83,6 +91,9 @@ export async function POST(req: Request) {
       market_symbol: marketSymbol,
     })
   })
+  const isin = input.alcance === 'cartera'
+    ? null
+    : (normalizeIsin(explicitIsin) || existing?.isin || inferIsin(position?.isin, position?.ticker, position?.market_symbol, input.ticker, marketSymbol))
 
   const values = {
     usuario_id: auth.userId,
@@ -94,7 +105,9 @@ export async function POST(req: Request) {
     price_ticker: input.alcance === 'cartera' ? null : priceTicker,
     crypto_id: input.alcance === 'cartera' ? null : cryptoId,
     market_symbol: input.alcance === 'cartera' ? null : marketSymbol,
+    isin,
     precio_referencia: input.alcance === 'cartera' ? null : referencePrice,
+    precio_objetivo: input.alcance === 'cartera' ? null : input.precio_objetivo ?? null,
     precio_actual: existing?.precio_actual ?? (position?.precio_actual ?? null),
     rendimiento_pct: existing?.rendimiento_pct ?? (position?.pnl_pct ?? null),
     umbral_subida_pct: input.umbral_subida_pct,

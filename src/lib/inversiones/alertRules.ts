@@ -4,6 +4,7 @@ import { inversiones_alertas, inversiones_posiciones, type InversionAlerta, type
 import { fetchAssetPrice, refreshInvestmentPrices, type RefreshPricesResult } from '@/lib/inversiones/marketData'
 
 export type AlertSignal = 'normal' | 'subida' | 'caida'
+export type AlertTriggerReason = 'porcentaje' | 'precio_objetivo'
 
 export type TriggeredInvestmentAlert = {
   id: number
@@ -11,10 +12,12 @@ export type TriggeredInvestmentAlert = {
   ticker: string
   activo: string
   tipo: 'subida' | 'caida'
+  razon: AlertTriggerReason
   rendimiento_pct: number
-  umbral_pct: number
+  umbral_pct: number | null
   precio_actual: number | null
   precio_referencia: number | null
+  precio_objetivo: number | null
   canal_telegram: boolean
   canal_email: boolean
   checked_at: string
@@ -42,7 +45,12 @@ function portfolioReturn(positions: InversionPosicion[]) {
   return knownCost > 0 ? (value - knownCost) / knownCost : null
 }
 
-function activeSignal(rule: InversionAlerta, value: number): AlertSignal {
+type SignalEvaluation = {
+  signal: AlertSignal
+  reason: AlertTriggerReason
+}
+
+function percentageSignal(rule: InversionAlerta, value: number): AlertSignal {
   const rise = rule.umbral_subida_pct === null ? null : Math.abs(rule.umbral_subida_pct)
   const drop = rule.umbral_caida_pct === null ? null : Math.abs(rule.umbral_caida_pct)
   if (rise !== null && rise > 0 && value >= rise) return 'subida'
@@ -50,15 +58,49 @@ function activeSignal(rule: InversionAlerta, value: number): AlertSignal {
   return 'normal'
 }
 
-function signalWithRearm(rule: InversionAlerta, value: number): AlertSignal {
-  const fresh = activeSignal(rule, value)
+function targetDirection(rule: InversionAlerta, currentPrice: number | null, referencePrice: number | null) {
+  const target = rule.precio_objetivo
+  if (target === null || target === undefined || !Number.isFinite(target) || target <= 0) return null
+  const base = referencePrice ?? currentPrice
+  if (base === null || !Number.isFinite(base) || base <= 0) return null
+  return target >= base ? 'subida' as const : 'caida' as const
+}
+
+function activeSignal(rule: InversionAlerta, value: number, currentPrice: number | null, referencePrice: number | null): SignalEvaluation {
+  const direction = targetDirection(rule, currentPrice, referencePrice)
+  const target = rule.precio_objetivo
+  if (direction === 'subida' && target !== null && target !== undefined && currentPrice !== null && currentPrice >= target) {
+    return { signal: 'subida', reason: 'precio_objetivo' }
+  }
+  if (direction === 'caida' && target !== null && target !== undefined && currentPrice !== null && currentPrice <= target) {
+    return { signal: 'caida', reason: 'precio_objetivo' }
+  }
+  return { signal: percentageSignal(rule, value), reason: 'porcentaje' }
+}
+
+function signalWithRearm(rule: InversionAlerta, value: number, currentPrice: number | null, referencePrice: number | null): SignalEvaluation {
+  const fresh = activeSignal(rule, value, currentPrice, referencePrice)
   const previous = (rule.estado as AlertSignal) || 'normal'
   const margin = Math.abs(rule.rearmar_pct ?? 0.01)
   const rise = rule.umbral_subida_pct === null ? null : Math.abs(rule.umbral_subida_pct)
   const drop = rule.umbral_caida_pct === null ? null : Math.abs(rule.umbral_caida_pct)
 
-  if (previous === 'subida' && fresh === 'normal' && rise !== null && value > rise - margin) return 'subida'
-  if (previous === 'caida' && fresh === 'normal' && drop !== null && value < -drop + margin) return 'caida'
+  if (previous === 'subida' && fresh.signal === 'normal') {
+    if (rise !== null && value > rise - margin) return { signal: 'subida', reason: 'porcentaje' }
+    const direction = targetDirection(rule, currentPrice, referencePrice)
+    const target = rule.precio_objetivo
+    if (direction === 'subida' && target !== null && target !== undefined && currentPrice !== null && currentPrice > target * (1 - margin)) {
+      return { signal: 'subida', reason: 'precio_objetivo' }
+    }
+  }
+  if (previous === 'caida' && fresh.signal === 'normal') {
+    if (drop !== null && value < -drop + margin) return { signal: 'caida', reason: 'porcentaje' }
+    const direction = targetDirection(rule, currentPrice, referencePrice)
+    const target = rule.precio_objetivo
+    if (direction === 'caida' && target !== null && target !== undefined && currentPrice !== null && currentPrice < target * (1 + margin)) {
+      return { signal: 'caida', reason: 'precio_objetivo' }
+    }
+  }
   return fresh
 }
 
@@ -85,6 +127,9 @@ async function evaluateRule(
     currentPct = portfolioPct
   } else if (position) {
     currentPrice = position.precio_actual
+    if (rule.precio_objetivo !== null && rule.precio_objetivo !== undefined && referencePrice === null) {
+      referencePrice = position.precio_compra ?? currentPrice
+    }
     if (position.pnl_pct !== null) {
       currentPct = position.pnl_pct
     } else if (referencePrice !== null && currentPrice !== null && referencePrice > 0) {
@@ -111,10 +156,15 @@ async function evaluateRule(
     return { triggered: null, skipped: true }
   }
 
-  const nextState = signalWithRearm(rule, currentPct)
+  const evaluation = signalWithRearm(rule, currentPct, currentPrice, referencePrice)
+  const nextState = evaluation.signal
   const triggered = nextState !== 'normal' && nextState !== (rule.estado as AlertSignal)
   const label = ruleLabel(rule, position)
-  const threshold = nextState === 'subida' ? Math.abs(rule.umbral_subida_pct ?? 0) : Math.abs(rule.umbral_caida_pct ?? 0)
+  const threshold = evaluation.reason === 'precio_objetivo'
+    ? null
+    : nextState === 'subida'
+      ? Math.abs(rule.umbral_subida_pct ?? 0)
+      : Math.abs(rule.umbral_caida_pct ?? 0)
 
   await db.update(inversiones_alertas).set({
     precio_referencia: referencePrice,
@@ -135,10 +185,12 @@ async function evaluateRule(
       ticker: label.ticker,
       activo: label.activo,
       tipo: nextState as 'subida' | 'caida',
+      razon: evaluation.reason,
       rendimiento_pct: currentPct,
       umbral_pct: threshold,
       precio_actual: currentPrice,
       precio_referencia: referencePrice,
+      precio_objetivo: rule.precio_objetivo ?? null,
       canal_telegram: rule.canal_telegram,
       canal_email: rule.canal_email,
       checked_at: checkedAt,

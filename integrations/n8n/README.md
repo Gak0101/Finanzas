@@ -4,6 +4,10 @@ El workflow `finanzas-alertas-telegram-email.json` consulta Finanzas cada hora,
 actualiza precios, detecta cruces nuevos y envía cada alerta a Telegram, email o
 ambos según la regla guardada en la aplicación.
 
+Las reglas pueden dispararse por rentabilidad porcentual, por un precio objetivo
+en EUR o por ambas condiciones. El precio objetivo solo está disponible para
+activos individuales; la cartera completa se vigila por porcentaje.
+
 ## Configuración
 
 1. En Finanzas configura variables secretas:
@@ -22,7 +26,6 @@ ambos según la regla guardada en la aplicación.
    FINANZAS_BASE_URL=https://finanzas.tudominio.com
    FINANZAS_AUTOMATION_SECRET=el-mismo-secreto-que-en-finanzas
    TELEGRAM_CHAT_ID=tu-chat-id
-   ALERT_EMAIL_FROM=alertas@tudominio.com
    ALERT_EMAIL_TO=tu-destino@tudominio.com
    N8N_BLOCK_ENV_ACCESS_IN_NODE=false
    ```
@@ -31,8 +34,9 @@ ambos según la regla guardada en la aplicación.
 
    - Telegram: una credencial `telegramApi` existente o el bot creado con
      `@BotFather`.
-   - Email: una credencial `smtp` llamada `Finanzas SMTP`, usando el proveedor
-     SMTP o Gmail con contraseña de aplicación.
+   - Email: una credencial `gmailOAuth2` llamada `Gmail account`, autorizada con
+     OAuth2 en Google Cloud. El nodo Gmail envía desde la cuenta autorizada y
+     utiliza `ALERT_EMAIL_TO` como destinatario.
 
 5. Activa el workflow cuando las credenciales estén disponibles.
 
@@ -49,8 +53,9 @@ curl -X POST https://n8n.tudominio.com/webhook/finanzas-alertas-test \
   -d '{}'
 ```
 
-Para ver un envío real, crea temporalmente una regla con un umbral que ya se
-haya cruzado y el canal deseado; después elimina esa regla de prueba. El
+Para ver un envío real, crea temporalmente una regla con un umbral porcentual o
+un precio objetivo que ya se haya cruzado y el canal deseado; después elimina
+esa regla de prueba. El
 workflow devuelve `200` al aceptar la ejecución y n8n conserva el resultado en
 el historial de ejecuciones.
 

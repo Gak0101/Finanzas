@@ -8,7 +8,9 @@ import {
   CheckCircle2,
   Download,
   Info,
+  Loader2,
   RefreshCw,
+  Search,
   ShieldAlert,
   WalletCards,
 } from 'lucide-react'
@@ -25,6 +27,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
 import {
   Select,
@@ -61,6 +64,18 @@ type BenchmarkResponse = {
   symbol: string
   points: BenchmarkPoint[]
   sourceUrl: string
+}
+
+type MarketSearchResult = {
+  key: string
+  activo: string
+  ticker: string
+  tipo_activo: string
+  price_ticker: string
+  market_symbol: string | null
+  exchange: string | null
+  poseido: boolean
+  posicion_id: number | null
 }
 
 type ComparisonPoint = {
@@ -309,6 +324,20 @@ function tradingViewUrl(symbol: string) {
   return `https://s.tradingview.com/widgetembed/?${query.toString()}`
 }
 
+function normalizeMarketIdentifier(value: string | null | undefined) {
+  return value?.trim().toLocaleLowerCase('es') ?? ''
+}
+
+function positionMatchesMarketResult(position: InversionPosicion, result: MarketSearchResult) {
+  const resultIdentifiers = [result.market_symbol, result.price_ticker, result.ticker]
+    .map(normalizeMarketIdentifier)
+    .filter(Boolean)
+  return [position.market_symbol, position.price_ticker, position.ticker]
+    .map(normalizeMarketIdentifier)
+    .filter(Boolean)
+    .some((identifier) => resultIdentifiers.includes(identifier))
+}
+
 function FiscalMetric({ label, value, tone = 'default' }: { label: string; value: number; tone?: 'default' | 'positive' | 'negative' }) {
   const color = tone === 'positive' ? 'text-emerald-700' : tone === 'negative' ? 'text-red-600' : 'text-slate-900'
   return (
@@ -324,6 +353,11 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
   const [allocationMode, setAllocationMode] = useState<AllocationMode>('type')
   const [selectedFiscalYear, setSelectedFiscalYear] = useState(() => analytics.fiscalYears[0]?.year.toString() ?? '')
   const [selectedMarketPositionId, setSelectedMarketPositionId] = useState<number | null>(null)
+  const [selectedMarketSearchResult, setSelectedMarketSearchResult] = useState<MarketSearchResult | null>(null)
+  const [marketSearchQuery, setMarketSearchQuery] = useState('')
+  const [marketSearchResults, setMarketSearchResults] = useState<MarketSearchResult[]>([])
+  const [marketSearchState, setMarketSearchState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [marketSearchError, setMarketSearchError] = useState<string | null>(null)
   const [benchmarkKey, setBenchmarkKey] = useState<BenchmarkKey>('world')
   const [benchmarkState, setBenchmarkState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [benchmarkData, setBenchmarkData] = useState<BenchmarkResponse | null>(null)
@@ -410,6 +444,53 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
     [positions]
   )
   const marketPosition = marketPositions.find((position) => position.id === selectedMarketPositionId) ?? marketPositions[0] ?? null
+  const selectedMarketOwnedPosition = selectedMarketSearchResult
+    ? marketPositions.find((position) => positionMatchesMarketResult(position, selectedMarketSearchResult)) ?? null
+    : null
+  const marketChartSymbol = selectedMarketSearchResult?.market_symbol ?? marketPosition?.market_symbol ?? null
+  const marketChartName = selectedMarketSearchResult?.activo ?? marketPosition?.activo ?? ''
+  const marketChartTicker = selectedMarketSearchResult?.ticker ?? marketPosition?.price_ticker ?? marketPosition?.ticker ?? ''
+  const marketChartIsOwned = selectedMarketSearchResult
+    ? selectedMarketSearchResult.poseido || Boolean(selectedMarketOwnedPosition)
+    : Boolean(marketPosition)
+
+  useEffect(() => {
+    const query = marketSearchQuery.trim()
+    if (query.length < 2) {
+      setMarketSearchResults([])
+      setMarketSearchState('idle')
+      setMarketSearchError(null)
+      return
+    }
+
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => {
+      setMarketSearchState('loading')
+      setMarketSearchError(null)
+      void fetch(`/api/inversiones/alertas/buscar-activo?q=${encodeURIComponent(query)}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          const payload = await response.json() as { results?: MarketSearchResult[]; error?: string }
+          if (!response.ok || !Array.isArray(payload.results)) {
+            throw new Error(payload.error || 'No se pudo buscar el instrumento')
+          }
+          setMarketSearchResults(payload.results.filter((result) => Boolean(result.market_symbol)))
+          setMarketSearchState('ready')
+        })
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === 'AbortError') return
+          setMarketSearchState('error')
+          setMarketSearchError(error instanceof Error ? error.message : 'No se pudo buscar el instrumento')
+        })
+    }, 300)
+
+    return () => {
+      window.clearTimeout(timeout)
+      controller.abort()
+    }
+  }, [marketSearchQuery])
 
   const fiscal = analytics.fiscalYears.find((year) => year.year.toString() === selectedFiscalYear)
     ?? analytics.fiscalYears[0]
@@ -438,6 +519,14 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
       return
     }
     void onRefresh()
+  }
+
+  function selectMarketSearchResult(result: MarketSearchResult) {
+    setSelectedMarketSearchResult(result)
+    setSelectedMarketPositionId(result.posicion_id)
+    setMarketSearchQuery('')
+    setMarketSearchResults([])
+    setMarketSearchState('idle')
   }
 
   return (
@@ -751,82 +840,117 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
               <span className="text-slate-600">Nivel de concentración · 3 mayores: {formatPercent(analytics.risk.top3Pct)}</span>
               <Badge className={analytics.risk.level === 'Alta' ? 'bg-red-100 text-red-700' : analytics.risk.level === 'Media' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}>{analytics.risk.level}</Badge>
             </div>
-            <div className="mt-5 border-t border-slate-200 pt-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Objetivos de distribución</p>
-                  <h3 className="mt-1 text-sm font-semibold text-slate-900">Rebalanceo orientativo</h3>
-                </div>
-                {analytics.risk.configuredTargetPositions > 0 ? (
-                  <span className="shrink-0 text-[11px] font-semibold tabular-nums text-slate-700">{formatPercent(analytics.risk.targetTotalPct)} objetivo definido</span>
-                ) : null}
-              </div>
-              {analytics.risk.configuredTargetPositions === 0 ? (
-                <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-white/50 p-3 text-[11px] leading-relaxed text-slate-500">Todavía no has definido objetivos. Abre una posición y completa «Objetivo en cartera (%)» para recibir una guía de desviaciones.</div>
-              ) : (
-                <>
-                  <p className="mt-2 text-[11px] leading-relaxed text-slate-500">Compara el peso actual con el objetivo que hayas escrito en cada posición. No ejecuta compras ni ventas automáticamente.</p>
-                  <Progress value={Math.min(analytics.risk.targetTotalPct * 100, 100)} className="mt-3 h-2 bg-slate-200 [&_[data-slot=progress-indicator]]:bg-[#c8f56a]" />
-                  <p className={`mt-2 text-[10px] leading-relaxed ${Math.abs(analytics.risk.targetTotalPct - 1) > 0.01 ? 'text-amber-700' : 'text-slate-500'}`}>
-                    {Math.abs(analytics.risk.targetTotalPct - 1) > 0.01
-                      ? 'Los objetivos deberían sumar 100% para que la comparación sea completa.'
-                      : `${analytics.risk.configuredTargetPositions} posiciones con objetivo · suma completa.`}
-                  </p>
-                  <div className="mt-3 grid gap-2">
-                    {analytics.risk.rebalance.slice(0, 4).map((item) => (
-                      <button key={item.positionId} type="button" onClick={() => onOpenPosition(item.positionId)} className="rounded-lg border border-slate-200 bg-white/70 p-3 text-left transition hover:border-slate-300 hover:bg-white">
-                        <div className="flex items-center justify-between gap-3">
-                          <span className="min-w-0 truncate text-[11px] font-semibold text-slate-800">{item.ticker || item.name}</span>
-                          <span className={`shrink-0 text-[11px] font-semibold tabular-nums ${item.gapPct >= 0 ? 'text-emerald-700' : 'text-amber-700'}`}>{item.gapPct >= 0 ? '+' : ''}{formatPercent(item.gapPct)}</span>
-                        </div>
-                        <div className="mt-1 flex flex-wrap justify-between gap-x-3 gap-y-1 text-[10px] text-slate-500">
-                          <span>Actual {formatPercent(item.currentPct)} · objetivo {formatPercent(item.targetPct)}</span>
-                          <span className="tabular-nums">{item.amountDelta >= 0 ? `Faltan ${formatEuro(item.amountDelta)}` : `Sobran ${formatEuro(Math.abs(item.amountDelta))}`}</span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
           </CardContent>
         </Card>
       </div>
 
       <Card className="gap-0 border-0 bg-[#f7f5ef] py-0 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]">
-        <CardHeader className="gap-4 border-b border-slate-200 px-5 py-5 sm:flex-row sm:items-end sm:justify-between sm:px-6">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Mercado / referencia</p>
-            <CardTitle className="mt-2 flex items-center gap-2 text-lg tracking-[-0.04em]"><BarChart3 className="h-5 w-5 text-[#7e8bff]" />Gráfico de mercado</CardTitle>
+        <CardHeader className="gap-4 border-b border-slate-200 px-5 py-5 sm:px-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Mercado / referencia</p>
+              <CardTitle className="mt-2 flex items-center gap-2 text-lg tracking-[-0.04em]"><BarChart3 className="h-5 w-5 text-[#7e8bff]" />Gráfico de mercado</CardTitle>
+            </div>
+            {marketChartSymbol ? (
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <Badge className={marketChartIsOwned ? 'border-0 bg-[#dfffa1] text-[10px] font-bold uppercase tracking-[0.08em] text-[#35501d]' : 'border border-slate-200 bg-white text-[10px] font-semibold text-slate-500'}>
+                  {marketChartIsOwned ? 'En cartera' : 'Vista externa'}
+                </Badge>
+                <span className="text-[10px] font-semibold text-slate-500">{marketChartTicker}</span>
+              </div>
+            ) : null}
           </div>
-          {marketPositions.length > 0 ? (
-            <Select value={String(marketPosition?.id ?? '')} onValueChange={(value) => setSelectedMarketPositionId(Number(value))}>
-              <SelectTrigger size="sm" className="min-w-52 border-slate-200 bg-white text-[11px] text-slate-700" aria-label="Activo del gráfico de mercado">
-                <SelectValue placeholder="Elegir activo" />
-              </SelectTrigger>
-              <SelectContent className="border-slate-200 bg-white text-slate-900">
-                {marketPositions.map((position) => <SelectItem key={position.id} value={String(position.id)}>{position.price_ticker || position.ticker} · {position.activo}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          ) : null}
+          <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(220px,auto)]">
+            <div className="relative">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={marketSearchQuery}
+                  onChange={(event) => setMarketSearchQuery(event.target.value)}
+                  placeholder="Busca AAPL, SXR8, Nasdaq…"
+                  aria-label="Buscar instrumento para el gráfico de mercado"
+                  className="h-9 border-slate-200 bg-white pl-9 text-[11px] text-slate-700 placeholder:text-slate-400"
+                />
+              </div>
+              {marketSearchQuery.trim().length >= 2 ? (
+                <div role="listbox" aria-label="Resultados de búsqueda de instrumentos" className="absolute left-0 right-0 top-full z-30 mt-1 max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 text-slate-900 shadow-xl">
+                  {marketSearchState === 'loading' ? (
+                    <div className="flex items-center gap-2 px-3 py-3 text-[11px] text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Buscando instrumentos…</div>
+                  ) : marketSearchState === 'error' ? (
+                    <div className="px-3 py-3 text-[11px] text-red-600">{marketSearchError || 'No se pudo completar la búsqueda.'}</div>
+                  ) : marketSearchResults.length > 0 ? (
+                    marketSearchResults.map((result) => {
+                      const owned = result.poseido || marketPositions.some((position) => positionMatchesMarketResult(position, result))
+                      return (
+                        <button
+                          key={result.key}
+                          type="button"
+                          role="option"
+                          aria-selected={false}
+                          onClick={() => selectMarketSearchResult(result)}
+                          className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-left transition hover:bg-[#f1f8df]"
+                        >
+                          <span className="min-w-0">
+                            <span className="flex items-center gap-2">
+                              <span className="truncate text-[11px] font-semibold text-slate-900">{result.ticker}</span>
+                              {owned ? <span className="shrink-0 rounded-full bg-[#dfffa1] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-[#35501d]">En cartera</span> : null}
+                            </span>
+                            <span className="mt-0.5 block truncate text-[10px] text-slate-500">{result.activo}</span>
+                          </span>
+                          <span className="shrink-0 text-[9px] text-slate-400">{result.exchange || result.tipo_activo}</span>
+                        </button>
+                      )
+                    })
+                  ) : marketSearchState === 'ready' ? (
+                    <div className="px-3 py-3 text-[11px] text-slate-500">No se encontraron instrumentos con gráfico disponible.</div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            {marketPositions.length > 0 ? (
+              <Select
+                value={selectedMarketSearchResult ? '' : String(marketPosition?.id ?? '')}
+                onValueChange={(value) => {
+                  setSelectedMarketSearchResult(null)
+                  setSelectedMarketPositionId(Number(value))
+                }}
+              >
+                <SelectTrigger size="sm" className="w-full border-slate-200 bg-white text-[11px] text-slate-700" aria-label="Activo de la cartera para el gráfico de mercado">
+                  <SelectValue placeholder="Elegir activo de tu cartera" />
+                </SelectTrigger>
+                <SelectContent className="border-slate-200 bg-white text-slate-900">
+                  {marketPositions.map((position) => (
+                    <SelectItem key={position.id} value={String(position.id)}>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="h-2 w-2 shrink-0 rounded-full bg-[#c8f56a]" />
+                        <span className="truncate">{position.price_ticker || position.ticker} · {position.activo}</span>
+                        <span className="ml-auto shrink-0 text-[8px] font-bold uppercase tracking-[0.08em] text-[#587c2a]">En cartera</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null}
+          </div>
+          <p className="text-[10px] leading-relaxed text-slate-500">Busca acciones, ETF o índices y ábrelos aquí sin salir de la aplicación. Las posiciones de tu cartera se identifican en verde lima.</p>
         </CardHeader>
         <CardContent className="px-5 py-5 sm:px-6">
-          {marketPosition?.market_symbol ? (
+          {marketChartSymbol ? (
             <>
               <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
                 <iframe
-                  key={marketPosition.market_symbol}
-                  title={`Gráfico de mercado de ${marketPosition.activo}`}
-                  src={tradingViewUrl(marketPosition.market_symbol)}
+                  key={marketChartSymbol}
+                  title={`Gráfico de mercado de ${marketChartName || marketChartTicker}`}
+                  src={tradingViewUrl(marketChartSymbol)}
                   className="h-[320px] w-full border-0 sm:h-[380px]"
                   loading="lazy"
                   referrerPolicy="no-referrer-when-downgrade"
                 />
               </div>
-              <p className="mt-3 flex items-start gap-2 text-[11px] leading-relaxed text-slate-500"><Info className="mt-0.5 h-4 w-4 shrink-0" />Widget gratuito de TradingView para el activo seleccionado. Es un gráfico de mercado, no una reconstrucción del valor agregado de tu cartera.</p>
+              <p className="mt-3 flex items-start gap-2 text-[11px] leading-relaxed text-slate-500"><Info className="mt-0.5 h-4 w-4 shrink-0" />Widget gratuito de TradingView para el instrumento seleccionado. Es un gráfico de mercado, no una reconstrucción del valor agregado de tu cartera.</p>
             </>
           ) : (
-            <div className="grid min-h-32 place-items-center rounded-xl border border-dashed border-slate-300 bg-white/50 p-6 text-center text-[11px] text-slate-500">Configura un símbolo de mercado en una posición para mostrar su gráfico.</div>
+            <div className="grid min-h-32 place-items-center rounded-xl border border-dashed border-slate-300 bg-white/50 p-6 text-center text-[11px] text-slate-500">Busca un instrumento arriba o configura un símbolo de mercado en una posición para mostrar su gráfico.</div>
           )}
         </CardContent>
       </Card>

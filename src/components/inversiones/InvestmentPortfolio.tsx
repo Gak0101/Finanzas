@@ -3,15 +3,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
-  AlertTriangle,
   ArrowDown,
   ArrowUp,
   CalendarDays,
-  CheckCircle2,
   ChevronDown,
   ChevronsUpDown,
   CircleDollarSign,
   Clock3,
+  Copy,
   Download,
   Info,
   Plus,
@@ -37,8 +36,10 @@ import type { ClosedInvestmentPosition } from '@/lib/inversiones/history'
 import type { InvestmentAnalytics } from '@/lib/inversiones/analytics'
 import { StockFinder } from '@/components/buscador-acciones/StockFinder'
 import { InvestmentAnalyticsPanel } from '@/components/inversiones/InvestmentAnalyticsPanel'
+import { MarketHoursPanel } from '@/components/inversiones/MarketHoursPanel'
 import { InvestmentNotificationAlerts } from '@/components/inversiones/InvestmentNotificationAlerts'
 import { PositionDetailDialog } from '@/components/inversiones/PositionDetailDialog'
+import { inferIsin } from '@/lib/inversiones/instrumentIdentity'
 
 type PortfolioData = {
   positions: InversionPosicion[]
@@ -309,6 +310,20 @@ function sourceDotClass(status: string) {
   if (status === 'FALLBACK') return 'bg-[#d69035]'
   if (status === 'API_OK') return 'bg-[#168261]'
   return 'bg-[#9aa5ae]'
+}
+
+function positionIsin(position: InversionPosicion) {
+  return position.isin || inferIsin(position.ticker, position.market_symbol)
+}
+
+async function copiarIsin(isin: string) {
+  try {
+    if (!navigator.clipboard) throw new Error('Portapapeles no disponible')
+    await navigator.clipboard.writeText(isin)
+    toast.success('ISIN copiado')
+  } catch {
+    toast.error('No se pudo copiar el ISIN')
+  }
 }
 
 function ClosedPositionsPanel({ positions }: { positions: ClosedInvestmentPosition[] }) {
@@ -748,33 +763,6 @@ export function InvestmentPortfolio() {
     )
   }
 
-  const priceCoverage = positions.length > 0 ? analytics?.performance.coverage.valuedPositions ?? summary.apiOkCount : 0
-  const costCoverage = analytics?.performance.coverage.costPositions ?? (positions.length - summary.missingCostCount)
-  const dateCoverage = analytics?.performance.coverage.datedPositions ?? positions.filter((position) => Boolean(position.fecha_apertura)).length
-  const qualityScore = positions.length > 0
-    ? Math.round(((priceCoverage + costCoverage + dateCoverage) / (positions.length * 3)) * 10)
-    : 0
-  const qualityItems = [
-    {
-      ok: summary.fallbackCount === 0,
-      title: summary.fallbackCount === 0 ? 'Todos los precios tienen fuente activa' : `${summary.fallbackCount} precios en fallback`,
-      detail: summary.fallbackCount === 0 ? 'No hay posiciones reteniendo un último valor.' : 'Se muestra el último precio válido hasta que vuelva la API.',
-      tag: summary.fallbackCount === 0 ? 'OK' : 'Revisar',
-    },
-    {
-      ok: summary.missingCostCount === 0,
-      title: summary.missingCostCount === 0 ? 'Coste de compra completo' : `${summary.missingCostCount} posiciones sin coste`,
-      detail: summary.missingCostCount === 0 ? 'La rentabilidad se puede comparar en toda la cartera.' : 'El P/L conocido no incluye esas posiciones.',
-      tag: summary.missingCostCount === 0 ? 'OK' : 'Parcial',
-    },
-    {
-      ok: dateCoverage === positions.length,
-      title: dateCoverage === positions.length ? 'Fechas de apertura completas' : `${positions.length - dateCoverage} posiciones sin fecha`,
-      detail: dateCoverage === positions.length ? 'La antigüedad puede calcularse en toda la cartera.' : 'La rentabilidad anualizada queda pendiente en esas posiciones.',
-      tag: dateCoverage === positions.length ? 'OK' : 'Completar',
-    },
-  ]
-
   return (
     <InvestmentFrame activeTab={activeTab} onChange={cambiarPestana} statusLabel="Cartera guardada en la app">
         <section className="flex flex-col gap-7 py-8 lg:flex-row lg:items-end lg:justify-between" id="inversiones">
@@ -798,6 +786,8 @@ export function InvestmentPortfolio() {
           <div className="rounded-xl bg-[#e5edde] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado cartera abierta</span><span className={(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.unrealisedPnl ?? summary.knownPnl)}</p><p className="mt-4 text-[10px] text-slate-500">Solo posiciones actuales · {formatPct(analytics?.performance.currentReturnPct ?? summary.knownReturn)}</p></div>
           <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado histórico</span><span className={(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.historicalNetResult ?? 0)}</p><p className="mt-4 text-[10px] text-slate-400">Ventas + ingresos − costes · combinado: {formatEuro(analytics?.performance.totalNetResult ?? summary.knownPnl)}</p></div>
         </section>
+
+        <MarketHoursPanel positions={positions} />
 
         <InvestmentNotificationAlerts
           rules={notificationAlerts}
@@ -837,24 +827,29 @@ export function InvestmentPortfolio() {
               </div>
             </div>
             <div className="grid gap-2 p-4 lg:hidden">
-              {filteredPositions.map((position) => (
-                <button
+              {filteredPositions.map((position) => {
+                const isin = positionIsin(position)
+                return <div
                   key={position.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Abrir detalle de ${assetLabel(position)}`}
                   onClick={() => setDetailPositionId(position.id)}
+                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setDetailPositionId(position.id) } }}
                   className="grid grid-cols-[1fr_auto] gap-3 rounded-lg border border-slate-200 bg-[#eeece5] p-4 text-left transition hover:border-slate-400"
                 >
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-semibold text-slate-900">{assetLabel(position)}</span>
                     <span className="mt-1 block truncate text-[11px] text-slate-500">{position.price_ticker || position.ticker} · {position.tipo} · {position.custodia}</span>
+                    {isin ? <span className="mt-1 inline-flex max-w-full items-center gap-1 text-[10px] text-slate-500"><span className="truncate">ISIN {isin}</span><button type="button" title="Copiar ISIN" aria-label={`Copiar ISIN ${isin}`} className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-white hover:text-slate-800" onClick={(event) => { event.stopPropagation(); void copiarIsin(isin) }}><Copy className="h-3 w-3" /></button></span> : <span className="mt-1 block text-[10px] text-slate-400">ISIN pendiente</span>}
                     <span className="mt-2 block text-[11px] text-slate-400">{position.fecha_apertura ? `Desde ${formatDate(position.fecha_apertura)}` : 'Fecha de compra pendiente'}</span>
                   </span>
                   <span className="text-right">
                     <strong className="block text-sm tabular-nums text-slate-900">{formatEuro(position.valor_actual)}</strong>
                     <span className={`mt-1 block text-[11px] font-semibold tabular-nums ${position.pnl === null ? 'text-slate-400' : position.pnl >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{position.pnl === null ? 'P/L pendiente' : `${formatEuro(position.pnl)} · ${formatPct(position.pnl_pct)}`}</span>
                   </span>
-                </button>
-              ))}
+                </div>
+              })}
               {filteredPositions.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-slate-300 p-5 text-center text-[11px] text-slate-500">
                   No hay posiciones que coincidan. <button type="button" className="font-semibold text-slate-900" onClick={() => { setSearch(''); setFilter('all') }}>Limpiar filtros</button>
@@ -878,6 +873,7 @@ export function InvestmentPortfolio() {
                 <tbody>
                   {filteredPositions.map((position) => {
                     const metrics = positionReturnMetrics(position)
+                    const isin = positionIsin(position)
                     return (
                       <tr
                         key={position.id}
@@ -893,6 +889,7 @@ export function InvestmentPortfolio() {
                             <div className="min-w-0">
                               <p className="max-w-[220px] truncate font-semibold text-slate-900">{assetLabel(position)}</p>
                               <p className="mt-0.5 truncate text-[9px] text-slate-400">{position.price_ticker || position.ticker} · {formatQuantity(position.cantidad)}</p>
+                              {isin ? <p className="mt-0.5 inline-flex max-w-full items-center gap-1 text-[9px] text-slate-500"><span className="truncate">ISIN {isin}</span><button type="button" title="Copiar ISIN" aria-label={`Copiar ISIN ${isin}`} className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-white hover:text-slate-800" onClick={(event) => { event.stopPropagation(); void copiarIsin(isin) }}><Copy className="h-3 w-3" /></button></p> : <p className="mt-0.5 text-[9px] text-slate-400">ISIN pendiente</p>}
                             </div>
                           </div>
                         </td>
@@ -947,7 +944,6 @@ export function InvestmentPortfolio() {
             </div>
           </div>
 
-          <div className="flex flex-col rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)] sm:p-6" id="quality-panel"><div className="flex items-start justify-between"><div><p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Control / confianza</p><h2 className="text-lg font-semibold tracking-[-0.04em]">Calidad de datos</h2></div><span className={`text-xs font-bold tabular-nums ${qualityScore >= 8 ? 'text-emerald-700' : 'text-amber-600'}`}>{qualityScore} / 10</span></div><p className="mt-4 text-[11px] leading-relaxed text-slate-500">{qualityScore >= 8 ? 'La cartera tiene una cobertura alta de precios, costes y fechas.' : 'Completa los datos señalados para comparar el rendimiento con mayor confianza.'}</p><div className="mt-5 grid gap-3 md:grid-cols-3">{qualityItems.map((item) => <div key={item.title} className="grid grid-cols-[14px_1fr_auto] items-start gap-2.5 border-b border-slate-200 pb-3 md:border-b-0 md:border-r md:pb-0 md:pr-3 md:last:border-r-0"><span className="mt-0.5">{item.ok ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> : <AlertTriangle className="h-3.5 w-3.5 text-amber-600" />}</span><div><p className="text-[10px] font-semibold text-slate-900">{item.title}</p><p className="mt-1 text-[9px] leading-relaxed text-slate-400">{item.detail}</p></div><span className="text-[9px] text-slate-400">{item.tag}</span></div>)}</div><div className="mt-5 flex justify-end"><Button variant="outline" size="sm" className="border-slate-200 bg-transparent text-slate-700 hover:bg-white" onClick={actualizarPrecios} disabled={updatingPrices}><RefreshCw className={updatingPrices ? 'animate-spin' : ''} />{updatingPrices ? 'Consultando…' : 'Volver a consultar APIs'}</Button></div></div>
         </section>
 
         {analytics ? (

@@ -1,0 +1,1 @@
+ALTER TABLE `inversiones_alertas` ADD `isin` text;

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 import { db } from '@/lib/db'
 import { inversiones_posiciones } from '@/lib/db/schema'
+import { normalizeIsin } from '@/lib/inversiones/instrumentIdentity'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -21,6 +22,7 @@ const positionUpdateSchema = z.object({
   objetivo_peso_pct: z.number().min(0).max(1).nullable().optional(),
   alerta_subida_pct: z.number().min(0).max(10).nullable().optional(),
   alerta_caida_pct: z.number().min(0).max(10).nullable().optional(),
+  isin: z.string().trim().regex(/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/i, 'El ISIN debe tener 12 caracteres y un formato válido').nullable().optional(),
 }).refine((value) => Object.keys(value).length > 0, 'No hay cambios que guardar')
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -38,10 +40,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Datos no válidos' }, { status: 400 })
   }
 
+  const updates = Object.prototype.hasOwnProperty.call(parsed.data, 'isin')
+    ? { ...parsed.data, isin: normalizeIsin(parsed.data.isin) }
+    : parsed.data
+
   const [position] = await db
     .update(inversiones_posiciones)
     .set({
-      ...parsed.data,
+      ...updates,
       updated_at: new Date().toISOString(),
     })
     .where(and(

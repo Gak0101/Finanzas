@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { inversiones_posiciones } from '@/lib/db/schema'
 import { persistDailyInvestmentSnapshots } from '@/lib/inversiones/snapshots'
 import { priceIdentifiers } from '@/lib/inversiones/priceIdentifiers'
+import { inferIsin } from '@/lib/inversiones/instrumentIdentity'
 
 type YahooChartPayload = {
   chart?: {
@@ -14,7 +15,9 @@ type YahooChartPayload = {
         shortName?: string
         longName?: string
         exchangeName?: string
+        fullExchangeName?: string
         quoteType?: string
+        regularMarketTime?: number
       } | null
       timestamp?: number[]
       indicators?: { quote?: Array<{ close?: Array<number | null> }> }
@@ -58,6 +61,7 @@ export type AssetSearchResult = {
   price_ticker: string
   crypto_id: string | null
   market_symbol: string | null
+  isin: string | null
   exchange: string | null
   poseido: boolean
   posicion_id: number | null
@@ -152,6 +156,10 @@ export async function searchYahooAssets(query: string): Promise<Array<{
   tipo_activo: string
   exchange: string | null
   market_symbol: string
+  isin: string | null
+  precio_actual: number | null
+  divisa: string | null
+  precio_actual_as_of: string | null
 }>> {
   const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=12&newsCount=0`
   const response = await fetch(url, {
@@ -160,18 +168,31 @@ export async function searchYahooAssets(query: string): Promise<Array<{
   })
   if (!response.ok) throw new Error(`Yahoo búsqueda: HTTP ${response.status}`)
   const payload = (await response.json()) as YahooSearchPayload
-  return (payload.quotes ?? [])
+  const quotes = (payload.quotes ?? [])
     .filter((quote) => Boolean(quote.symbol))
-    .map((quote) => {
+    .slice(0, 12)
+
+  return Promise.all(quotes.map(async (quote) => {
       const quoteType = quote.quoteType?.toUpperCase()
+      let latestPrice: PriceResult | null = null
+      try {
+        latestPrice = await fetchYahooCloseRaw(quote.symbol!)
+      } catch {
+        // El resultado de búsqueda sigue siendo útil aunque Yahoo no tenga una
+        // cotización reciente para uno de los mercados devueltos.
+      }
       return {
         ticker: quote.symbol!,
         name: quote.longname || quote.shortname || quote.symbol!,
         tipo_activo: quoteType === 'ETF' || quoteType === 'MUTUALFUND' ? 'ETF' : 'Acción',
         exchange: quote.exchDisp || quote.exchange || null,
         market_symbol: quote.symbol!,
+        isin: inferIsin(quote.symbol),
+        precio_actual: latestPrice?.price ?? null,
+        divisa: latestPrice?.nativeCurrency || quote.currency || null,
+        precio_actual_as_of: latestPrice?.asOf ?? null,
       }
-    })
+    }))
 }
 
 type PriceUpdate = { id: number; result: PriceResult }

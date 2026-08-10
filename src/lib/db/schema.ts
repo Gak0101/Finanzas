@@ -151,6 +151,7 @@ export const inversiones_posiciones = sqliteTable(
     activo: text('activo').notNull(),
     tipo: text('tipo').notNull(),
     ticker: text('ticker').notNull(),
+    isin: text('isin'),
     price_ticker: text('price_ticker'),
     crypto_id: text('crypto_id'),
     cantidad: real('cantidad').notNull(),
@@ -188,7 +189,7 @@ export const inversiones_posiciones = sqliteTable(
 )
 
 // Reglas de notificación externas. Las credenciales de Telegram y correo viven
-// en n8n; aquí solo se guarda qué vigilar, los umbrales y los canales elegidos.
+// en n8n; aquí solo se guarda qué vigilar, los umbrales, el objetivo y los canales elegidos.
 // `posicion_id` es nulo para una alerta de seguimiento de un activo que todavía
 // no forma parte de la cartera.
 export const inversiones_alertas = sqliteTable(
@@ -204,7 +205,9 @@ export const inversiones_alertas = sqliteTable(
     price_ticker: text('price_ticker'),
     crypto_id: text('crypto_id'),
     market_symbol: text('market_symbol'),
+    isin: text('isin'),
     precio_referencia: real('precio_referencia'),
+    precio_objetivo: real('precio_objetivo'),
     precio_actual: real('precio_actual'),
     rendimiento_pct: real('rendimiento_pct'),
     umbral_subida_pct: real('umbral_subida_pct'),

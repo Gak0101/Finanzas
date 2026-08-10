@@ -11,6 +11,7 @@ import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 import { inversionOperacionSchema } from '@/lib/validations/inversion'
 import { calculateClosedInvestmentPositions } from '@/lib/inversiones/history'
 import { priceIdentifiers } from '@/lib/inversiones/priceIdentifiers'
+import { inferIsin } from '@/lib/inversiones/instrumentIdentity'
 import { calculateInvestmentAnalytics } from '@/lib/inversiones/analytics'
 import { persistDailyInvestmentSnapshots } from '@/lib/inversiones/snapshots'
 
@@ -148,6 +149,7 @@ export async function POST(req: Request) {
           pnl: newValue - newCost,
           pnl_pct: newCost > 0 ? (newValue - newCost) / newCost : null,
           estado_fuente: existing.estado_fuente === 'FALLBACK' ? 'FALLBACK' : 'MANUAL',
+          isin: existing.isin || inferIsin(existing.ticker, existing.market_symbol),
           crypto_id: existing.crypto_id ?? identifiers.cryptoId,
           market_symbol: existing.market_symbol ?? identifiers.marketSymbol,
           fecha_apertura: !existing.fecha_apertura || input.fecha < existing.fecha_apertura
@@ -164,6 +166,7 @@ export async function POST(req: Request) {
         activo: input.activo,
         tipo: input.tipo_activo,
         ticker: input.ticker,
+        isin: inferIsin(input.ticker, identifiers.marketSymbol),
         price_ticker: input.ticker,
         crypto_id: identifiers.cryptoId,
         cantidad: input.cantidad,

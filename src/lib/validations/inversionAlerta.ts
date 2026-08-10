@@ -11,7 +11,9 @@ const inversionAlertaBaseSchema = z.object({
   price_ticker: z.string().trim().max(80).nullable().optional(),
   crypto_id: z.string().trim().max(100).nullable().optional(),
   market_symbol: z.string().trim().max(80).nullable().optional(),
+  isin: z.string().trim().regex(/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/i, 'El ISIN debe tener 12 caracteres y un formato válido').nullable().optional(),
   precio_referencia: z.number().positive().nullable().optional(),
+  precio_objetivo: z.number().positive('El precio objetivo debe ser mayor que 0').nullable().optional(),
   umbral_subida_pct: threshold,
   umbral_caida_pct: threshold,
   rearmar_pct: z.number().min(0).max(1).default(0.01),
@@ -21,8 +23,11 @@ const inversionAlertaBaseSchema = z.object({
 })
 
 export const inversionAlertaSchema = inversionAlertaBaseSchema.superRefine((value, context) => {
-  if (value.umbral_subida_pct === null && value.umbral_caida_pct === null) {
-    context.addIssue({ code: 'custom', message: 'Configura al menos una alerta de subida o caída', path: ['umbral_subida_pct'] })
+  if (value.umbral_subida_pct === null && value.umbral_caida_pct === null && value.precio_objetivo == null) {
+    context.addIssue({ code: 'custom', message: 'Configura una alerta porcentual o un precio objetivo', path: ['umbral_subida_pct'] })
+  }
+  if (value.alcance === 'cartera' && value.precio_objetivo != null) {
+    context.addIssue({ code: 'custom', message: 'El precio objetivo solo está disponible para activos', path: ['precio_objetivo'] })
   }
   if (!value.canal_telegram && !value.canal_email) {
     context.addIssue({ code: 'custom', message: 'Selecciona Telegram, email o ambos', path: ['canal_telegram'] })
@@ -33,8 +38,11 @@ export const inversionAlertaSchema = inversionAlertaBaseSchema.superRefine((valu
 })
 
 export const inversionAlertaPatchSchema = inversionAlertaBaseSchema.partial().superRefine((value, context) => {
-  if (value.umbral_subida_pct === null && value.umbral_caida_pct === null) {
-    context.addIssue({ code: 'custom', message: 'Configura al menos una alerta de subida o caída', path: ['umbral_subida_pct'] })
+  if (value.umbral_subida_pct === null && value.umbral_caida_pct === null && value.precio_objetivo == null) {
+    context.addIssue({ code: 'custom', message: 'Configura una alerta porcentual o un precio objetivo', path: ['umbral_subida_pct'] })
+  }
+  if (value.alcance === 'cartera' && value.precio_objetivo != null) {
+    context.addIssue({ code: 'custom', message: 'El precio objetivo solo está disponible para activos', path: ['precio_objetivo'] })
   }
   if (value.canal_telegram === false && value.canal_email === false) {
     context.addIssue({ code: 'custom', message: 'Selecciona Telegram, email o ambos', path: ['canal_telegram'] })
