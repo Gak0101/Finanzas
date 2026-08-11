@@ -12,6 +12,7 @@ import {
   Mail,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   Send,
   Trash2,
@@ -135,6 +136,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
   const [searching, setSearching] = useState(false)
   const [saving, setSaving] = useState(false)
   const [busyRuleId, setBusyRuleId] = useState<number | null>(null)
+  const [refreshingRuleId, setRefreshingRuleId] = useState<number | null>(null)
 
   const portfolioRule = useMemo(() => rules.find((rule) => rule.alcance === 'cartera') ?? null, [rules])
   const assetRules = useMemo(() => rules.filter((rule) => rule.alcance === 'activo'), [rules])
@@ -338,6 +340,23 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
     }
   }
 
+  async function refreshAssetPrice(rule: InversionAlerta) {
+    setRefreshingRuleId(rule.id)
+    try {
+      const response = await fetch(`/api/inversiones/alertas/${rule.id}/actualizar`, { method: 'POST' })
+      const payload = await response.json().catch(() => null) as { error?: string; precio_actual?: number | null; rendimiento_pct?: number | null } | null
+      if (!response.ok) throw new Error(payload?.error || 'No se pudo actualizar el precio')
+      await onChanged()
+      toast.success(payload?.precio_actual !== null && payload?.precio_actual !== undefined
+        ? `Precio actualizado · ${formatAssetPrice(payload.precio_actual, 'EUR')} · ${formatPercent(payload.rendimiento_pct)}`
+        : 'Precio actualizado')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo actualizar el precio')
+    } finally {
+      setRefreshingRuleId(null)
+    }
+  }
+
   async function removeRule(rule: InversionAlerta) {
     if (!window.confirm('¿Eliminar esta alerta externa?')) return
     setBusyRuleId(rule.id)
@@ -387,10 +406,14 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
           const position = rule.posicion_id ? positionById.get(rule.posicion_id) : null
           const name = position?.activo || rule.activo || rule.ticker || 'Activo vigilado'
           const ticker = position?.price_ticker || position?.ticker || rule.price_ticker || rule.ticker || '—'
-          const isBusy = busyRuleId === rule.id
+          const currentPrice = position?.precio_actual ?? rule.precio_actual
+          const currentReturnPct = position?.pnl_pct ?? rule.rendimiento_pct
+          const referencePrice = rule.precio_referencia
+          const isBusy = busyRuleId === rule.id || refreshingRuleId === rule.id
+          const isRefreshing = refreshingRuleId === rule.id
           return <div key={rule.id} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">{name}</p><span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500">{ticker}</span><span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${rule.activa ? 'bg-[#e7f2d4] text-[#31531d]' : 'bg-slate-100 text-slate-500'}`}>{position ? 'En cartera' : 'No poseído'}</span></div><p className="mt-1 text-[10px] text-slate-500">Subida {percentInput(rule.umbral_subida_pct) || '—'}% · caída {percentInput(rule.umbral_caida_pct) || '—'}%{rule.precio_objetivo !== null ? ` · objetivo ${formatAssetPrice(rule.precio_objetivo, 'EUR')}` : ''} · {ruleChannels(rule)}</p><p className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-400">{rule.ultimo_error ? <><CircleAlert className="h-3.5 w-3.5 text-amber-600" />{rule.ultimo_error}</> : rule.ultima_comprobacion_at ? <><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />Última comprobación {new Intl.DateTimeFormat('es-ES', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(rule.ultima_comprobacion_at))}</> : 'Pendiente de la próxima comprobación'}</p></div>
-            <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end"><span className="self-center text-sm font-semibold tabular-nums text-slate-700">{formatPercent(rule.rendimiento_pct)}</span><Button type="button" size="sm" variant="outline" className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => void updateRule(rule, { activa: !rule.activa })} disabled={isBusy}>{isBusy ? <Loader2 className="animate-spin" /> : rule.activa ? 'Pausar' : 'Activar'}</Button><Button type="button" size="icon" variant="outline" aria-label={`Editar alerta de ${name}`} className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => openAssetRule(rule)} disabled={isBusy}><Pencil /></Button><Button type="button" size="icon" variant="outline" aria-label={`Eliminar alerta de ${name}`} className="border-slate-200 bg-transparent text-red-700 hover:bg-red-50" onClick={() => void removeRule(rule)} disabled={isBusy}><Trash2 /></Button></div>
+            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">{name}</p><span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500">{ticker}</span><span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${rule.activa ? 'bg-[#e7f2d4] text-[#31531d]' : 'bg-slate-100 text-slate-500'}`}>{position ? 'En cartera' : 'No poseído'}</span></div><div className="mt-3 grid max-w-md grid-cols-2 gap-2"><div className="rounded-md bg-slate-50 px-3 py-2"><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Precio actual</p><p className="mt-1 text-sm font-semibold tabular-nums text-slate-800">{formatAssetPrice(currentPrice, 'EUR')}</p></div><div className={`rounded-md px-3 py-2 ${currentReturnPct !== null && currentReturnPct !== undefined && currentReturnPct < 0 ? 'bg-rose-50' : 'bg-[#eef6e5]'}`}><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Variación actual</p><p className={`mt-1 text-sm font-semibold tabular-nums ${currentReturnPct !== null && currentReturnPct !== undefined && currentReturnPct < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{formatPercent(currentReturnPct)}</p><p className="mt-0.5 text-[9px] text-slate-500">{position ? 'desde el coste' : referencePrice !== null ? `desde ${formatAssetPrice(referencePrice, 'EUR')}` : 'esperando referencia'}</p></div></div><p className="mt-2 text-[10px] text-slate-500">Avisar si sube {percentInput(rule.umbral_subida_pct) || '—'}% o cae {percentInput(rule.umbral_caida_pct) || '—'}%{rule.precio_objetivo !== null ? ` · objetivo ${formatAssetPrice(rule.precio_objetivo, 'EUR')}` : ''} · {ruleChannels(rule)}</p><p className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-400">{rule.ultimo_error ? <><CircleAlert className="h-3.5 w-3.5 text-amber-600" />{rule.ultimo_error}</> : rule.ultima_comprobacion_at ? <><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />Última comprobación {new Intl.DateTimeFormat('es-ES', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(rule.ultima_comprobacion_at))}</> : 'Pendiente de la próxima comprobación'}</p></div>
+            <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end"><Button type="button" size="sm" variant="outline" className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => void refreshAssetPrice(rule)} disabled={isBusy}>{isRefreshing ? <Loader2 className="animate-spin" /> : <RefreshCw />} {isRefreshing ? 'Actualizando…' : 'Actualizar precio'}</Button><Button type="button" size="sm" variant="outline" className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => void updateRule(rule, { activa: !rule.activa })} disabled={isBusy}>{isBusy ? <Loader2 className="animate-spin" /> : rule.activa ? 'Pausar' : 'Activar'}</Button><Button type="button" size="icon" variant="outline" aria-label={`Editar alerta de ${name}`} className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => openAssetRule(rule)} disabled={isBusy}><Pencil /></Button><Button type="button" size="icon" variant="outline" aria-label={`Eliminar alerta de ${name}`} className="border-slate-200 bg-transparent text-red-700 hover:bg-red-50" onClick={() => void removeRule(rule)} disabled={isBusy}><Trash2 /></Button></div>
           </div>
         })}
       </div> : <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-[#eeece5] px-4 py-5 text-center"><p className="text-sm font-semibold text-slate-700">Todavía no hay alertas de activos</p><p className="mt-1 text-[10px] text-slate-500">Crea una alerta para una posición o añade un seguimiento fuera de cartera.</p></div>}

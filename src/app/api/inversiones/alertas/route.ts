@@ -57,14 +57,16 @@ export async function POST(req: Request) {
   const cryptoId = input.crypto_id ?? position?.crypto_id ?? identifiers.cryptoId
 
   let referencePrice = input.precio_referencia ?? null
+  let capturedPrice: number | null = null
   if (input.alcance === 'activo' && !position && referencePrice === null) {
     try {
-      referencePrice = (await fetchAssetPrice({
+      capturedPrice = (await fetchAssetPrice({
         tipoActivo: input.tipo_activo || 'Acción',
         ticker: priceTicker,
         cryptoId,
         marketSymbol,
       })).price
+      referencePrice = capturedPrice
     } catch (error) {
       return NextResponse.json({
         error: error instanceof Error
@@ -108,8 +110,8 @@ export async function POST(req: Request) {
     isin,
     precio_referencia: input.alcance === 'cartera' ? null : referencePrice,
     precio_objetivo: input.alcance === 'cartera' ? null : input.precio_objetivo ?? null,
-    precio_actual: existing?.precio_actual ?? (position?.precio_actual ?? null),
-    rendimiento_pct: existing?.rendimiento_pct ?? (position?.pnl_pct ?? null),
+    precio_actual: existing?.precio_actual ?? (position?.precio_actual ?? capturedPrice),
+    rendimiento_pct: existing?.rendimiento_pct ?? (position?.pnl_pct ?? (capturedPrice !== null && referencePrice && referencePrice > 0 ? (capturedPrice - referencePrice) / referencePrice : null)),
     umbral_subida_pct: input.umbral_subida_pct,
     umbral_caida_pct: input.umbral_caida_pct,
     rearmar_pct: input.rearmar_pct,
