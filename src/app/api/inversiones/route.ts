@@ -94,7 +94,11 @@ export async function POST(req: Request) {
   const input = parsed.data
   const importe = input.importe ?? input.cantidad * input.precio_unitario
   const now = new Date().toISOString()
-  const identifiers = priceIdentifiers(input.tipo_activo, input.ticker)
+  const selectedPriceTicker = input.price_ticker?.trim() || input.ticker.trim()
+  const identifiers = priceIdentifiers(input.tipo_activo, selectedPriceTicker)
+  const cryptoId = input.crypto_id?.trim() || identifiers.cryptoId
+  const marketSymbol = input.market_symbol?.trim() || identifiers.marketSymbol
+  const isin = input.isin?.trim() || inferIsin(input.ticker, selectedPriceTicker, marketSymbol)
   const existing = await db.query.inversiones_posiciones.findFirst({
     where: and(
       eq(inversiones_posiciones.usuario_id, auth.userId),
@@ -149,9 +153,10 @@ export async function POST(req: Request) {
           pnl: newValue - newCost,
           pnl_pct: newCost > 0 ? (newValue - newCost) / newCost : null,
           estado_fuente: existing.estado_fuente === 'FALLBACK' ? 'FALLBACK' : 'MANUAL',
-          isin: existing.isin || inferIsin(existing.ticker, existing.market_symbol),
-          crypto_id: existing.crypto_id ?? identifiers.cryptoId,
-          market_symbol: existing.market_symbol ?? identifiers.marketSymbol,
+          isin: existing.isin || isin,
+          price_ticker: input.price_ticker?.trim() || existing.price_ticker || selectedPriceTicker,
+          crypto_id: existing.crypto_id ?? cryptoId,
+          market_symbol: existing.market_symbol ?? marketSymbol,
           fecha_apertura: !existing.fecha_apertura || input.fecha < existing.fecha_apertura
             ? input.fecha
             : existing.fecha_apertura,
@@ -166,9 +171,9 @@ export async function POST(req: Request) {
         activo: input.activo,
         tipo: input.tipo_activo,
         ticker: input.ticker,
-        isin: inferIsin(input.ticker, identifiers.marketSymbol),
-        price_ticker: input.ticker,
-        crypto_id: identifiers.cryptoId,
+        isin,
+        price_ticker: selectedPriceTicker,
+        crypto_id: cryptoId,
         cantidad: input.cantidad,
         precio_compra: input.precio_unitario,
         coste: importe,
@@ -191,7 +196,7 @@ export async function POST(req: Request) {
         incluido_resumen: true,
         divisa: 'EUR',
         sector: input.tipo_activo,
-        market_symbol: identifiers.marketSymbol,
+        market_symbol: marketSymbol,
       })
     }
   }

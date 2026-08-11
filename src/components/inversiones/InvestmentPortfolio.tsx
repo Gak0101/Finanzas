@@ -13,6 +13,7 @@ import {
   Copy,
   Download,
   Info,
+  Loader2,
   Plus,
   RefreshCw,
   Search,
@@ -51,6 +52,22 @@ type PortfolioData = {
 
 type OperationType = 'Compra' | 'Venta' | 'Dividendo' | 'Aportación' | 'Traspaso'
 type InvestmentTab = 'portfolio' | 'buscador'
+type OperationAssetSearchResult = {
+  key: string
+  activo: string
+  ticker: string
+  tipo_activo: string
+  price_ticker: string
+  crypto_id: string | null
+  market_symbol: string | null
+  exchange: string | null
+  isin: string | null
+  precio_actual: number | null
+  divisa: string | null
+  precio_actual_as_of: string | null
+  poseido: boolean
+  posicion_id: number | null
+}
 type PositionSort =
   | 'name_asc'
   | 'name_desc'
@@ -128,6 +145,16 @@ function compareNullable(left: number | null, right: number | null, direction: '
   if (left === null) return 1
   if (right === null) return -1
   return direction === 'asc' ? left - right : right - left
+}
+
+function formatOperationSearchPrice(value: number | null, currency: string | null) {
+  if (value === null || !Number.isFinite(value)) return 'Precio no disponible'
+  const formatted = new Intl.NumberFormat('es-ES', {
+    minimumFractionDigits: value < 1 ? 4 : 2,
+    maximumFractionDigits: value < 1 ? 6 : 2,
+  }).format(value)
+  const symbol = currency === 'EUR' ? '€' : currency === 'USD' ? '$' : currency === 'GBP' ? '£' : currency || ''
+  return symbol ? `${formatted} ${symbol}` : formatted
 }
 
 function SortableTableHeader({
@@ -432,6 +459,13 @@ export function InvestmentPortfolio() {
   const [fecha, setFecha] = useState('')
   const [activo, setActivo] = useState('')
   const [ticker, setTicker] = useState('')
+  const [operationAssetResults, setOperationAssetResults] = useState<OperationAssetSearchResult[]>([])
+  const [searchingOperationAsset, setSearchingOperationAsset] = useState(false)
+  const [selectedOperationAsset, setSelectedOperationAsset] = useState<OperationAssetSearchResult | null>(null)
+  const [operationPriceTicker, setOperationPriceTicker] = useState('')
+  const [operationMarketSymbol, setOperationMarketSymbol] = useState<string | null>(null)
+  const [operationCryptoId, setOperationCryptoId] = useState<string | null>(null)
+  const [operationIsin, setOperationIsin] = useState('')
   const [tipoActivo, setTipoActivo] = useState('ETF')
   const [custodia, setCustodia] = useState('')
   const [cantidad, setCantidad] = useState('')
@@ -467,6 +501,35 @@ export function InvestmentPortfolio() {
   useEffect(() => {
     void cargarPortfolio()
   }, [])
+
+  useEffect(() => {
+    const query = activo.trim()
+    if (!dialogOpen || selectedPosition !== 'new' || selectedOperationAsset || query.length < 2) {
+      setOperationAssetResults([])
+      setSearchingOperationAsset(false)
+      return
+    }
+
+    const controller = new AbortController()
+    const timer = window.setTimeout(async () => {
+      setSearchingOperationAsset(true)
+      try {
+        const response = await fetch(`/api/inversiones/alertas/buscar-activo?q=${encodeURIComponent(query)}`, { cache: 'no-store', signal: controller.signal })
+        const payload = await response.json().catch(() => null) as { results?: OperationAssetSearchResult[]; error?: string } | null
+        if (!response.ok) throw new Error(payload?.error || 'No se pudo buscar el activo')
+        setOperationAssetResults(payload?.results ?? [])
+      } catch (error) {
+        if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : 'No se pudo buscar el activo')
+      } finally {
+        if (!controller.signal.aborted) setSearchingOperationAsset(false)
+      }
+    }, 280)
+
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [activo, dialogOpen, selectedOperationAsset, selectedPosition])
 
   const positions = data?.positions ?? []
   const operations = data?.operations ?? []
@@ -593,6 +656,13 @@ export function InvestmentPortfolio() {
     setFecha(new Date().toISOString().slice(0, 10))
     setActivo('')
     setTicker('')
+    setOperationAssetResults([])
+    setSearchingOperationAsset(false)
+    setSelectedOperationAsset(null)
+    setOperationPriceTicker('')
+    setOperationMarketSymbol(null)
+    setOperationCryptoId(null)
+    setOperationIsin('')
     setTipoActivo('ETF')
     setCustodia('')
     setCantidad('')
@@ -607,6 +677,12 @@ export function InvestmentPortfolio() {
     if (value === 'new') {
       setActivo('')
       setTicker('')
+      setSelectedOperationAsset(null)
+      setOperationAssetResults([])
+      setOperationPriceTicker('')
+      setOperationMarketSymbol(null)
+      setOperationCryptoId(null)
+      setOperationIsin('')
       setCustodia('')
       setCantidad('')
       setPrecio('')
@@ -616,9 +692,40 @@ export function InvestmentPortfolio() {
     if (!position) return
     setActivo(position.activo)
     setTicker(position.price_ticker || position.ticker)
+    setSelectedOperationAsset(null)
+    setOperationAssetResults([])
+    setOperationPriceTicker(position.price_ticker || position.ticker)
+    setOperationMarketSymbol(position.market_symbol)
+    setOperationCryptoId(position.crypto_id)
+    setOperationIsin(position.isin || '')
     setTipoActivo(position.tipo as typeof tipoActivo)
     setCustodia(position.custodia)
     setPrecio(position.precio_actual?.toString() ?? '')
+  }
+
+  function handleOperationAssetChange(value: string) {
+    setActivo(value)
+    setTicker('')
+    setSelectedPosition('new')
+    setSelectedOperationAsset(null)
+    setOperationPriceTicker('')
+    setOperationMarketSymbol(null)
+    setOperationCryptoId(null)
+    setOperationIsin('')
+  }
+
+  function chooseOperationAsset(result: OperationAssetSearchResult) {
+    if (result.posicion_id !== null) seleccionarPosicion(String(result.posicion_id))
+    else setSelectedPosition('new')
+    setSelectedOperationAsset(result)
+    setOperationAssetResults([])
+    setActivo(result.activo)
+    setTicker(result.price_ticker || result.ticker)
+    setOperationPriceTicker(result.price_ticker || result.ticker)
+    setOperationMarketSymbol(result.market_symbol)
+    setOperationCryptoId(result.crypto_id)
+    setOperationIsin(result.isin || '')
+    setTipoActivo(result.tipo_activo)
   }
 
   function handleOperationType(value: OperationType) {
@@ -656,6 +763,10 @@ export function InvestmentPortfolio() {
           comision: fee,
           impuesto: tax,
           notas: notas || undefined,
+          price_ticker: operationPriceTicker || ticker,
+          market_symbol: operationMarketSymbol || undefined,
+          crypto_id: operationCryptoId || undefined,
+          isin: operationIsin || undefined,
         }),
       })
       const payload = await response.json().catch(() => null)
@@ -998,18 +1109,40 @@ export function InvestmentPortfolio() {
       </Dialog>
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetOperation() }}>
-        <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-lg overflow-x-hidden overflow-y-auto overscroll-contain border-slate-200 bg-[#f7f5ef] p-4 text-slate-900 sm:w-full sm:p-6">
+        <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-lg grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-slate-200 bg-[#f7f5ef] p-4 text-slate-900 sm:max-h-[90vh] sm:w-full sm:p-6">
           <DialogHeader><DialogTitle className="tracking-[-0.04em]">Registrar operación</DialogTitle><DialogDescription>Guarda una compra, venta o movimiento para conservar el historial del portfolio.</DialogDescription></DialogHeader>
-          <form onSubmit={guardarOperacion} className="grid min-w-0 gap-4">
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-type">Tipo</Label><select id="operation-type" value={operationType} onChange={(event) => handleOperationType(event.target.value as OperationType)} className="h-9 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-500"><option value="Compra">Compra</option><option value="Venta">Venta</option><option value="Dividendo">Dividendo</option><option value="Aportación">Aportación</option><option value="Traspaso">Traspaso</option></select></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-date">Fecha</Label><Input id="operation-date" type="date" value={fecha} onChange={(event) => setFecha(event.target.value)} required /></div></div>
-            <div className="grid min-w-0 gap-2"><Label htmlFor="operation-position">Posición existente</Label><select id="operation-position" value={selectedPosition} onChange={(event) => seleccionarPosicion(event.target.value)} className="h-9 w-full min-w-0 max-w-full truncate rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-500"><option value="new">Nueva posición</option>{positions.map((position) => <option key={position.id} value={position.id}>{position.price_ticker || position.ticker} · {assetLabel(position)} · {position.custodia}</option>)}</select></div>
-            <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,.6fr)]"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-asset">Activo</Label><Input id="operation-asset" value={activo} onChange={(event) => setActivo(event.target.value)} placeholder="Nombre del activo" required /></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-ticker">Ticker</Label><Input id="operation-ticker" value={ticker} onChange={(event) => setTicker(event.target.value)} placeholder="BTC, SXR8…" required /></div></div>
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-type-asset">Tipo de activo</Label><select id="operation-type-asset" value={tipoActivo} onChange={(event) => setTipoActivo(event.target.value)} className="h-9 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-sm outline-none focus:border-slate-500"><option value="Crypto">Crypto</option><option value="Crypto / Staking">Crypto / Staking</option><option value="ETF">ETF</option><option value="Acción">Acción</option><option value="Fondo">Fondo</option><option value="Otro">Otro</option></select></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-custody">Custodia / broker</Label><Input id="operation-custody" list="broker-suggestions" value={custodia} onChange={(event) => setCustodia(event.target.value)} placeholder="Trade Republic, XTB…" required /><datalist id="broker-suggestions"><option value="Trade Republic" /><option value="XTB" /><option value="Cold wallet" /><option value="Otro" /></datalist><p className="text-[9px] leading-relaxed text-slate-400">Indica dónde está custodiada; la cotización se actualiza por proveedor de mercado.</p></div></div>
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-quantity">Cantidad</Label><Input id="operation-quantity" type="number" min="0" step="any" value={cantidad} onChange={(event) => setCantidad(event.target.value)} placeholder="0,00" required /></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-price">Precio unitario (€)</Label><Input id="operation-price" type="number" min="0" step="any" value={precio} onChange={(event) => setPrecio(event.target.value)} placeholder="0,00" required /></div></div>
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-fee">Comisión (€) <span className="font-normal text-slate-400">(opcional)</span></Label><Input id="operation-fee" type="number" min="0" step="any" value={comision} onChange={(event) => setComision(event.target.value)} placeholder="0,00" /></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-tax">Impuesto / retención (€) <span className="font-normal text-slate-400">(opcional)</span></Label><Input id="operation-tax" type="number" min="0" step="any" value={impuesto} onChange={(event) => setImpuesto(event.target.value)} placeholder="0,00" /></div></div>
-            <div className="grid min-w-0 gap-2"><Label htmlFor="operation-notes">Nota <span className="font-normal text-slate-400">(opcional)</span></Label><textarea id="operation-notes" value={notas} onChange={(event) => setNotas(event.target.value)} rows={3} placeholder="Comisión, motivo, referencia…" className="min-w-0 resize-y rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-slate-500" /></div>
-            <div className="flex min-w-0 gap-2 rounded-md bg-[#eeece5] px-3 py-2.5 text-[10px] leading-relaxed text-slate-500"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="min-w-0">La operación queda guardada en tu cuenta. No envía órdenes al broker.</span></div>
-            <DialogFooter><Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" className="bg-slate-900 text-white hover:bg-slate-700" disabled={savingOperation}>{savingOperation ? 'Guardando…' : 'Guardar operación'}</Button></DialogFooter>
+          <form onSubmit={guardarOperacion} className="min-h-0 overflow-y-auto overscroll-contain pr-1 sm:pr-2">
+            <div className="grid min-w-0 gap-4 pb-1">
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+                <div className="grid min-w-0 gap-2"><Label htmlFor="operation-type">Tipo</Label><select id="operation-type" value={operationType} onChange={(event) => handleOperationType(event.target.value as OperationType)} className="h-10 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-slate-500 sm:text-sm"><option value="Compra">Compra</option><option value="Venta">Venta</option><option value="Dividendo">Dividendo</option><option value="Aportación">Aportación</option><option value="Traspaso">Traspaso</option></select></div>
+                <div className="grid min-w-0 gap-2"><Label htmlFor="operation-date">Fecha</Label><Input id="operation-date" type="date" value={fecha} onChange={(event) => setFecha(event.target.value)} className="h-10 text-base sm:text-sm" required /></div>
+              </div>
+              <div className="grid min-w-0 gap-2"><Label htmlFor="operation-position">Posición existente</Label><select id="operation-position" value={selectedPosition} onChange={(event) => seleccionarPosicion(event.target.value)} className="h-10 w-full min-w-0 max-w-full truncate rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-slate-500 sm:text-sm"><option value="new">Nueva posición</option>{positions.map((position) => <option key={position.id} value={position.id}>{assetLabel(position)} · {position.price_ticker || position.ticker}</option>)}</select><p className="text-[9px] leading-relaxed text-slate-400">Si no existe todavía, escribe el nombre del activo y selecciona su mercado.</p></div>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,.6fr)]">
+                <div className="grid min-w-0 gap-2">
+                  <Label htmlFor="operation-asset">Activo / mercado</Label>
+                  <div className="relative min-w-0">
+                    <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                    <Input id="operation-asset" value={activo} onChange={(event) => handleOperationAssetChange(event.target.value)} placeholder="Busca empresa, ETF o crypto…" autoComplete="off" readOnly={Boolean(selectedOperationAsset)} role="combobox" aria-autocomplete="list" aria-controls="operation-asset-results" aria-expanded={operationAssetResults.length > 0} className="h-10 w-full min-w-0 pl-9 pr-10 text-base sm:text-sm" required />
+                    {searchingOperationAsset ? <Loader2 className="absolute right-3 top-3 h-4 w-4 animate-spin text-slate-400" /> : null}
+                    {operationAssetResults.length > 0 ? <div id="operation-asset-results" role="listbox" className="absolute left-0 right-0 top-full z-30 mt-1 max-h-64 overflow-y-auto rounded-md border border-slate-200 bg-white p-1 shadow-xl">
+                      {operationAssetResults.map((result) => <button type="button" role="option" key={result.key} className="flex w-full min-w-0 items-start justify-between gap-3 rounded px-3 py-2.5 text-left hover:bg-slate-50 focus:bg-slate-50 focus:outline-none" onClick={() => chooseOperationAsset(result)}>
+                        <span className="min-w-0"><span className="block truncate text-xs font-semibold text-slate-800">{result.activo}</span><span className="mt-0.5 block truncate text-[10px] text-slate-500">{result.price_ticker || result.ticker} · {result.exchange || result.market_symbol || (result.tipo_activo.includes('Crypto') ? 'CoinGecko' : 'Mercado no identificado')}</span><span className="mt-0.5 block text-[10px] text-slate-400">{formatOperationSearchPrice(result.precio_actual, result.divisa)}{result.isin ? ` · ISIN ${result.isin}` : ''}</span></span>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold ${result.poseido ? 'bg-[#e7f2d4] text-[#31531d]' : 'bg-slate-100 text-slate-500'}`}>{result.poseido ? 'En cartera' : result.tipo_activo}</span>
+                      </button>)}
+                    </div> : null}
+                  </div>
+                  {selectedOperationAsset ? <div className="flex min-w-0 items-center justify-between gap-3 rounded-md border border-[#c7dda7] bg-[#e7f2d4] px-3 py-2.5"><div className="min-w-0"><p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#52783a]">Mercado seleccionado</p><p className="truncate text-xs font-semibold text-[#31531d]">{selectedOperationAsset.price_ticker || selectedOperationAsset.ticker} · {selectedOperationAsset.exchange || selectedOperationAsset.market_symbol || (selectedOperationAsset.tipo_activo.includes('Crypto') ? 'CoinGecko' : 'Mercado no identificado')}</p></div><Button type="button" size="sm" variant="outline" className="shrink-0 border-[#90b85f] bg-transparent text-[#31531d] hover:bg-[#dceec0]" onClick={() => handleOperationAssetChange('')}>Cambiar</Button></div> : <p className="text-[9px] leading-relaxed text-slate-400">Escribe al menos 2 caracteres; aparecerán cotizaciones de distintos mercados y el ticker se rellenará al elegir una.</p>}
+                </div>
+                <div className="grid min-w-0 gap-2"><Label htmlFor="operation-ticker">Ticker {selectedOperationAsset ? <span className="font-normal text-slate-400">(automático)</span> : null}</Label><Input id="operation-ticker" value={ticker} onChange={(event) => { setTicker(event.target.value.toUpperCase()); setSelectedOperationAsset(null); setOperationPriceTicker(''); setOperationMarketSymbol(null); setOperationCryptoId(null); setOperationIsin('') }} placeholder="BTC, SXR8…" readOnly={Boolean(selectedOperationAsset)} className="h-10 w-full min-w-0 text-base sm:text-sm" required /><p className="text-[9px] leading-relaxed text-slate-400">{selectedOperationAsset ? 'Se conservará el símbolo del mercado elegido.' : 'Puedes escribirlo manualmente si no aparece ninguna coincidencia.'}</p></div>
+              </div>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-type-asset">Tipo de activo</Label><select id="operation-type-asset" value={tipoActivo} onChange={(event) => setTipoActivo(event.target.value)} className="h-10 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-slate-500 sm:text-sm"><option value="Crypto">Crypto</option><option value="Crypto / Staking">Crypto / Staking</option><option value="ETF">ETF</option><option value="Acción">Acción</option><option value="Fondo">Fondo</option><option value="Otro">Otro</option></select></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-custody">Custodia / broker</Label><Input id="operation-custody" list="broker-suggestions" value={custodia} onChange={(event) => setCustodia(event.target.value)} placeholder="Trade Republic, XTB…" className="h-10 text-base sm:text-sm" required /><datalist id="broker-suggestions"><option value="Trade Republic" /><option value="XTB" /><option value="Cold wallet" /><option value="Otro" /></datalist><p className="text-[9px] leading-relaxed text-slate-400">Indica dónde está custodiada; la cotización se actualiza por proveedor de mercado.</p></div></div>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-quantity">Cantidad</Label><Input id="operation-quantity" type="number" min="0" step="any" value={cantidad} onChange={(event) => setCantidad(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" required /></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-price">Precio unitario (€)</Label><Input id="operation-price" type="number" min="0" step="any" value={precio} onChange={(event) => setPrecio(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" required /></div></div>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-fee">Comisión (€) <span className="font-normal text-slate-400">(opcional)</span></Label><Input id="operation-fee" type="number" min="0" step="any" value={comision} onChange={(event) => setComision(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" /></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-tax">Impuesto / retención (€) <span className="font-normal text-slate-400">(opcional)</span></Label><Input id="operation-tax" type="number" min="0" step="any" value={impuesto} onChange={(event) => setImpuesto(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" /></div></div>
+              <div className="grid min-w-0 gap-2"><Label htmlFor="operation-notes">Nota <span className="font-normal text-slate-400">(opcional)</span></Label><textarea id="operation-notes" value={notas} onChange={(event) => setNotas(event.target.value)} rows={3} placeholder="Comisión, motivo, referencia…" className="min-w-0 resize-y rounded-md border border-slate-200 bg-white px-3 py-2 text-base outline-none placeholder:text-slate-400 focus:border-slate-500 sm:text-sm" /></div>
+              <div className="flex min-w-0 gap-2 rounded-md bg-[#eeece5] px-3 py-2.5 text-[10px] leading-relaxed text-slate-500"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="min-w-0">La operación queda guardada en tu cuenta. No envía órdenes al broker.</span></div>
+              <DialogFooter className="sticky bottom-0 -mx-1 mt-1 border-t border-slate-200 bg-[#f7f5ef] px-1 pt-3 sm:static sm:mx-0 sm:mt-0 sm:border-0 sm:bg-transparent sm:px-0 sm:pt-0"><Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" className="w-full bg-slate-900 text-white hover:bg-slate-700 sm:w-auto" disabled={savingOperation}>{savingOperation ? 'Guardando…' : 'Guardar operación'}</Button></DialogFooter>
+            </div>
           </form>
         </DialogContent>
       </Dialog>
