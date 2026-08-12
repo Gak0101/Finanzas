@@ -55,6 +55,9 @@ type Props = {
   positions: InversionPosicion[]
   portfolioReturnPct: number | null
   onChanged: () => Promise<void>
+  scenarioMode?: boolean
+  onScenarioRulesChange?: (rules: InversionAlerta[]) => Promise<void> | void
+  onScenarioPriceRefresh?: (positionId: number, update: { price: number; sourceUrl: string; provider: string; asOf?: string }) => Promise<void> | void
 }
 
 type AssetIntent = 'position' | 'watchlist'
@@ -116,7 +119,7 @@ function channelButtonClass(active: boolean) {
     : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
 }
 
-export function InvestmentNotificationAlerts({ rules, positions, portfolioReturnPct, onChanged }: Props) {
+export function InvestmentNotificationAlerts({ rules, positions, portfolioReturnPct, onChanged, scenarioMode = false, onScenarioRulesChange, onScenarioPriceRefresh }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [scope, setScope] = useState<'cartera' | 'activo'>('cartera')
   const [assetIntent, setAssetIntent] = useState<AssetIntent>('position')
@@ -137,6 +140,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
   const [saving, setSaving] = useState(false)
   const [busyRuleId, setBusyRuleId] = useState<number | null>(null)
   const [refreshingRuleId, setRefreshingRuleId] = useState<number | null>(null)
+  const [rulePendingDeletion, setRulePendingDeletion] = useState<InversionAlerta | null>(null)
 
   const portfolioRule = useMemo(() => rules.find((rule) => rule.alcance === 'cartera') ?? null, [rules])
   const assetRules = useMemo(() => rules.filter((rule) => rule.alcance === 'activo'), [rules])
@@ -153,13 +157,59 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
     const timer = window.setTimeout(async () => {
       setSearching(true)
       try {
+        const localResults: AssetSearchResult[] = positions
+          .filter((position) => {
+            const query = searchQuery.trim().toLocaleLowerCase('es')
+            return [position.activo, position.ticker, position.price_ticker, position.market_symbol, position.isin]
+              .some((value) => value?.toLocaleLowerCase('es').includes(query))
+          })
+          .map((position) => ({
+            key: `position:${position.id}`,
+            activo: position.activo,
+            ticker: position.ticker,
+            tipo_activo: position.tipo,
+            price_ticker: position.price_ticker || position.ticker,
+            crypto_id: position.crypto_id,
+            market_symbol: position.market_symbol,
+            exchange: exchangeLabelFromSymbol(position.market_symbol) || position.market_symbol,
+            isin: position.isin || inferIsin(position.ticker, position.market_symbol),
+            precio_actual: position.precio_actual,
+            divisa: position.divisa,
+            precio_actual_as_of: position.snapshot_at,
+            poseido: true,
+            posicion_id: position.id,
+          }))
+
         const response = await fetch(`/api/inversiones/alertas/buscar-activo?q=${encodeURIComponent(searchQuery.trim())}`, { cache: 'no-store', signal: controller.signal })
         const payload = await response.json().catch(() => null) as { results?: AssetSearchResult[]; error?: string } | null
         if (!response.ok) throw new Error(payload?.error || 'No se pudo buscar el activo')
-        const results = payload?.results ?? []
-        setSearchResults(results.filter((result) => assetIntent === 'position' ? result.poseido : !result.poseido))
+        const remoteResults = (payload?.results ?? []).filter((result) => assetIntent === 'position' ? result.poseido : !result.poseido)
+        const results = [...localResults, ...remoteResults].filter((result, index, all) => all.findIndex((item) => item.key === result.key) === index)
+        setSearchResults(results)
       } catch (error) {
-        if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : 'No se pudo buscar el activo')
+        if (!controller.signal.aborted) {
+          const localResults = positions
+            .filter((position) => [position.activo, position.ticker, position.price_ticker, position.market_symbol, position.isin]
+              .some((value) => value?.toLocaleLowerCase('es').includes(searchQuery.trim().toLocaleLowerCase('es'))))
+            .map((position) => ({
+              key: `position:${position.id}`,
+              activo: position.activo,
+              ticker: position.ticker,
+              tipo_activo: position.tipo,
+              price_ticker: position.price_ticker || position.ticker,
+              crypto_id: position.crypto_id,
+              market_symbol: position.market_symbol,
+              exchange: exchangeLabelFromSymbol(position.market_symbol) || position.market_symbol,
+              isin: position.isin || inferIsin(position.ticker, position.market_symbol),
+              precio_actual: position.precio_actual,
+              divisa: position.divisa,
+              precio_actual_as_of: position.snapshot_at,
+              poseido: true,
+              posicion_id: position.id,
+            }))
+          setSearchResults(assetIntent === 'position' ? localResults : [])
+          if (!localResults.length) toast.error(error instanceof Error ? error.message : 'No se pudo buscar el activo')
+        }
       } finally {
         if (!controller.signal.aborted) setSearching(false)
       }
@@ -168,7 +218,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
       window.clearTimeout(timer)
       controller.abort()
     }
-  }, [assetIntent, dialogOpen, editingRule, scope, searchQuery])
+  }, [assetIntent, dialogOpen, editingRule, positions, scenarioMode, scope, searchQuery])
 
   function resetForm() {
     setEditingRule(null)
@@ -301,7 +351,57 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
             canal_telegram: telegram,
             canal_email: email,
             activa: active,
-          }
+             }
+
+      if (scenarioMode && onScenarioRulesChange) {
+        const now = new Date().toISOString()
+        const selectedPosition = selectedAsset?.posicion_id ? positionById.get(selectedAsset.posicion_id) : null
+        const referenceValue = scope === 'activo' && !selectedAsset?.poseido && referencePrice.trim() !== ''
+          ? Number(referencePrice)
+          : null
+        const currentPrice = selectedPosition?.precio_actual ?? selectedAsset?.precio_actual ?? null
+        const currentReturn = selectedPosition?.pnl_pct
+          ?? (currentPrice !== null && referenceValue !== null && referenceValue > 0 ? (currentPrice - referenceValue) / referenceValue : null)
+        const changes: Omit<InversionAlerta, 'id' | 'created_at'> = {
+          usuario_id: editingRule?.usuario_id ?? 0,
+          alcance: scope,
+          posicion_id: scope === 'activo' ? selectedAsset?.posicion_id ?? editingRule?.posicion_id ?? null : null,
+          activo: scope === 'activo' ? selectedAsset?.activo ?? editingRule?.activo ?? null : null,
+          ticker: scope === 'activo' ? selectedAsset?.ticker ?? editingRule?.ticker ?? null : null,
+          tipo_activo: scope === 'activo' ? selectedAsset?.tipo_activo ?? editingRule?.tipo_activo ?? null : null,
+          price_ticker: scope === 'activo' ? selectedAsset?.price_ticker ?? editingRule?.price_ticker ?? null : null,
+          crypto_id: scope === 'activo' ? selectedAsset?.crypto_id ?? editingRule?.crypto_id ?? null : null,
+          market_symbol: scope === 'activo' ? selectedAsset?.market_symbol ?? editingRule?.market_symbol ?? null : null,
+          isin: scope === 'activo' ? isin.trim() || selectedAsset?.isin || editingRule?.isin || null : null,
+          precio_referencia: referenceValue,
+          precio_objetivo: scope === 'activo' ? targetPriceValue : null,
+          precio_actual: scope === 'activo' ? currentPrice : null,
+          rendimiento_pct: scope === 'activo' ? currentReturn : portfolioReturnPct,
+          umbral_subida_pct: risePct,
+          umbral_caida_pct: dropPct,
+          rearmar_pct: rearmPct,
+          estado: editingRule?.estado ?? 'normal',
+          canal_telegram: telegram,
+          canal_email: email,
+          activa: active,
+          ultima_comprobacion_at: editingRule?.ultima_comprobacion_at ?? null,
+          ultima_alerta_at: editingRule?.ultima_alerta_at ?? null,
+          ultimo_error: null,
+          updated_at: now,
+        }
+        const localRule: InversionAlerta = editingRule
+          ? { ...editingRule, ...changes }
+          : { ...changes, id: -Date.now(), created_at: now }
+        const nextRules = editingRule
+          ? rules.map((rule) => rule.id === editingRule.id ? localRule : rule)
+          : [...rules, localRule]
+        await onScenarioRulesChange(nextRules)
+        setDialogOpen(false)
+        resetForm()
+        toast.success('Alerta guardada en el escenario local')
+        return
+      }
+
       const response = await fetch(editingRule ? `/api/inversiones/alertas/${editingRule.id}` : '/api/inversiones/alertas', {
         method: editingRule ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -325,6 +425,11 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
   async function updateRule(rule: InversionAlerta, changes: Record<string, boolean>) {
     setBusyRuleId(rule.id)
     try {
+      if (scenarioMode && onScenarioRulesChange) {
+        await onScenarioRulesChange(rules.map((item) => item.id === rule.id ? { ...item, ...changes, updated_at: new Date().toISOString() } : item))
+        return
+      }
+
       const response = await fetch(`/api/inversiones/alertas/${rule.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -343,6 +448,47 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
   async function refreshAssetPrice(rule: InversionAlerta) {
     setRefreshingRuleId(rule.id)
     try {
+      if (scenarioMode && onScenarioRulesChange) {
+        const position = rule.posicion_id ? positionById.get(rule.posicion_id) : null
+        const now = new Date().toISOString()
+        let currentPrice = position?.precio_actual ?? rule.precio_actual
+        let currentReturn = position?.pnl_pct ?? rule.rendimiento_pct
+        const refreshAsset = position
+          ? { id: position.id, tipo_activo: position.tipo, ticker: position.ticker, crypto_id: position.crypto_id }
+          : rule.ticker || rule.price_ticker
+            ? { id: rule.id, tipo_activo: rule.tipo_activo || 'Acción', ticker: rule.price_ticker || rule.ticker || '', crypto_id: rule.crypto_id }
+            : null
+        if (refreshAsset) {
+          const response = await fetch('/api/inversiones/referencia-precios', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ assets: [refreshAsset] }),
+          })
+          const payload = await response.json().catch(() => null) as { updates?: Array<{ id: number; price: number; sourceUrl: string; provider: string; asOf?: string }>; errors?: Array<{ error?: string }>; error?: string } | null
+          const update = payload?.updates?.[0]
+          if (!response.ok || !update) throw new Error(payload?.errors?.[0]?.error || payload?.error || 'No se pudo actualizar el precio')
+          if (position && onScenarioPriceRefresh) await onScenarioPriceRefresh(position.id, update)
+          currentPrice = update.price
+          currentReturn = position && position.coste !== null && position.coste > 0
+            ? (position.cantidad * update.price - position.coste) / position.coste
+            : rule.precio_referencia !== null && rule.precio_referencia > 0
+              ? (update.price - rule.precio_referencia) / rule.precio_referencia
+              : null
+        }
+        await onScenarioRulesChange(rules.map((item) => item.id === rule.id ? {
+          ...item,
+          precio_actual: currentPrice,
+          rendimiento_pct: currentReturn,
+          ultima_comprobacion_at: now,
+          ultimo_error: null,
+          updated_at: now,
+        } : item))
+        toast.success(currentPrice !== null && currentPrice !== undefined
+          ? `Precio de referencia comprobado · ${formatAssetPrice(currentPrice, position?.divisa || 'EUR')} · ${formatPercent(currentReturn)}`
+          : 'Precio de referencia comprobado')
+        return
+      }
+
       const response = await fetch(`/api/inversiones/alertas/${rule.id}/actualizar`, { method: 'POST' })
       const payload = await response.json().catch(() => null) as { error?: string; precio_actual?: number | null; rendimiento_pct?: number | null } | null
       if (!response.ok) throw new Error(payload?.error || 'No se pudo actualizar el precio')
@@ -358,13 +504,20 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
   }
 
   async function removeRule(rule: InversionAlerta) {
-    if (!window.confirm('¿Eliminar esta alerta externa?')) return
     setBusyRuleId(rule.id)
     try {
+      if (scenarioMode && onScenarioRulesChange) {
+        await onScenarioRulesChange(rules.filter((item) => item.id !== rule.id))
+        setRulePendingDeletion(null)
+        toast.success('Alerta eliminada del escenario')
+        return
+      }
+
       const response = await fetch(`/api/inversiones/alertas/${rule.id}`, { method: 'DELETE' })
       const payload = await response.json().catch(() => null) as { error?: string } | null
       if (!response.ok) throw new Error(payload?.error || 'No se pudo eliminar la alerta')
       await onChanged()
+      setRulePendingDeletion(null)
       toast.success('Alerta eliminada')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo eliminar la alerta')
@@ -379,7 +532,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
         <div>
           <p className="mb-2 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400"><BellRing className="h-3.5 w-3.5" /> Automatización externa</p>
           <h2 className="text-lg font-semibold tracking-[-0.04em]">Alertas por Telegram y email</h2>
-          <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-slate-500">Automatismo a través de n8n.</p>
+          <p className="mt-2 max-w-2xl text-[11px] leading-relaxed text-slate-500">{scenarioMode ? 'Reglas locales de esta vista; no modifican n8n ni tu cartera principal.' : 'Automatismo a través de n8n.'}</p>
         </div>
         <Button type="button" size="sm" className="bg-slate-900 text-white hover:bg-slate-700" onClick={() => openAssetRule(null, 'position')}><Plus />Nueva alerta de posición</Button>
       </div>
@@ -413,21 +566,34 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
           const isRefreshing = refreshingRuleId === rule.id
           return <div key={rule.id} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">{name}</p><span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500">{ticker}</span><span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${rule.activa ? 'bg-[#e7f2d4] text-[#31531d]' : 'bg-slate-100 text-slate-500'}`}>{position ? 'En cartera' : 'No poseído'}</span></div><div className="mt-3 grid max-w-md grid-cols-2 gap-2"><div className="rounded-md bg-slate-50 px-3 py-2"><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Precio actual</p><p className="mt-1 text-sm font-semibold tabular-nums text-slate-800">{formatAssetPrice(currentPrice, 'EUR')}</p></div><div className={`rounded-md px-3 py-2 ${currentReturnPct !== null && currentReturnPct !== undefined && currentReturnPct < 0 ? 'bg-rose-50' : 'bg-[#eef6e5]'}`}><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Variación actual</p><p className={`mt-1 text-sm font-semibold tabular-nums ${currentReturnPct !== null && currentReturnPct !== undefined && currentReturnPct < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{formatPercent(currentReturnPct)}</p><p className="mt-0.5 text-[9px] text-slate-500">{position ? 'desde el coste' : referencePrice !== null ? `desde ${formatAssetPrice(referencePrice, 'EUR')}` : 'esperando referencia'}</p></div></div><p className="mt-2 text-[10px] text-slate-500">Avisar si sube {percentInput(rule.umbral_subida_pct) || '—'}% o cae {percentInput(rule.umbral_caida_pct) || '—'}%{rule.precio_objetivo !== null ? ` · objetivo ${formatAssetPrice(rule.precio_objetivo, 'EUR')}` : ''} · {ruleChannels(rule)}</p><p className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-400">{rule.ultimo_error ? <><CircleAlert className="h-3.5 w-3.5 text-amber-600" />{rule.ultimo_error}</> : rule.ultima_comprobacion_at ? <><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />Última comprobación {new Intl.DateTimeFormat('es-ES', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(rule.ultima_comprobacion_at))}</> : 'Pendiente de la próxima comprobación'}</p></div>
-            <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end"><Button type="button" size="sm" variant="outline" className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => void refreshAssetPrice(rule)} disabled={isBusy}>{isRefreshing ? <Loader2 className="animate-spin" /> : <RefreshCw />} {isRefreshing ? 'Actualizando…' : 'Actualizar precio'}</Button><Button type="button" size="sm" variant="outline" className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => void updateRule(rule, { activa: !rule.activa })} disabled={isBusy}>{isBusy ? <Loader2 className="animate-spin" /> : rule.activa ? 'Pausar' : 'Activar'}</Button><Button type="button" size="icon" variant="outline" aria-label={`Editar alerta de ${name}`} className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => openAssetRule(rule)} disabled={isBusy}><Pencil /></Button><Button type="button" size="icon" variant="outline" aria-label={`Eliminar alerta de ${name}`} className="border-slate-200 bg-transparent text-red-700 hover:bg-red-50" onClick={() => void removeRule(rule)} disabled={isBusy}><Trash2 /></Button></div>
+            <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end"><Button type="button" size="sm" variant="outline" className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => void refreshAssetPrice(rule)} disabled={isBusy}>{isRefreshing ? <Loader2 className="animate-spin" /> : <RefreshCw />} {isRefreshing ? 'Actualizando…' : 'Actualizar precio'}</Button><Button type="button" size="sm" variant="outline" className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => void updateRule(rule, { activa: !rule.activa })} disabled={isBusy}>{isBusy ? <Loader2 className="animate-spin" /> : rule.activa ? 'Pausar' : 'Activar'}</Button><Button type="button" size="icon" variant="outline" aria-label={`Editar alerta de ${name}`} className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => openAssetRule(rule)} disabled={isBusy}><Pencil /></Button><Button type="button" size="icon" variant="outline" aria-label={`Eliminar alerta de ${name}`} className="border-slate-200 bg-transparent text-red-700 hover:bg-red-50" onClick={() => setRulePendingDeletion(rule)} disabled={isBusy}><Trash2 /></Button></div>
           </div>
         })}
       </div> : <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-[#eeece5] px-4 py-5 text-center"><p className="text-sm font-semibold text-slate-700">Todavía no hay alertas de activos</p><p className="mt-1 text-[10px] text-slate-500">Crea una alerta para una posición o añade un seguimiento fuera de cartera.</p></div>}
 
+      <Dialog open={rulePendingDeletion !== null} onOpenChange={(open) => { if (!open && busyRuleId === null) setRulePendingDeletion(null) }}>
+        <DialogContent className="border-slate-200 bg-[#f7f5ef] text-slate-900 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Eliminar alerta</DialogTitle>
+            <DialogDescription>Se eliminará la alerta de {rulePendingDeletion?.activo || rulePendingDeletion?.ticker || 'este activo'} y dejarás de recibir sus avisos por Telegram y email.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRulePendingDeletion(null)} disabled={busyRuleId !== null}>Cancelar</Button>
+            <Button type="button" className="bg-red-700 text-white hover:bg-red-800" onClick={() => { if (rulePendingDeletion) void removeRule(rulePendingDeletion) }} disabled={busyRuleId !== null}>{busyRuleId !== null ? <><Loader2 className="animate-spin" />Eliminando…</> : <><Trash2 />Eliminar alerta</>}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm() }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[620px]">
-          <DialogHeader><DialogTitle>{editingRule ? 'Editar alerta de activo' : scope === 'cartera' ? 'Alerta de cartera completa' : assetIntent === 'position' ? 'Nueva alerta de posición' : 'Nuevo seguimiento de activo'}</DialogTitle><DialogDescription>{scope === 'cartera' ? 'Configura un aviso para la rentabilidad total de tu cartera.' : assetIntent === 'position' ? 'Elige una posición que ya tengas en cartera. El aviso seguirá su rentabilidad.' : 'Busca un activo que todavía no tengas. Se guardará como seguimiento, sin crear una operación.'} Se avisa al cruzar el nivel y vuelve a quedar listo cuando recupera el margen indicado.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editingRule ? 'Editar alerta de activo' : scope === 'cartera' ? 'Alerta de cartera completa' : assetIntent === 'position' ? 'Nueva alerta de posición' : 'Nuevo seguimiento de activo'}</DialogTitle><DialogDescription>{scope === 'cartera' ? 'Configura un aviso para la rentabilidad total de tu cartera.' : assetIntent === 'position' ? 'Elige una posición que ya tengas en cartera. El aviso seguirá su rentabilidad.' : 'Busca un activo que todavía no tengas. Se guardará como seguimiento, sin crear una operación.'} Se avisa al cruzar el nivel y vuelve a quedar listo cuando recupera el margen indicado.{scenarioMode ? ' En este escenario, la regla se guarda solo localmente y no la recibe n8n.' : ''}</DialogDescription></DialogHeader>
           <form onSubmit={saveRule} className="grid gap-5 py-2">
             {scope === 'activo' ? <div className="grid gap-2"><Label htmlFor="alert-asset-search">{assetIntent === 'position' ? 'Posición de tu cartera' : 'Activo para seguir'}</Label>{selectedAsset ? <div className="rounded-md border border-[#90b85f] bg-[#e7f2d4] px-3 py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#31531d]">{selectedAsset.activo}</p><p className="text-[10px] text-[#52783a]">{selectedAsset.price_ticker} · {selectedAsset.poseido ? 'En cartera' : 'No poseído; se guardará como seguimiento'}</p></div>{!editingRule ? <Button type="button" size="sm" variant="outline" className="shrink-0 border-[#90b85f] bg-transparent text-[#31531d] hover:bg-[#dceec0]" onClick={() => { setSelectedAsset(null); setIsin(''); setReferencePrice(''); setTargetPrice('') }}>Cambiar</Button> : null}</div><div className="mt-3 grid gap-3 border-t border-[#c7dda7] pt-3 sm:grid-cols-2"><div><p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#52783a]">Precio actual</p><p className="mt-1 text-sm font-semibold tabular-nums text-[#31531d]">{formatAssetPrice(selectedAsset.precio_actual, selectedAsset.divisa)}</p><p className="mt-1 flex items-center gap-1 text-[10px] text-[#52783a]"><Clock3 className="h-3 w-3" />{formatAssetDate(selectedAsset.precio_actual_as_of) ? `Dato ${formatAssetDate(selectedAsset.precio_actual_as_of)}` : 'Último precio disponible'}</p></div><div><p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#52783a]">Mercado seleccionado</p><p className="mt-1 flex items-center gap-1 text-sm font-semibold text-[#31531d]"><MapPin className="h-3.5 w-3.5" />{selectedAsset.exchange || 'Mercado no identificado'}</p><p className="mt-1 text-[10px] text-[#52783a]">{selectedAsset.market_symbol || selectedAsset.price_ticker}</p></div></div></div> : <div className="relative"><Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><Input id="alert-asset-search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={assetIntent === 'position' ? 'Busca una posición (SXR8, BTC, NVDA…)' : 'Busca un activo que no tengas (AAPL, BTC…)'} className="pl-9" autoFocus />{searching ? <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-slate-400" /> : null}{searchResults.length > 0 ? <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-slate-200 bg-white p-1 shadow-xl">{searchResults.map((result) => <button type="button" key={result.key} className="flex w-full items-start justify-between gap-3 rounded px-3 py-2 text-left hover:bg-slate-50" onClick={() => chooseAsset(result)}><span className="min-w-0"><span className="block truncate text-xs font-semibold text-slate-800">{result.activo}</span><span className="block text-[10px] text-slate-500">{result.price_ticker}{result.exchange ? ` · ${result.exchange}` : ' · Mercado no identificado'}</span><span className="block text-[10px] text-slate-400">{formatAssetPrice(result.precio_actual, result.divisa)} · ISIN {result.isin || 'no disponible'}</span></span><span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold ${result.poseido ? 'bg-[#e7f2d4] text-[#31531d]' : 'bg-slate-100 text-slate-500'}`}>{result.poseido ? 'En cartera' : 'No poseído'}</span></button>)}</div> : null}</div>} {selectedAsset ? <div className="grid gap-2 rounded-md border border-slate-200 bg-white p-3"><div className="flex items-center justify-between gap-2"><Label className="text-slate-700" htmlFor="alert-isin">ISIN para confirmar el instrumento (opcional)</Label>{isin ? <button type="button" title="Copiar ISIN" aria-label={`Copiar ISIN ${isin}`} className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10px] font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-900" onClick={() => void copiarIsin(isin)}><Copy className="h-3 w-3" />Copiar</button> : null}</div><Input id="alert-isin" value={isin} onChange={(event) => setIsin(event.target.value.toUpperCase())} placeholder="Ej. CY0106002112" maxLength={12} className="text-slate-900 placeholder:text-slate-400" /><p className="text-[10px] text-slate-500">{isin ? 'Se guardará junto con el ticker y el mercado seleccionado.' : 'Si el proveedor no lo devuelve, puedes pegarlo aquí. La alerta seguirá ligada a esta cotización concreta.'}</p></div> : null} {!selectedAsset && !editingRule ? <p className="text-[10px] text-slate-500">{assetIntent === 'position' ? 'Elige una posición de tu cartera.' : 'Elige un activo que no esté en tu cartera.'}</p> : null}</div> : null}
            {scope === 'activo' && selectedAsset && !selectedAsset.poseido && !editingRule ? <div className="grid gap-2"><Label htmlFor="alert-reference-price">Precio de referencia en EUR (opcional)</Label><Input id="alert-reference-price" type="number" min="0.000001" step="any" value={referencePrice} onChange={(event) => setReferencePrice(event.target.value)} placeholder="Se consulta automáticamente si lo dejas vacío" /><p className="text-[10px] text-slate-500">{selectedAsset.divisa && selectedAsset.divisa !== 'EUR' ? 'El precio mostrado está en la divisa del mercado; si dejas esto vacío, la alerta se normalizará a EUR al guardar.' : 'La variación se medirá desde este precio. Si lo dejas vacío, Finanzas capturará la cotización al guardar.'}</p></div> : null}
             {scope === 'activo' && selectedAsset ? <div className="grid gap-2"><Label htmlFor="alert-target-price">Precio objetivo en EUR (opcional)</Label><Input id="alert-target-price" type="number" min="0.000001" step="any" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} placeholder="Ej. 120,00" /><p className="text-[10px] leading-relaxed text-slate-500">Recibirás el aviso cuando el precio normalizado a EUR alcance este nivel. Puedes usarlo solo o combinarlo con los porcentajes.</p></div> : null}
             <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-2"><Label htmlFor="alert-rise">Avisar si sube (%)</Label><Input id="alert-rise" type="number" min="0.1" step="0.1" value={rise} onChange={(event) => setRise(event.target.value)} placeholder="Ej. 10" /></div><div className="grid gap-2"><Label htmlFor="alert-drop">Avisar si cae (%)</Label><Input id="alert-drop" type="number" min="0.1" step="0.1" value={drop} onChange={(event) => setDrop(event.target.value)} placeholder="Ej. 10" /></div></div>
             <div className="grid gap-2"><Label htmlFor="alert-rearm">Recuperación para volver a avisar (%)</Label><Input id="alert-rearm" type="number" min="0.1" step="0.1" value={rearm} onChange={(event) => setRearm(event.target.value)} /><p className="text-[10px] leading-relaxed text-slate-500">No es el número de avisos: es cuánto debe recuperar la rentabilidad para rearmar la alerta. Ejemplo: si cae un 10% y pones 1%, volverá a avisar al recuperar hasta −9%.</p></div>
-            <div className="grid gap-2"><Label>Canales</Label><div className="flex flex-wrap gap-2"><button type="button" aria-pressed={telegram} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${channelButtonClass(telegram)}`} onClick={() => setTelegram((value) => !value)}><Send className="h-3.5 w-3.5" />Telegram</button><button type="button" aria-pressed={email} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${channelButtonClass(email)}`} onClick={() => setEmail((value) => !value)}><Mail className="h-3.5 w-3.5" />Email</button></div><p className="text-[10px] text-slate-500">El workflow de n8n usa estas marcas para decidir a qué canal enviar cada cruce.</p></div>
+            <div className="grid gap-2"><Label>Canales</Label><div className="flex flex-wrap gap-2"><button type="button" aria-pressed={telegram} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${channelButtonClass(telegram)}`} onClick={() => setTelegram((value) => !value)}><Send className="h-3.5 w-3.5" />Telegram</button><button type="button" aria-pressed={email} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${channelButtonClass(email)}`} onClick={() => setEmail((value) => !value)}><Mail className="h-3.5 w-3.5" />Email</button></div><p className="text-[10px] text-slate-500">{scenarioMode ? 'Se guardan como preferencias locales; esta vista no envía mensajes.' : 'El workflow de n8n usa estas marcas para decidir a qué canal enviar cada cruce.'}</p></div>
             <div className="flex items-center justify-between rounded-md border border-slate-200 bg-[#eeece5] px-3 py-2"><div><p className="text-xs font-semibold text-slate-700">Regla activa</p><p className="text-[10px] text-slate-500">Pausarla conserva su configuración y estado.</p></div><button type="button" aria-pressed={active} className={`relative h-6 w-11 rounded-full transition ${active ? 'bg-[#739b43]' : 'bg-slate-300'}`} onClick={() => setActive((value) => !value)}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${active ? 'left-6' : 'left-1'}`} /></button></div>
             <DialogFooter><Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" className="bg-slate-900 text-white hover:bg-slate-700" disabled={saving}>{saving ? <><Loader2 className="animate-spin" />Guardando…</> : 'Guardar alerta'}</Button></DialogFooter>
           </form>

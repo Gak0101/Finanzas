@@ -19,6 +19,17 @@ import type { PositionInvestmentAnalytics } from '@/lib/inversiones/analytics'
 
 type QuickOperation = 'Compra' | 'Venta' | 'Dividendo'
 
+export type PositionMetadataChanges = {
+  nota: string | null
+  sector: string | null
+  pais: string | null
+  fecha_apertura: string | null
+  objetivo_precio: number | null
+  objetivo_peso_pct: number | null
+  alerta_subida_pct: number | null
+  alerta_caida_pct: number | null
+}
+
 type Props = {
   position: InversionPosicion | null
   analytics: PositionInvestmentAnalytics | null
@@ -27,6 +38,7 @@ type Props = {
   onOpenChange: (open: boolean) => void
   onUpdated: (position: InversionPosicion) => void
   onStartOperation: (type: QuickOperation, position: InversionPosicion) => void
+  onSaveMetadata?: (positionId: number, changes: PositionMetadataChanges) => Promise<InversionPosicion>
 }
 
 function formatEuro(value: number | null | undefined) {
@@ -59,7 +71,7 @@ function instrumentKeys(value: Pick<InversionPosicion, 'activo' | 'ticker' | 'pr
   return new Set(keys.filter(Boolean))
 }
 
-export function PositionDetailDialog({ position, analytics, operations, open, onOpenChange, onUpdated, onStartOperation }: Props) {
+export function PositionDetailDialog({ position, analytics, operations, open, onOpenChange, onUpdated, onStartOperation, onSaveMetadata }: Props) {
   const [saving, setSaving] = useState(false)
   const [note, setNote] = useState('')
   const [sector, setSector] = useState('')
@@ -100,19 +112,28 @@ export function PositionDetailDialog({ position, analytics, operations, open, on
   async function saveMetadata() {
     setSaving(true)
     try {
+      const changes: PositionMetadataChanges = {
+        nota: note.trim() || null,
+        sector: sector.trim() || null,
+        pais: country.trim() || null,
+        fecha_apertura: openingDate || null,
+        objetivo_precio: targetPrice === '' ? null : Number(targetPrice),
+        objetivo_peso_pct: targetWeight === '' ? null : Number(targetWeight) / 100,
+        alerta_subida_pct: riseAlert === '' ? null : Number(riseAlert) / 100,
+        alerta_caida_pct: dropAlert === '' ? null : Number(dropAlert) / 100,
+      }
+
+      if (onSaveMetadata) {
+        const updated = await onSaveMetadata(position!.id, changes)
+        onUpdated(updated)
+        toast.success('Ficha de posición actualizada en el escenario')
+        return
+      }
+
       const response = await fetch(`/api/inversiones/${position!.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nota: note.trim() || null,
-          sector: sector.trim() || null,
-          pais: country.trim() || null,
-          fecha_apertura: openingDate || null,
-          objetivo_precio: targetPrice === '' ? null : Number(targetPrice),
-          objetivo_peso_pct: targetWeight === '' ? null : Number(targetWeight) / 100,
-          alerta_subida_pct: riseAlert === '' ? null : Number(riseAlert) / 100,
-          alerta_caida_pct: dropAlert === '' ? null : Number(dropAlert) / 100,
-        }),
+        body: JSON.stringify(changes),
       })
       const payload = await response.json().catch(() => null)
       if (!response.ok || !payload || typeof payload.id !== 'number') {
@@ -136,6 +157,7 @@ export function PositionDetailDialog({ position, analytics, operations, open, on
           </div>
           <DialogTitle className="mt-1 break-words text-2xl tracking-[-0.04em] sm:text-3xl">{position.activo}</DialogTitle>
           <DialogDescription className="text-slate-400">{position.price_ticker || position.ticker} · ficha construida solo con operaciones registradas.</DialogDescription>
+          {position.isin ? <p className="text-[11px] font-semibold tracking-[0.08em] text-slate-500">ISIN {position.isin}</p> : null}
         </DialogHeader>
 
         <div className="grid gap-4 p-5 sm:p-7">

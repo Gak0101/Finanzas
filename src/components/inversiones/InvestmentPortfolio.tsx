@@ -12,12 +12,16 @@ import {
   Clock3,
   Copy,
   Download,
+  BriefcaseBusiness,
+  Eye,
+  EyeOff,
   Info,
   Loader2,
   Plus,
   RefreshCw,
   Search,
   ShieldCheck,
+  Trash2,
   Wallet,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -34,13 +38,22 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { InversionAlerta, InversionOperacion, InversionPosicion } from '@/lib/db/schema'
 import type { ClosedInvestmentPosition } from '@/lib/inversiones/history'
-import type { InvestmentAnalytics } from '@/lib/inversiones/analytics'
+import { calculateClosedInvestmentPositions } from '@/lib/inversiones/history'
+import { calculateInvestmentAnalytics, type InvestmentAnalytics } from '@/lib/inversiones/analytics'
 import { StockFinder } from '@/components/buscador-acciones/StockFinder'
 import { InvestmentAnalyticsPanel } from '@/components/inversiones/InvestmentAnalyticsPanel'
 import { MarketHoursPanel } from '@/components/inversiones/MarketHoursPanel'
 import { InvestmentNotificationAlerts } from '@/components/inversiones/InvestmentNotificationAlerts'
-import { PositionDetailDialog } from '@/components/inversiones/PositionDetailDialog'
+import { PositionDetailDialog, type PositionMetadataChanges } from '@/components/inversiones/PositionDetailDialog'
+import { InvestmentPrivacyProvider, useInvestmentPrivacy } from '@/components/inversiones/InvestmentPrivacy'
 import { inferIsin } from '@/lib/inversiones/instrumentIdentity'
+import {
+  buildDemoPortfolioData,
+  DEFAULT_DEMO_PORTFOLIO,
+  DEMO_PORTFOLIO_STORAGE_KEY,
+  type DemoPortfolioConfig,
+  type DemoPortfolioData,
+} from '@/lib/inversiones/demoPortfolio'
 
 type PortfolioData = {
   positions: InversionPosicion[]
@@ -67,6 +80,13 @@ type OperationAssetSearchResult = {
   precio_actual_as_of: string | null
   poseido: boolean
   posicion_id: number | null
+}
+type ScenarioPriceUpdate = {
+  id: number
+  price: number
+  sourceUrl: string
+  provider: string
+  asOf?: string
 }
 type PositionSort =
   | 'name_asc'
@@ -247,6 +267,8 @@ function InvestmentFrame({
   statusLabel: string
   children: React.ReactNode
 }) {
+  const { valuesVisible, toggleValues } = useInvestmentPrivacy()
+
   return (
     <div className="-mx-4 -my-6 min-h-screen bg-[#0d1118] text-slate-100 sm:p-2 lg:p-4">
       <div className="mx-auto max-w-[1500px] px-4 pb-8 pt-6 sm:px-6 lg:px-8">
@@ -257,6 +279,17 @@ function InvestmentFrame({
           </div>
           <div className="flex items-center gap-3 text-xs text-slate-400">
             <span className="hidden items-center gap-2 sm:inline-flex"><span className="h-1.5 w-1.5 rounded-full bg-[#c8f56a]" />{statusLabel}</span>
+            <button
+              type="button"
+              onClick={toggleValues}
+              aria-pressed={!valuesVisible}
+              aria-label={valuesVisible ? 'Ocultar valores de inversión' : 'Mostrar valores de inversión'}
+              title={valuesVisible ? 'Ocultar valores' : 'Mostrar valores'}
+              className="inline-flex items-center gap-1.5 rounded-md border border-white/15 px-2.5 py-1.5 text-[10px] font-semibold text-slate-300 transition hover:border-[#c8f56a]/60 hover:text-[#c8f56a]"
+            >
+              {valuesVisible ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+              <span className="hidden sm:inline">{valuesVisible ? 'Ocultar valores' : 'Mostrar valores'}</span>
+            </button>
             <div className="grid h-8 w-8 place-items-center rounded-full bg-[#e2ecd8] text-[10px] font-bold text-slate-800">FIN</div>
           </div>
         </header>
@@ -336,6 +369,7 @@ function invalidApiResponseMessage(response: Response) {
 function sourceDotClass(status: string) {
   if (status === 'FALLBACK') return 'bg-[#d69035]'
   if (status === 'API_OK') return 'bg-[#168261]'
+  if (status === 'REFERENCE') return 'bg-[#7e8bff]'
   return 'bg-[#9aa5ae]'
 }
 
@@ -437,10 +471,78 @@ function ClosedPositionsPanel({ positions }: { positions: ClosedInvestmentPositi
   )
 }
 
+type PortfolioOption = {
+  id: string
+  name: string
+  kind: 'real' | 'demo'
+}
+
+function PortfolioSwitcher({
+  options,
+  activeId,
+  activeOption,
+  onChange,
+  onCreate,
+  onRemove,
+}: {
+  options: PortfolioOption[]
+  activeId: string
+  activeOption: PortfolioOption
+  onChange: (id: string) => void
+  onCreate: () => void
+  onRemove: (() => void) | null
+}) {
+  return (
+    <section className="mb-4 flex flex-col gap-4 rounded-xl border border-white/10 bg-[#151b25] p-4 shadow-[0_12px_30px_rgba(0,0,0,.16)] sm:flex-row sm:items-center sm:justify-between sm:p-5" aria-label="Carteras de inversión">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-[#c8f56a] text-[#172016]"><BriefcaseBusiness className="h-5 w-5" /></div>
+        <div className="min-w-0">
+          <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-[#c8f56a]">Carteras</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <label htmlFor="investment-portfolio-selector" className="sr-only">Seleccionar cartera</label>
+            <select
+              id="investment-portfolio-selector"
+              aria-label="Seleccionar cartera"
+              value={activeId}
+              onChange={(event) => onChange(event.target.value)}
+              className="max-w-full rounded-md border border-white/15 bg-[#10161f] px-2.5 py-1.5 text-sm font-semibold text-slate-100 outline-none focus:border-[#c8f56a]"
+            >
+              {options.map((option) => <option key={option.id} value={option.id}>{option.name}{option.kind === 'demo' ? ' · Escenario' : ''}</option>)}
+            </select>
+            <span className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] ${activeOption.kind === 'demo' ? 'bg-[#e7a35e]/20 text-[#f1bc7d]' : 'bg-[#c8f56a]/15 text-[#c8f56a]'}`}>
+              {activeOption.kind === 'demo' ? 'Escenario' : 'Principal'}
+            </span>
+          </div>
+          <p className="mt-1 text-[10px] text-slate-500">{activeOption.kind === 'demo' ? 'Vista local independiente de la cartera principal.' : 'Cartera persistida en tu cuenta.'}</p>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+        {onRemove ? <Button type="button" size="sm" variant="outline" className="border-white/15 bg-transparent text-slate-300 hover:bg-red-500/10 hover:text-red-200" onClick={onRemove}><Trash2 />Eliminar escenario</Button> : null}
+        <Button type="button" size="sm" className="bg-[#c8f56a] text-[#172016] hover:bg-[#d8fb83]" onClick={onCreate}><Plus />Nueva cartera</Button>
+      </div>
+    </section>
+  )
+}
+
 export function InvestmentPortfolio() {
+  return (
+    <InvestmentPrivacyProvider>
+      <InvestmentPortfolioContent />
+    </InvestmentPrivacyProvider>
+  )
+}
+
+function InvestmentPortfolioContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [data, setData] = useState<PortfolioData | null>(null)
+  const [demoPortfolios, setDemoPortfolios] = useState<DemoPortfolioConfig[]>([DEFAULT_DEMO_PORTFOLIO])
+  const [demoPortfoliosHydrated, setDemoPortfoliosHydrated] = useState(false)
+  const [scenarioDataOverrides, setScenarioDataOverrides] = useState<Record<string, DemoPortfolioData>>({})
+  const [activePortfolioId, setActivePortfolioId] = useState('real')
+  const [portfolioDialogOpen, setPortfolioDialogOpen] = useState(false)
+  const [newPortfolioName, setNewPortfolioName] = useState('Nueva cartera Growth')
+  const [newPortfolioCapital, setNewPortfolioCapital] = useState('20000')
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [lastPriceUpdate, setLastPriceUpdate] = useState<string | null>(null)
@@ -480,6 +582,36 @@ export function InvestmentPortfolio() {
     router.replace(tab === 'buscador' ? '/inversiones?tab=buscador' : '/inversiones', { scroll: true })
   }
 
+  function crearDemoPortfolio() {
+    const name = newPortfolioName.trim() || 'Cartera Growth personalizada'
+    const capital = Number(newPortfolioCapital)
+    if (!name || !Number.isFinite(capital) || capital <= 0) {
+      toast.error('Indica un nombre y un capital positivo')
+      return
+    }
+
+    const id = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `demo-${Date.now()}`
+    const portfolio: DemoPortfolioConfig = {
+      id,
+      name,
+      capital,
+      createdAt: new Date().toISOString(),
+    }
+    setDemoPortfolios((current) => [...current, portfolio])
+    setActivePortfolioId(portfolio.id)
+    setPortfolioDialogOpen(false)
+    toast.success('Cartera creada')
+  }
+
+  function eliminarDemoPortfolio() {
+    if (!activeDemoPortfolio || activeDemoPortfolio.id === DEFAULT_DEMO_PORTFOLIO.id) return
+    setDemoPortfolios((current) => current.filter((portfolio) => portfolio.id !== activeDemoPortfolio.id))
+    setActivePortfolioId('real')
+    toast.success('Cartera eliminada de este navegador')
+  }
+
   async function cargarPortfolio(showLoading = true) {
     if (showLoading) setLoading(true)
     setLoadError(null)
@@ -497,6 +629,38 @@ export function InvestmentPortfolio() {
       if (showLoading) setLoading(false)
     }
   }
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(DEMO_PORTFOLIO_STORAGE_KEY)
+      const parsed = stored ? JSON.parse(stored) as unknown : []
+      const saved = Array.isArray(parsed)
+        ? parsed.filter((item): item is DemoPortfolioConfig => Boolean(
+          item
+          && typeof item === 'object'
+          && typeof (item as DemoPortfolioConfig).id === 'string'
+          && typeof (item as DemoPortfolioConfig).name === 'string'
+          && Number.isFinite((item as DemoPortfolioConfig).capital)
+          && ((item as DemoPortfolioConfig).targetReturnPct === undefined || Number.isFinite((item as DemoPortfolioConfig).targetReturnPct)),
+        ))
+        : []
+      setDemoPortfolios([DEFAULT_DEMO_PORTFOLIO, ...saved.filter((item) => item.id !== DEFAULT_DEMO_PORTFOLIO.id && item.id !== 'demo-100k')])
+    } catch {
+      setDemoPortfolios([DEFAULT_DEMO_PORTFOLIO])
+    } finally {
+      setDemoPortfoliosHydrated(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!demoPortfoliosHydrated) return
+    try {
+      const customPortfolios = demoPortfolios.filter((portfolio) => portfolio.id !== DEFAULT_DEMO_PORTFOLIO.id)
+      window.localStorage.setItem(DEMO_PORTFOLIO_STORAGE_KEY, JSON.stringify(customPortfolios))
+    } catch {
+      // Las carteras demo son una comodidad local y no deben romper la pantalla.
+    }
+  }, [demoPortfolios, demoPortfoliosHydrated])
 
   useEffect(() => {
     void cargarPortfolio()
@@ -531,11 +695,23 @@ export function InvestmentPortfolio() {
     }
   }, [activo, dialogOpen, selectedOperationAsset, selectedPosition])
 
-  const positions = data?.positions ?? []
-  const operations = data?.operations ?? []
-  const notificationAlerts = data?.notificationAlerts ?? []
-  const closedPositions = data?.closedPositions ?? []
-  const analytics = data?.analytics ?? null
+  const activeDemoPortfolio = demoPortfolios.find((portfolio) => portfolio.id === activePortfolioId) ?? null
+  const isDemoPortfolio = activeDemoPortfolio !== null
+  const demoData = useMemo(() => activeDemoPortfolio ? buildDemoPortfolioData(activeDemoPortfolio) : null, [activeDemoPortfolio])
+  const activeDemoData = activeDemoPortfolio ? scenarioDataOverrides[activeDemoPortfolio.id] ?? demoData : null
+  const activeData = isDemoPortfolio ? activeDemoData : data
+  const activeOption: PortfolioOption = activeDemoPortfolio
+    ? { id: activeDemoPortfolio.id, name: activeDemoPortfolio.name, kind: 'demo' }
+    : { id: 'real', name: 'Cartera principal', kind: 'real' }
+  const portfolioOptions: PortfolioOption[] = [
+    { id: 'real', name: 'Cartera principal', kind: 'real' },
+    ...demoPortfolios.map((portfolio) => ({ id: portfolio.id, name: portfolio.name, kind: 'demo' as const })),
+  ]
+  const positions = activeData?.positions ?? []
+  const operations = activeData?.operations ?? []
+  const notificationAlerts = activeData?.notificationAlerts ?? []
+  const closedPositions = activeData?.closedPositions ?? []
+  const analytics = activeData?.analytics ?? null
   const detailPosition = positions.find((position) => position.id === detailPositionId) ?? null
   const detailAnalytics = analytics?.positionAnalytics.find((item) => item.positionId === detailPositionId) ?? null
   const portfolioLastUpdated = useMemo(() => {
@@ -546,6 +722,98 @@ export function InvestmentPortfolio() {
       .filter(Number.isFinite)
     return timestamps.length > 0 ? new Date(Math.max(...timestamps)).toISOString() : null
   }, [positions])
+
+  function updateScenarioData(change: (current: DemoPortfolioData) => DemoPortfolioData) {
+    if (!activeDemoPortfolio) return
+    setScenarioDataOverrides((current) => {
+      const base = current[activeDemoPortfolio.id] ?? buildDemoPortfolioData(activeDemoPortfolio)
+      return { ...current, [activeDemoPortfolio.id]: change(base) }
+    })
+  }
+
+  function recalculateScenarioData(
+    current: DemoPortfolioData,
+    nextPositions = current.positions,
+    nextOperations = current.operations,
+    nextAlerts = current.notificationAlerts,
+    nextSnapshots = current.snapshots,
+  ): DemoPortfolioData {
+    return {
+      ...current,
+      positions: nextPositions,
+      operations: nextOperations,
+      notificationAlerts: nextAlerts,
+      closedPositions: calculateClosedInvestmentPositions(nextOperations),
+      snapshots: nextSnapshots,
+      analytics: calculateInvestmentAnalytics(nextPositions, nextOperations, nextSnapshots),
+    }
+  }
+
+  async function guardarMetadataEscenario(positionId: number, changes: PositionMetadataChanges): Promise<InversionPosicion> {
+    const currentPosition = positions.find((position) => position.id === positionId)
+    if (!currentPosition) throw new Error('No se encontró la posición del escenario')
+
+    const updated = { ...currentPosition, ...changes, updated_at: new Date().toISOString() }
+    updateScenarioData((current) => recalculateScenarioData(
+      current,
+      current.positions.map((position) => position.id === positionId ? updated : position),
+    ))
+    return updated
+  }
+
+  function aplicarPreciosEscenario(updates: ScenarioPriceUpdate[]) {
+    if (!isDemoPortfolio || updates.length === 0) return
+    const updatesById = new Map(updates.map((update) => [update.id, update]))
+    const now = new Date().toISOString()
+    updateScenarioData((current) => {
+      const nextPositionsWithoutWeights = current.positions.map((position) => {
+        const update = updatesById.get(position.id)
+        if (!update || !Number.isFinite(update.price) || update.price <= 0) return position
+        const value = position.cantidad * update.price
+        const cost = position.coste
+        const pnl = cost === null ? null : value - cost
+        return {
+          ...position,
+          precio_actual: update.price,
+          valor_actual: value,
+          pnl,
+          pnl_pct: cost !== null && cost > 0 && pnl !== null ? pnl / cost : null,
+          fuente: 'Referencia de mercado',
+          estado_fuente: 'REFERENCE',
+          ultimo_valido: update.price,
+          proveedor: update.provider,
+          fuente_url: update.sourceUrl,
+          snapshot_at: update.asOf ?? now,
+          updated_at: now,
+        }
+      })
+      const totalValue = nextPositionsWithoutWeights.reduce((sum, position) => sum + (position.valor_actual ?? 0), 0)
+      const nextPositions = nextPositionsWithoutWeights.map((position) => ({
+        ...position,
+        peso: totalValue > 0 ? (position.valor_actual ?? 0) / totalValue : 0,
+      }))
+      const latestSnapshotDate = current.snapshots.map((snapshot) => snapshot.fecha_valoracion).toSorted().at(-1)
+      const nextSnapshots = current.snapshots.map((snapshot) => {
+        if (!latestSnapshotDate || snapshot.fecha_valoracion !== latestSnapshotDate) return snapshot
+        const position = nextPositions.find((item) => item.id === snapshot.posicion_id)
+        const update = position ? updatesById.get(position.id) : null
+        if (!position || !update) return snapshot
+        return {
+          ...snapshot,
+          cantidad: position.cantidad,
+          coste_eur: position.coste,
+          precio_eur: position.precio_actual,
+          valor_eur: position.valor_actual,
+          pnl_no_realizado_eur: position.pnl,
+          precio_as_of: update.asOf ?? now,
+          proveedor: update.provider,
+          estado_precio: 'reference',
+          updated_at: now,
+        }
+      })
+      return recalculateScenarioData(current, nextPositions, current.operations, current.notificationAlerts, nextSnapshots)
+    })
+  }
 
   const summary = useMemo(() => {
     const totalValue = positions.reduce((sum, position) => sum + (position.valor_actual ?? 0), 0)
@@ -620,6 +888,15 @@ export function InvestmentPortfolio() {
   async function guardarFechaPosicion() {
     if (!datePosition || !openingDate) {
       toast.error('Indica la fecha real de apertura')
+      return
+    }
+
+    if (isDemoPortfolio) {
+      const updated = { ...datePosition, fecha_apertura: openingDate, updated_at: new Date().toISOString() }
+      updateScenarioData((current) => recalculateScenarioData(current, current.positions.map((position) => position.id === updated.id ? updated : position)))
+      setDateDialogOpen(false)
+      setDatePosition(null)
+      toast.success('Fecha de apertura actualizada en el escenario')
       return
     }
 
@@ -746,6 +1023,120 @@ export function InvestmentPortfolio() {
       return
     }
 
+    if (isDemoPortfolio) {
+      const selectedScenarioPosition = selectedPosition === 'new' ? null : positions.find((position) => String(position.id) === selectedPosition) ?? null
+      if (operationType === 'Venta' && (!selectedScenarioPosition || quantity > selectedScenarioPosition.cantidad)) {
+        toast.error('La venta debe corresponder a una posición del escenario y no superar su cantidad')
+        return
+      }
+      const now = new Date().toISOString()
+      const operation: InversionOperacion = {
+        id: 93_000 + Math.floor(Date.now() / 1000),
+        usuario_id: 0,
+        fecha,
+        fecha_hora: now,
+        tipo: operationType,
+        tipo_externo: null,
+        activo,
+        ticker,
+        tipo_activo: tipoActivo,
+        custodia,
+        cantidad: quantity,
+        precio_unitario: unitPrice,
+        importe: quantity * unitPrice,
+        comision: fee,
+        impuesto: tax,
+        divisa: 'EUR',
+        fuente: 'Escenario local',
+        external_id: null,
+        descripcion: 'Movimiento añadido a la vista de escenario',
+        notas: notas || null,
+        created_at: now,
+      }
+      let nextPositions = positions.map((position) => {
+        if (!selectedScenarioPosition || position.id !== selectedScenarioPosition.id || operationType === 'Dividendo') return position
+        const currentQuantity = position.cantidad
+        const currentCost = position.coste ?? 0
+        const averageCost = currentQuantity > 0 ? currentCost / currentQuantity : unitPrice
+        const nextQuantity = operationType === 'Compra' ? currentQuantity + quantity : currentQuantity - quantity
+        const nextCost = operationType === 'Compra'
+          ? currentCost + quantity * unitPrice + fee + tax
+          : Math.max(0, currentCost - quantity * averageCost)
+        const nextValue = (position.precio_actual ?? unitPrice) * nextQuantity
+        const nextPnl = nextValue - nextCost
+        return {
+          ...position,
+          cantidad: nextQuantity,
+          coste: nextCost,
+          precio_compra: nextQuantity > 0 ? nextCost / nextQuantity : null,
+          valor_actual: nextValue,
+          pnl: nextPnl,
+          pnl_pct: nextCost > 0 ? nextPnl / nextCost : null,
+          updated_at: now,
+        }
+      })
+
+      if (!selectedScenarioPosition && operationType === 'Compra') {
+        const currentPrice = unitPrice
+        const positionCost = quantity * unitPrice + fee + tax
+        const currentValue = quantity * currentPrice
+        const inferredIsin = operationIsin || selectedOperationAsset?.isin || inferIsin(ticker, operationPriceTicker, operationMarketSymbol)
+        nextPositions = [...nextPositions, {
+          id: 94_000 + Math.floor(Date.now() / 1000),
+          usuario_id: 0,
+          custodia,
+          broker: 'Escenario',
+          activo,
+          tipo: tipoActivo,
+          ticker,
+          isin: inferredIsin || null,
+          price_ticker: operationPriceTicker || ticker,
+          crypto_id: operationCryptoId,
+          cantidad: quantity,
+          precio_compra: unitPrice,
+          coste: positionCost,
+          objetivo_peso_pct: null,
+          precio_actual: currentPrice,
+          valor_actual: currentValue,
+          pnl: currentValue - positionCost,
+          pnl_pct: positionCost > 0 ? (currentValue - positionCost) / positionCost : null,
+          peso: 0,
+          fuente: 'Escenario local',
+          estado_fuente: 'REFERENCE',
+          ultimo_valido: currentPrice,
+          fallback_map: null,
+          proveedor: selectedOperationAsset ? 'Búsqueda de mercado · referencia' : null,
+          fuente_url: `https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/history/`,
+          nota: 'Posición añadida localmente al escenario.',
+          snapshot_at: now,
+          fecha_apertura: fecha,
+          hoja_origen: activeDemoPortfolio?.name ?? 'Escenario local',
+          fila_origen: null,
+          incluido_resumen: true,
+          divisa: 'EUR',
+          sector: null,
+          pais: null,
+          objetivo_precio: null,
+          alerta_subida_pct: null,
+          alerta_caida_pct: null,
+          market_symbol: operationMarketSymbol,
+          created_at: now,
+          updated_at: now,
+        }]
+      }
+
+      const totalScenarioValue = nextPositions.reduce((sum, position) => sum + (position.valor_actual ?? 0), 0)
+      nextPositions = nextPositions.map((position) => ({
+        ...position,
+        peso: totalScenarioValue > 0 ? (position.valor_actual ?? 0) / totalScenarioValue : 0,
+      }))
+      updateScenarioData((current) => recalculateScenarioData(current, nextPositions, [...current.operations, operation]))
+      setDialogOpen(false)
+      resetOperation()
+      toast.success(`${operationType} añadida al historial del escenario`)
+      return
+    }
+
     setSavingOperation(true)
     try {
       const response = await fetch('/api/inversiones', {
@@ -784,9 +1175,17 @@ export function InvestmentPortfolio() {
   }
 
   function actualizarPosicionLocal(updated: InversionPosicion) {
+    if (isDemoPortfolio) {
+      updateScenarioData((current) => recalculateScenarioData(current, current.positions.map((position) => position.id === updated.id ? updated : position)))
+      return
+    }
     setData((current) => current
       ? { ...current, positions: current.positions.map((position) => position.id === updated.id ? updated : position) }
       : current)
+  }
+
+  function abrirDetallePosition(positionId: number) {
+    setDetailPositionId(positionId)
   }
 
   function abrirOperacionRapida(type: 'Compra' | 'Venta' | 'Dividendo', position: InversionPosicion) {
@@ -799,6 +1198,42 @@ export function InvestmentPortfolio() {
   }
 
   async function actualizarPrecios() {
+    if (isDemoPortfolio) {
+      setUpdatingPrices(true)
+      try {
+        const response = await fetch('/api/inversiones/referencia-precios', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            assets: positions.map((position) => ({
+              id: position.id,
+              tipo_activo: position.tipo,
+              ticker: position.ticker,
+              crypto_id: position.crypto_id,
+            })),
+          }),
+        })
+        const payload = await response.json().catch(() => null) as {
+          updates?: Array<{ id: number; price: number; sourceUrl: string; provider: string; asOf?: string }>
+          errors?: Array<{ id: number; error: string }>
+          error?: string
+        } | null
+        if (!response.ok) throw new Error(getErrorMessage(payload, 'No se pudieron consultar las referencias de mercado'))
+
+        aplicarPreciosEscenario(payload?.updates ?? [])
+
+        const updatedCount = payload?.updates?.length ?? 0
+        const errorCount = payload?.errors?.length ?? 0
+        toast.success(errorCount > 0
+          ? `${updatedCount} precios actualizados · ${errorCount} pendientes`
+          : `${updatedCount} precios actualizados con referencia de mercado`)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'No se pudieron actualizar las referencias')
+      } finally {
+        setUpdatingPrices(false)
+      }
+      return
+    }
     setUpdatingPrices(true)
     try {
       const response = await fetch('/api/inversiones/actualizar-precios', { method: 'POST' })
@@ -875,7 +1310,15 @@ export function InvestmentPortfolio() {
   }
 
   return (
-    <InvestmentFrame activeTab={activeTab} onChange={cambiarPestana} statusLabel="Cartera guardada en la app">
+    <InvestmentFrame activeTab={activeTab} onChange={cambiarPestana} statusLabel={isDemoPortfolio ? 'Escenario local' : 'Cartera guardada en la app'}>
+        <PortfolioSwitcher
+          options={portfolioOptions}
+          activeId={activePortfolioId}
+          activeOption={activeOption}
+          onChange={setActivePortfolioId}
+          onCreate={() => setPortfolioDialogOpen(true)}
+          onRemove={activeDemoPortfolio && activeDemoPortfolio.id !== DEFAULT_DEMO_PORTFOLIO.id ? eliminarDemoPortfolio : null}
+        />
         <section className="flex flex-col gap-7 py-8 lg:flex-row lg:items-end lg:justify-between" id="inversiones">
           <div>
             <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Portfolio / visión general</p>
@@ -883,9 +1326,9 @@ export function InvestmentPortfolio() {
             <p className="mt-4 max-w-xl text-sm text-slate-400">Valor actual, resultado de la cartera abierta, histórico y trazabilidad de cada posición.</p>
           </div>
           <div className="flex flex-col gap-4 lg:items-end">
-            <div className="text-left lg:text-right"><p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Última actualización</p><p className="mt-1 text-xs font-medium text-slate-200">{formatDateTime(lastPriceUpdate ?? portfolioLastUpdated)}</p><p className="mt-1 text-[10px] text-slate-500">{lastPriceUpdate ? 'CoinGecko + Yahoo/Xetra' : 'Precios y posiciones guardados en la app'}</p>{lastPriceUpdate && <p className="mt-1 text-[10px] text-slate-500">ETFs: último cierre de mercado como referencia gratuita.</p>}</div>
+              <div className="text-left lg:text-right"><p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Última actualización</p><p className="mt-1 text-xs font-medium text-slate-200">{formatDateTime(isDemoPortfolio ? portfolioLastUpdated : lastPriceUpdate ?? portfolioLastUpdated)}</p><p className="mt-1 text-[10px] text-slate-500">{isDemoPortfolio ? 'Precios de referencia: Yahoo Finance · último cierre disponible' : lastPriceUpdate ? 'CoinGecko + Yahoo/Xetra' : 'Precios y posiciones guardados en la app'}</p>{lastPriceUpdate && !isDemoPortfolio && <p className="mt-1 text-[10px] text-slate-500">ETFs: último cierre de mercado como referencia gratuita.</p>}</div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" className="border-white/20 bg-transparent text-slate-100 hover:bg-white/10 hover:text-white" onClick={actualizarPrecios} disabled={updatingPrices}><RefreshCw className={updatingPrices ? 'animate-spin' : ''} />{updatingPrices ? 'Actualizando…' : 'Actualizar precios'}</Button>
+              <Button variant="outline" size="sm" className="border-white/20 bg-transparent text-slate-100 hover:bg-white/10 hover:text-white" onClick={() => void actualizarPrecios()} disabled={updatingPrices}><RefreshCw className={updatingPrices ? 'animate-spin' : ''} />{updatingPrices ? 'Actualizando…' : 'Actualizar precios'}</Button>
               <Button size="sm" className="bg-[#c8f56a] text-[#172016] hover:bg-[#d8fb83]" onClick={abrirDialog}><Plus />Registrar operación</Button>
             </div>
           </div>
@@ -904,6 +1347,11 @@ export function InvestmentPortfolio() {
           rules={notificationAlerts}
           positions={positions}
           portfolioReturnPct={analytics?.performance.currentReturnPct ?? summary.knownReturn}
+          scenarioMode={isDemoPortfolio}
+          onScenarioPriceRefresh={isDemoPortfolio ? async (positionId, update) => aplicarPreciosEscenario([{ id: positionId, ...update }]) : undefined}
+          onScenarioRulesChange={isDemoPortfolio ? async (nextRules) => {
+            updateScenarioData((current) => recalculateScenarioData(current, current.positions, current.operations, nextRules))
+          } : undefined}
           onChanged={() => cargarPortfolio(false)}
         />
 
@@ -945,9 +1393,9 @@ export function InvestmentPortfolio() {
                   role="button"
                   tabIndex={0}
                   aria-label={`Abrir detalle de ${assetLabel(position)}`}
-                  onClick={() => setDetailPositionId(position.id)}
-                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setDetailPositionId(position.id) } }}
-                  className="grid grid-cols-[1fr_auto] gap-3 rounded-lg border border-slate-200 bg-[#eeece5] p-4 text-left transition hover:border-slate-400"
+                  onClick={() => abrirDetallePosition(position.id)}
+                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); abrirDetallePosition(position.id) } }}
+                  className="grid cursor-pointer grid-cols-[1fr_auto] gap-3 rounded-lg border border-slate-200 bg-[#eeece5] p-4 text-left transition hover:border-slate-400"
                 >
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-semibold text-slate-900">{assetLabel(position)}</span>
@@ -990,8 +1438,8 @@ export function InvestmentPortfolio() {
                         key={position.id}
                         tabIndex={0}
                         aria-label={`Abrir detalle de ${assetLabel(position)}`}
-                        onClick={() => setDetailPositionId(position.id)}
-                        onKeyDown={(event) => { if (event.key === 'Enter') setDetailPositionId(position.id) }}
+                        onClick={() => abrirDetallePosition(position.id)}
+                        onKeyDown={(event) => { if (event.key === 'Enter') abrirDetallePosition(position.id) }}
                         className="cursor-pointer border-b border-slate-100 text-[11px] outline-none last:border-0 hover:bg-[#f0eee8] focus-visible:bg-[#e9e7df]"
                       >
                         <td className="px-5 py-3 sm:px-6">
@@ -1041,7 +1489,7 @@ export function InvestmentPortfolio() {
                           )}
                         </td>
                         <td className="px-3 py-3 pr-5 sm:pr-6">
-                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[9px] text-slate-500"><span className={`h-1.5 w-1.5 rounded-full ${sourceDotClass(position.estado_fuente)}`} />{position.estado_fuente === 'FALLBACK' ? 'Fallback' : position.estado_fuente === 'API_OK' ? 'API OK' : 'Manual'}</span>
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[9px] text-slate-500"><span className={`h-1.5 w-1.5 rounded-full ${sourceDotClass(position.estado_fuente)}`} />{position.estado_fuente === 'FALLBACK' ? 'Fallback' : position.estado_fuente === 'API_OK' ? 'API OK' : position.estado_fuente === 'REFERENCE' ? 'Referencia' : 'Manual'}</span>
                         </td>
                       </tr>
                     )
@@ -1063,7 +1511,7 @@ export function InvestmentPortfolio() {
             positions={positions}
             closedPositions={closedPositions}
             onRefresh={() => void actualizarPrecios()}
-            onOpenPosition={setDetailPositionId}
+            onOpenPosition={abrirDetallePosition}
           />
         ) : null}
 
@@ -1071,17 +1519,18 @@ export function InvestmentPortfolio() {
 
         <section className="mt-3 overflow-hidden rounded-xl bg-[#f7f5ef] text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]" id="activity-panel"><div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6"><div><p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Registro / historial</p><h2 className="text-lg font-semibold tracking-[-0.04em]">Actividad reciente</h2><p className="mt-2 max-w-2xl text-[10px] leading-relaxed text-slate-500">Conserva el histórico inicial y añade automáticamente cada compra, venta, dividendo, aportación o traspaso que registres desde la app.</p></div><div className="flex items-center justify-between gap-5 text-[10px] text-slate-400 sm:justify-end"><span>{operations.length} movimientos</span><button type="button" onClick={exportarOperaciones} className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900"><Download className="h-3 w-3" />Exportar JSON</button></div></div><div className="overflow-x-auto"><table className="w-full min-w-[740px] border-collapse text-left"><thead><tr className="border-b border-slate-200 text-[9px] uppercase tracking-[0.1em] text-slate-400"><th className="px-5 py-3 font-bold sm:px-6">Fecha</th><th className="px-3 py-3 font-bold">Tipo</th><th className="px-3 py-3 font-bold">Activo</th><th className="px-3 py-3 font-bold">Custodia</th><th className="px-3 py-3 text-right font-bold">Cantidad</th><th className="px-3 py-3 text-right font-bold">Importe</th><th className="px-3 py-3 pr-5 font-bold sm:pr-6">Nota</th></tr></thead><tbody>{operations.slice(0, 8).map((operation) => <tr key={operation.id} className="border-b border-slate-100 text-[11px] last:border-0 hover:bg-[#f0eee8]"><td className="whitespace-nowrap px-5 py-3 text-slate-500 sm:px-6">{formatDate(operation.fecha)}</td><td className="px-3 py-3"><span className={`font-semibold ${operation.tipo === 'Compra' ? 'text-emerald-700' : operation.tipo === 'Venta' ? 'text-red-600' : 'text-slate-500'}`}>{operation.tipo}</span></td><td className="max-w-[240px] truncate px-3 py-3 font-medium text-slate-900">{operation.activo}</td><td className="px-3 py-3 text-slate-500">{operation.custodia}</td><td className="px-3 py-3 text-right tabular-nums text-slate-700">{formatQuantity(operation.cantidad)}</td><td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-900">{formatEuro(operation.importe)}</td><td className="max-w-[280px] truncate px-3 py-3 pr-5 text-slate-400 sm:pr-6">{operation.notas || '—'}</td></tr>)}</tbody></table></div>{operations.length === 0 && <div className="flex flex-col gap-1 p-6 text-[11px] text-slate-400"><strong className="text-slate-900">Aún no hay operaciones.</strong><span>Registra una compra, venta, dividendo o traspaso para construir tu historial.</span></div>}</section>
 
-        <footer className="flex flex-col gap-1 py-5 text-[10px] text-slate-500 sm:flex-row sm:items-center sm:justify-between"><span>FIN · cartera gestionada en la app · no es asesoramiento financiero</span><span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3 w-3" />Operaciones persistidas en tu cuenta</span></footer>
+        <footer className="flex flex-col gap-1 py-5 text-[10px] text-slate-500 sm:flex-row sm:items-center sm:justify-between"><span>FIN · {isDemoPortfolio ? 'escenario local · precios de referencia' : 'cartera gestionada en la app'} · no es asesoramiento financiero</span><span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3 w-3" />{isDemoPortfolio ? 'Cambios locales en este escenario' : 'Operaciones persistidas en tu cuenta'}</span></footer>
 
       <PositionDetailDialog
-        position={detailPosition}
-        analytics={detailAnalytics}
-        operations={operations}
-        open={detailPosition !== null}
-        onOpenChange={(open) => { if (!open) setDetailPositionId(null) }}
-        onUpdated={(updated) => { actualizarPosicionLocal(updated); void cargarPortfolio(false) }}
-        onStartOperation={abrirOperacionRapida}
-      />
+          position={detailPosition}
+          analytics={detailAnalytics}
+          operations={operations}
+          open={detailPosition !== null}
+          onOpenChange={(open) => { if (!open) setDetailPositionId(null) }}
+          onUpdated={(updated) => { actualizarPosicionLocal(updated); if (!isDemoPortfolio) void cargarPortfolio(false) }}
+          onStartOperation={abrirOperacionRapida}
+          onSaveMetadata={isDemoPortfolio ? guardarMetadataEscenario : undefined}
+        />
 
       <Dialog open={dateDialogOpen} onOpenChange={(open) => { setDateDialogOpen(open); if (!open) setDatePosition(null) }}>
         <DialogContent className="border-slate-200 bg-[#f7f5ef] text-slate-900 sm:max-w-md">
@@ -1103,6 +1552,37 @@ export function InvestmentPortfolio() {
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDateDialogOpen(false)}>Cancelar</Button>
               <Button type="button" onClick={() => void guardarFechaPosicion()} className="bg-slate-900 text-white hover:bg-slate-700" disabled={savingDate}>{savingDate ? 'Guardando…' : 'Guardar fecha'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={portfolioDialogOpen} onOpenChange={setPortfolioDialogOpen}>
+        <DialogContent className="border-slate-200 bg-[#f7f5ef] text-slate-900 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="tracking-[-0.04em]">Nueva cartera</DialogTitle>
+            <DialogDescription>
+              Crea una vista local independiente para comparar una cartera. La cartera principal y las alertas de n8n no se modificarán.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(event) => { event.preventDefault(); crearDemoPortfolio() }} className="grid gap-4">
+            <div className="grid gap-2">
+              <Label htmlFor="demo-portfolio-name">Nombre</Label>
+              <Input id="demo-portfolio-name" value={newPortfolioName} onChange={(event) => setNewPortfolioName(event.target.value)} placeholder="Mi cartera de crecimiento" required />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="demo-portfolio-capital">Capital inicial (€)</Label>
+              <Input id="demo-portfolio-capital" type="number" min="1" step="1000" value={newPortfolioCapital} onChange={(event) => setNewPortfolioCapital(event.target.value)} required />
+            </div>
+            <div className="rounded-lg bg-[#eeece5] px-3 py-2.5 text-[10px] leading-relaxed text-slate-500">
+              El resultado se calcula con el histórico de mercado de las posiciones de referencia.
+            </div>
+            <div className="rounded-lg border border-[#e7a35e]/35 bg-[#fff3df] px-3 py-2.5 text-[10px] leading-relaxed text-[#795329]">
+              La vista es independiente; sus cambios se guardan solo en este navegador y no modifican tu cartera principal ni las alertas de n8n.
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setPortfolioDialogOpen(false)}>Cancelar</Button>
+              <Button type="button" onClick={crearDemoPortfolio} className="bg-slate-900 text-white hover:bg-slate-700"><BriefcaseBusiness />Crear cartera</Button>
             </DialogFooter>
           </form>
         </DialogContent>
