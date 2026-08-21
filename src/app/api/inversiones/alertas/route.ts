@@ -39,6 +39,7 @@ export async function POST(req: Request) {
   }
   const now = new Date().toISOString()
   let position: typeof inversiones_posiciones.$inferSelect | undefined
+  let portfolioValue: number | null = null
 
   if (input.posicion_id) {
     position = await db.query.inversiones_posiciones.findFirst({
@@ -58,6 +59,19 @@ export async function POST(req: Request) {
 
   let referencePrice = input.precio_referencia ?? null
   let capturedPrice: number | null = null
+  if (input.alcance === 'cartera') {
+    const portfolioPositions = await db.query.inversiones_posiciones.findMany({
+      where: and(
+        eq(inversiones_posiciones.usuario_id, auth.userId),
+        eq(inversiones_posiciones.incluido_resumen, true)
+      ),
+    })
+    portfolioValue = portfolioPositions.reduce((sum, item) => sum + (item.valor_actual ?? 0), 0)
+    if (referencePrice === null && portfolioValue > 0) referencePrice = portfolioValue
+    if (referencePrice === null || referencePrice <= 0) {
+      return NextResponse.json({ error: 'Indica un valor base de cartera válido' }, { status: 400 })
+    }
+  }
   if (input.alcance === 'activo' && !position && referencePrice === null) {
     try {
       capturedPrice = (await fetchAssetPrice({
@@ -108,10 +122,12 @@ export async function POST(req: Request) {
     crypto_id: input.alcance === 'cartera' ? null : cryptoId,
     market_symbol: input.alcance === 'cartera' ? null : marketSymbol,
     isin,
-    precio_referencia: input.alcance === 'cartera' ? null : referencePrice,
+    precio_referencia: referencePrice,
     precio_objetivo: input.alcance === 'cartera' ? null : input.precio_objetivo ?? null,
-    precio_actual: existing?.precio_actual ?? (position?.precio_actual ?? capturedPrice),
-    rendimiento_pct: existing?.rendimiento_pct ?? (position?.pnl_pct ?? (capturedPrice !== null && referencePrice && referencePrice > 0 ? (capturedPrice - referencePrice) / referencePrice : null)),
+    precio_actual: input.alcance === 'cartera' ? portfolioValue : (existing?.precio_actual ?? (position?.precio_actual ?? capturedPrice)),
+    rendimiento_pct: input.alcance === 'cartera'
+      ? portfolioValue !== null && referencePrice !== null && referencePrice > 0 ? (portfolioValue - referencePrice) / referencePrice : null
+      : existing?.rendimiento_pct ?? (position?.pnl_pct ?? (capturedPrice !== null && referencePrice && referencePrice > 0 ? (capturedPrice - referencePrice) / referencePrice : null)),
     umbral_subida_pct: input.umbral_subida_pct,
     umbral_caida_pct: input.umbral_caida_pct,
     rearmar_pct: input.rearmar_pct,

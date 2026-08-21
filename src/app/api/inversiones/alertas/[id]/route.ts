@@ -22,12 +22,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   const input = parsed.data
   const values: Record<string, unknown> = { updated_at: new Date().toISOString() }
-  for (const key of ['isin', 'precio_objetivo', 'umbral_subida_pct', 'umbral_caida_pct', 'rearmar_pct', 'canal_telegram', 'canal_email', 'activa']) {
+  for (const key of ['isin', 'precio_referencia', 'precio_objetivo', 'umbral_subida_pct', 'umbral_caida_pct', 'rearmar_pct', 'canal_telegram', 'canal_email', 'activa']) {
     if (Object.prototype.hasOwnProperty.call(input, key)) {
       values[key] = key === 'isin' ? normalizeIsin(input.isin) : input[key as keyof typeof input]
     }
   }
-  if (Object.prototype.hasOwnProperty.call(input, 'precio_objetivo') || Object.prototype.hasOwnProperty.call(input, 'umbral_subida_pct') || Object.prototype.hasOwnProperty.call(input, 'umbral_caida_pct')) {
+  if (Object.prototype.hasOwnProperty.call(input, 'precio_referencia') || Object.prototype.hasOwnProperty.call(input, 'precio_objetivo') || Object.prototype.hasOwnProperty.call(input, 'umbral_subida_pct') || Object.prototype.hasOwnProperty.call(input, 'umbral_caida_pct')) {
     values.estado = 'normal'
     values.ultimo_error = null
   }

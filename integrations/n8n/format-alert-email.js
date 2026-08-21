@@ -66,9 +66,13 @@ return alerts.map((alert) => {
   const triggerValue = hasTargetTrigger ? targetPriceText : threshold
   const triggerLabel = hasTargetTrigger ? 'Precio objetivo' : 'Aviso enviado'
   const triggerDetail = hasTargetTrigger ? 'Nivel alcanzado' : 'Al cruzar este nivel'
+  const referencePrice = Number(alert.precio_referencia)
+  const referencePriceText = Number.isFinite(referencePrice) && referencePrice > 0 ? formatPrice(referencePrice) : null
+  const referenceLabel = alert.alcance === 'cartera' ? 'Precio base configurado' : 'Precio de referencia'
+  const referenceDescription = alert.alcance === 'cartera' ? `la base configurada en ${referencePriceText}` : `el precio de referencia de ${referencePriceText}`
   const triggerDescription = hasTargetTrigger
     ? `el precio objetivo de ${targetPriceText}`
-    : `la rentabilidad ha cruzado el nivel ${threshold}`
+    : `la rentabilidad ha cruzado el nivel ${threshold}${referencePriceText ? ` desde ${referenceDescription}` : ''}`
   const checkedAt = formatDate(alert.checked_at)
   const subject = hasTargetTrigger
     ? `Finanzas · ${assetName} ha alcanzado ${targetPriceText}`
@@ -78,7 +82,7 @@ return alerts.map((alert) => {
       ? `<tr><td style="padding:8px 0;color:#8997a3;font-size:12px;">Precio actual</td><td align="right" style="padding:8px 0;color:#f7f5ef;font-size:12px;font-weight:700;">${formatPrice(alert.precio_actual)}</td></tr>`
       : '',
     alert.precio_referencia !== null && alert.precio_referencia !== undefined
-      ? `<tr><td style="padding:8px 0;color:#8997a3;font-size:12px;">Precio de referencia</td><td align="right" style="padding:8px 0;color:#f7f5ef;font-size:12px;font-weight:700;">${formatPrice(alert.precio_referencia)}</td></tr>`
+      ? `<tr><td style="padding:8px 0;color:#8997a3;font-size:12px;">${referenceLabel}</td><td align="right" style="padding:8px 0;color:#f7f5ef;font-size:12px;font-weight:700;">${formatPrice(alert.precio_referencia)}</td></tr>`
       : '',
     targetPriceText
       ? `<tr><td style="padding:8px 0;color:#8997a3;font-size:12px;">Precio objetivo</td><td align="right" style="padding:8px 0;color:#f7f5ef;font-size:12px;font-weight:700;">${targetPriceText}</td></tr>`
@@ -91,7 +95,7 @@ return alerts.map((alert) => {
     `Rentabilidad actual: ${currentReturn}`,
     hasTargetTrigger ? `Precio objetivo alcanzado: ${targetPriceText}` : `Aviso enviado al cruzar: ${threshold}`,
     alert.precio_actual !== null && alert.precio_actual !== undefined ? `Precio actual: ${formatPrice(alert.precio_actual)}` : null,
-    alert.precio_referencia !== null && alert.precio_referencia !== undefined ? `Referencia: ${formatPrice(alert.precio_referencia)}` : null,
+    alert.precio_referencia !== null && alert.precio_referencia !== undefined ? `${referenceLabel}: ${formatPrice(alert.precio_referencia)}` : null,
     `Canales: ${channelHint}`,
     `Comprobado: ${checkedAt}`,
   ].filter(Boolean).join('\n')
@@ -136,7 +140,7 @@ return alerts.map((alert) => {
                     <td width="48%" style="padding:18px;background:#f7f5ef;border-radius:12px;">
                       <div style="color:#65727d;font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;">Rentabilidad actual</div>
                       <div style="margin-top:8px;color:${isDrop ? '#b84e55' : '#31531d'};font-size:28px;font-weight:700;letter-spacing:-1px;">${currentReturn}</div>
-                      <div style="margin-top:5px;color:#8997a3;font-size:10px;">Desde el coste conocido</div>
+                      <div style="margin-top:5px;color:#8997a3;font-size:10px;">Desde la base configurada</div>
                     </td>
                     <td width="4%" style="font-size:0;line-height:0;">&nbsp;</td>
                     <td width="48%" style="padding:18px;background:${accentSoft};border-radius:12px;">

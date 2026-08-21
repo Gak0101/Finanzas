@@ -38,11 +38,13 @@ export async function listInvestmentAlertRules(userId: number) {
   })
 }
 
-function portfolioReturn(positions: InversionPosicion[]) {
+function portfolioValue(positions: InversionPosicion[]) {
+  return positions.reduce((sum, position) => sum + (position.valor_actual ?? 0), 0)
+}
+
+function portfolioCost(positions: InversionPosicion[]) {
   const known = positions.filter((position) => position.coste !== null && position.coste > 0)
-  const knownCost = known.reduce((sum, position) => sum + (position.coste ?? 0), 0)
-  const value = known.reduce((sum, position) => sum + (position.valor_actual ?? 0), 0)
-  return knownCost > 0 ? (value - knownCost) / knownCost : null
+  return known.reduce((sum, position) => sum + (position.coste ?? 0), 0)
 }
 
 type SignalEvaluation = {
@@ -115,7 +117,6 @@ function ruleLabel(rule: InversionAlerta, position: InversionPosicion | undefine
 async function evaluateRule(
   rule: InversionAlerta,
   positions: InversionPosicion[],
-  portfolioPct: number | null,
   checkedAt: string
 ) {
   const position = rule.posicion_id === null ? undefined : positions.find((item) => item.id === rule.posicion_id)
@@ -124,12 +125,17 @@ async function evaluateRule(
   let referencePrice = rule.precio_referencia
 
   if (rule.alcance === 'cartera') {
-    currentPct = portfolioPct
+    currentPrice = portfolioValue(positions)
+    // Alertas antiguas no tenían una base guardada: conservamos su semántica
+    // anterior usando el coste conocido hasta que el usuario las edite.
+    if (referencePrice === null || referencePrice <= 0) referencePrice = portfolioCost(positions)
+    currentPct = referencePrice > 0 ? (currentPrice - referencePrice) / referencePrice : null
   } else if (position) {
     currentPrice = position.precio_actual
-    if (rule.precio_objetivo !== null && rule.precio_objetivo !== undefined && referencePrice === null) {
-      referencePrice = position.precio_compra ?? currentPrice
+    if (referencePrice === null && position.cantidad > 0 && position.coste !== null && position.coste > 0) {
+      referencePrice = position.coste / position.cantidad
     }
+    if (rule.precio_objetivo !== null && rule.precio_objetivo !== undefined && referencePrice === null) referencePrice = position.precio_compra ?? currentPrice
     if (position.pnl_pct !== null) {
       currentPct = position.pnl_pct
     } else if (referencePrice !== null && currentPrice !== null && referencePrice > 0) {
@@ -214,13 +220,12 @@ export async function checkInvestmentAlerts(userId: number): Promise<InvestmentA
   ])
 
   const checkedAt = new Date().toISOString()
-  const portfolioPct = portfolioReturn(positions)
   const alerts: TriggeredInvestmentAlert[] = []
   let skippedRules = 0
 
   for (const rule of rules) {
     try {
-      const result = await evaluateRule(rule, positions, portfolioPct, checkedAt)
+      const result = await evaluateRule(rule, positions, checkedAt)
       if (result.skipped) skippedRules += 1
       if (result.triggered) alerts.push(result.triggered)
     } catch (error) {
