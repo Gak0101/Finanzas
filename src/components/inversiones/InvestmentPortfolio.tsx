@@ -399,9 +399,9 @@ function ClosedPositionsPanel({ positions }: { positions: ClosedInvestmentPositi
   if (positions.length === 0) {
     return (
       <section className="mt-3 rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)] sm:p-6" id="closed-positions">
-        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Historial / ciclos completados</p>
-        <h2 className="mt-2 text-lg font-semibold tracking-[-0.04em]">Todavía no hay posiciones cerradas</h2>
-        <p className="mt-2 text-[11px] leading-relaxed text-slate-500">Cuando una venta cierre por completo una posición, aparecerá aquí con su resultado registrado, costes y tiempo en cartera.</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Historial / cierres completos</p>
+        <h2 className="mt-2 text-lg font-semibold tracking-[-0.04em]">Todavía no hay cierres completos</h2>
+        <p className="mt-2 text-[11px] leading-relaxed text-slate-500">Cuando una venta deje una posición a cero, aparecerá aquí el ciclo completo con compras, ventas, resultado y rentabilidad.</p>
       </section>
     )
   }
@@ -414,15 +414,15 @@ function ClosedPositionsPanel({ positions }: { positions: ClosedInvestmentPositi
     <section className="mt-3 overflow-hidden rounded-xl bg-[#f7f5ef] text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]" id="closed-positions">
       <div className="flex flex-col gap-5 border-b border-slate-200 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6">
         <div>
-          <p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Historial / ciclos completados</p>
-          <h2 className="text-lg font-semibold tracking-[-0.04em]">Posiciones cerradas</h2>
+          <p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Historial / cierres completos</p>
+          <h2 className="text-lg font-semibold tracking-[-0.04em]">Cierres completos</h2>
           <p className="mt-2 max-w-2xl text-[10px] leading-relaxed text-slate-500">
-            Calculadas exclusivamente con compras, ventas, dividendos, costes e impuestos registrados. No se rellenan huecos ni se estiman operaciones.
+            Una fila agrupa un ciclo entero: desde las compras hasta vender todas las unidades. Es el resumen de la inversión cerrada, no una operación aislada.
           </p>
         </div>
         <div className="grid grid-cols-3 gap-5 text-left sm:text-right">
           <div><p className="text-[9px] uppercase tracking-[0.1em] text-slate-400">Ciclos cerrados</p><strong className="mt-1 block text-sm tabular-nums">{positions.length}</strong></div>
-          <div><p className="text-[9px] uppercase tracking-[0.1em] text-slate-400">En positivo</p><strong className="mt-1 block text-sm tabular-nums">{profitable}</strong></div>
+          <div><p className="text-[9px] uppercase tracking-[0.1em] text-slate-400">Ciclos en positivo</p><strong className="mt-1 block text-sm tabular-nums">{profitable}</strong></div>
           <div><p className="text-[9px] uppercase tracking-[0.1em] text-slate-400">Resultado neto</p><strong className={`mt-1 block text-sm tabular-nums ${realisedResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(realisedResult)}</strong></div>
         </div>
       </div>
@@ -436,8 +436,8 @@ function ClosedPositionsPanel({ positions }: { positions: ClosedInvestmentPositi
               <th className="px-3 py-3 text-right font-bold">Ventas</th>
               <th className="px-3 py-3 text-right font-bold">Ingresos</th>
               <th className="px-3 py-3 text-right font-bold">Costes</th>
-              <th className="px-3 py-3 text-right font-bold">Resultado</th>
-              <th className="px-3 py-3 pr-5 text-right font-bold sm:pr-6">Rentabilidad</th>
+              <th className="px-3 py-3 text-right font-bold">Resultado neto</th>
+              <th className="px-3 py-3 pr-5 text-right font-bold sm:pr-6">Rentabilidad del ciclo</th>
             </tr>
           </thead>
           <tbody>
@@ -1554,9 +1554,13 @@ function InvestmentPortfolioContent() {
         <section className="mt-3 overflow-hidden rounded-xl bg-[#f7f5ef] text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]" id="activity-panel">
           <div className="flex flex-col gap-4 border-b border-slate-200 p-5 sm:p-6 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Registro / historial</p>
-              <h2 className="text-lg font-semibold tracking-[-0.04em]">Movimientos y resultados</h2>
-              <p className="mt-2 max-w-2xl text-[10px] leading-relaxed text-slate-500">Filtra las operaciones para ver rápidamente cuánto cobraste y qué resultado generó cada venta.</p>
+              <p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Registro / operaciones individuales</p>
+              <h2 className="text-lg font-semibold tracking-[-0.04em]">Movimientos individuales</h2>
+              <p className="mt-2 max-w-2xl text-[10px] leading-relaxed text-slate-500">Una fila es una operación. En las ventas verás el dinero neto recibido, el resultado neto y la rentabilidad sobre el coste medio de las unidades vendidas.</p>
+              <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-[10px] text-slate-500">
+                <span className="inline-flex items-center gap-1.5"><Info className="h-3 w-3 text-slate-400" />Flujo neto = efectivo que entra o sale</span>
+                <span className="inline-flex items-center gap-1.5"><Info className="h-3 w-3 text-slate-400" />Rentabilidad = resultado neto ÷ coste vendido</span>
+              </div>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-400 lg:justify-end">
               <span>{operations.length} movimientos</span>
@@ -1570,8 +1574,8 @@ function InvestmentPortfolioContent() {
             </div>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1040px] border-collapse text-left">
-              <thead><tr className="border-b border-slate-200 text-[9px] uppercase tracking-[0.1em] text-slate-400"><th className="px-5 py-3 font-bold sm:px-6">Fecha</th><th className="px-3 py-3 font-bold">Tipo</th><th className="px-3 py-3 font-bold">Activo</th><th className="px-3 py-3 font-bold">Custodia</th><th className="px-3 py-3 text-right font-bold">Cantidad</th><th className="px-3 py-3 text-right font-bold">Importe</th><th className="px-3 py-3 text-right font-bold">Neto</th><th className="px-3 py-3 text-right font-bold">Resultado</th><th className="px-3 py-3 pr-5 font-bold sm:pr-6">Nota</th></tr></thead>
+            <table className="w-full min-w-[1160px] border-collapse text-left">
+              <thead><tr className="border-b border-slate-200 text-[9px] uppercase tracking-[0.1em] text-slate-400"><th className="px-5 py-3 font-bold sm:px-6">Fecha</th><th className="px-3 py-3 font-bold">Tipo</th><th className="px-3 py-3 font-bold">Activo</th><th className="px-3 py-3 font-bold">Custodia</th><th className="px-3 py-3 text-right font-bold">Cantidad</th><th className="px-3 py-3 text-right font-bold">Importe operación</th><th className="px-3 py-3 text-right font-bold">Flujo neto</th><th className="px-3 py-3 text-right font-bold">Coste vendido</th><th className="px-3 py-3 text-right font-bold">Resultado neto</th><th className="px-3 py-3 text-right font-bold">Rentabilidad</th><th className="px-3 py-3 pr-5 font-bold sm:pr-6">Nota</th></tr></thead>
               <tbody>
                 {visibleOperations.map((operation) => {
                   const metric = operationMetricsById.get(operation.id)
@@ -1584,14 +1588,16 @@ function InvestmentPortfolioContent() {
                     <td className="px-3 py-3 text-right tabular-nums text-slate-700">{formatQuantity(operation.cantidad)}</td>
                     <td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-900">{formatEuro(operation.importe)}</td>
                     <td className={`px-3 py-3 text-right tabular-nums ${operation.tipo === 'Venta' ? 'font-semibold text-emerald-700' : 'text-slate-500'}`}>{metric?.netCash === null || metric?.netCash === undefined ? '—' : formatEuro(metric.netCash)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-slate-500">{operation.tipo === 'Venta' && metric?.assignedCost !== null && metric?.assignedCost !== undefined ? formatEuro(metric.assignedCost) : '—'}</td>
                     <td className={`px-3 py-3 text-right font-semibold tabular-nums ${result === null || result === undefined ? 'text-slate-400' : result >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{result === null || result === undefined ? '—' : formatEuro(result)}</td>
+                    <td className={`px-3 py-3 text-right font-semibold tabular-nums ${result === null || result === undefined || metric?.assignedCost === null || metric?.assignedCost === undefined || metric.assignedCost <= 0 ? 'text-slate-400' : result >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{result === null || result === undefined || metric?.assignedCost === null || metric?.assignedCost === undefined || metric.assignedCost <= 0 ? '—' : formatPct(result / metric.assignedCost)}</td>
                     <td className="max-w-[280px] truncate px-3 py-3 pr-5 text-slate-400 sm:pr-6">{operation.notas || '—'}</td>
                   </tr>
                 })}
               </tbody>
             </table>
           </div>
-          {operations.length === 0 ? <div className="flex flex-col gap-1 p-6 text-[11px] text-slate-400"><strong className="text-slate-900">Aún no hay operaciones.</strong><span>Registra una compra, venta, dividendo o traspaso para construir tu historial.</span></div> : visibleOperations.length === 0 ? <div className="p-6 text-[11px] text-slate-500">No hay movimientos de este tipo.</div> : <div className="border-t border-slate-200 px-5 py-3 text-[10px] text-slate-400 sm:px-6">Mostrando {visibleOperations.length} movimientos filtrados · el resultado de una venta es neto de comisiones e impuestos registrados.</div>}
+          {operations.length === 0 ? <div className="flex flex-col gap-1 p-6 text-[11px] text-slate-400"><strong className="text-slate-900">Aún no hay operaciones.</strong><span>Registra una compra, venta, dividendo o traspaso para construir tu historial.</span></div> : visibleOperations.length === 0 ? <div className="p-6 text-[11px] text-slate-500">No hay movimientos de este tipo.</div> : <div className="border-t border-slate-200 px-5 py-3 text-[10px] text-slate-400 sm:px-6">Mostrando {visibleOperations.length} movimientos filtrados · en ventas, el porcentaje usa el coste medio asignado a las unidades vendidas.</div>}
         </section>
 
         <footer className="flex flex-col gap-1 py-5 text-[10px] text-slate-500 sm:flex-row sm:items-center sm:justify-between"><span>FIN · {isDemoPortfolio ? 'escenario local · precios de referencia' : 'cartera gestionada en la app'} · no es asesoramiento financiero</span><span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3 w-3" />{isDemoPortfolio ? 'Cambios locales en este escenario' : 'Operaciones persistidas en tu cuenta'}</span></footer>
