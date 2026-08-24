@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import { sql, relations } from 'drizzle-orm'
 import { DEFAULT_OPENROUTER_MODEL } from '@/lib/ai/model-routing'
 
@@ -278,6 +278,9 @@ export const inversiones_operaciones = sqliteTable(
     fecha: text('fecha').notNull(),
     fecha_hora: text('fecha_hora'),
     tipo: text('tipo').notNull(),
+    // Solo se rellena en compras nuevas procesadas por la app. Las operaciones
+    // importadas/históricas permanecen en null para no inventar su financiación.
+    origen_fondos: text('origen_fondos'),
     tipo_externo: text('tipo_externo'),
     activo: text('activo').notNull(),
     ticker: text('ticker').notNull(),
@@ -298,6 +301,32 @@ export const inversiones_operaciones = sqliteTable(
   (t) => [uniqueIndex('unique_inversion_operacion_fuente_externa').on(t.usuario_id, t.fuente, t.external_id)]
 )
 
+// ─── INVERSIONES / MOVIMIENTOS DE EFECTIVO ─────────────────────────────────
+// Libro firmado de efectivo disponible por custodia y divisa. No se reconstruye
+// a partir de compras históricas: solo la migración legacy y las operaciones
+// nuevas de la app generan movimientos.
+export const inversiones_movimientos_efectivo = sqliteTable(
+  'inversiones_movimientos_efectivo',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    usuario_id: integer('usuario_id').notNull().references(() => usuarios.id),
+    custodia: text('custodia').notNull(),
+    divisa: text('divisa').notNull().default('EUR'),
+    fecha: text('fecha').notNull(),
+    importe: real('importe').notNull(),
+    tipo: text('tipo').notNull(),
+    operacion_id: integer('operacion_id').references(() => inversiones_operaciones.id),
+    referencia: text('referencia').notNull(),
+    descripcion: text('descripcion'),
+    created_at: text('created_at').default(sql`(datetime('now'))`),
+  },
+  (t) => [
+    index('idx_inversion_movimiento_efectivo_saldo').on(t.usuario_id, t.custodia, t.divisa),
+    uniqueIndex('unique_inversion_movimiento_efectivo_referencia').on(t.referencia),
+    uniqueIndex('unique_inversion_movimiento_efectivo_operacion_tipo').on(t.operacion_id, t.tipo),
+  ]
+)
+
 // ─── RELACIONES ──────────────────────────────────────────────────────────────
 export const usuariosRelations = relations(usuarios, ({ many, one }) => ({
   categorias: many(categorias),
@@ -308,6 +337,7 @@ export const usuariosRelations = relations(usuarios, ({ many, one }) => ({
   inversiones_alertas: many(inversiones_alertas),
   inversiones_snapshots_diarios: many(inversiones_snapshots_diarios),
   inversiones_operaciones: many(inversiones_operaciones),
+  inversiones_movimientos_efectivo: many(inversiones_movimientos_efectivo),
   inversiones_excel_filas: many(inversiones_excel_filas),
   configuracion_ia: one(configuraciones_ia),
   configuracion_fuentes_inversion: one(configuraciones_fuentes_inversion),
@@ -391,10 +421,22 @@ export const inversionesSnapshotsDiariosRelations = relations(inversiones_snapsh
   }),
 }))
 
-export const inversionesOperacionesRelations = relations(inversiones_operaciones, ({ one }) => ({
+export const inversionesOperacionesRelations = relations(inversiones_operaciones, ({ one, many }) => ({
   usuario: one(usuarios, {
     fields: [inversiones_operaciones.usuario_id],
     references: [usuarios.id],
+  }),
+  movimientos_efectivo: many(inversiones_movimientos_efectivo),
+}))
+
+export const inversionesMovimientosEfectivoRelations = relations(inversiones_movimientos_efectivo, ({ one }) => ({
+  usuario: one(usuarios, {
+    fields: [inversiones_movimientos_efectivo.usuario_id],
+    references: [usuarios.id],
+  }),
+  operacion: one(inversiones_operaciones, {
+    fields: [inversiones_movimientos_efectivo.operacion_id],
+    references: [inversiones_operaciones.id],
   }),
 }))
 
@@ -427,6 +469,8 @@ export type InversionSnapshotDiario = typeof inversiones_snapshots_diarios.$infe
 export type NuevoInversionSnapshotDiario = typeof inversiones_snapshots_diarios.$inferInsert
 export type InversionOperacion = typeof inversiones_operaciones.$inferSelect
 export type NuevaInversionOperacion = typeof inversiones_operaciones.$inferInsert
+export type InversionMovimientoEfectivo = typeof inversiones_movimientos_efectivo.$inferSelect
+export type NuevoInversionMovimientoEfectivo = typeof inversiones_movimientos_efectivo.$inferInsert
 export type InversionExcelFila = typeof inversiones_excel_filas.$inferSelect
 export type NuevaInversionExcelFila = typeof inversiones_excel_filas.$inferInsert
 export type ConfiguracionIa = typeof configuraciones_ia.$inferSelect

@@ -40,6 +40,7 @@ import type { InversionAlerta, InversionOperacion, InversionPosicion } from '@/l
 import type { ClosedInvestmentPosition } from '@/lib/inversiones/history'
 import { calculateClosedInvestmentPositions } from '@/lib/inversiones/history'
 import { calculateInvestmentAnalytics, type InvestmentAnalytics } from '@/lib/inversiones/analytics'
+import type { InvestmentCashSnapshot } from '@/lib/inversiones/cash'
 import { StockFinder } from '@/components/buscador-acciones/StockFinder'
 import { InvestmentAnalyticsPanel } from '@/components/inversiones/InvestmentAnalyticsPanel'
 import { MarketHoursPanel } from '@/components/inversiones/MarketHoursPanel'
@@ -61,9 +62,11 @@ type PortfolioData = {
   notificationAlerts: InversionAlerta[]
   closedPositions: ClosedInvestmentPosition[]
   analytics: InvestmentAnalytics
+  cash: InvestmentCashSnapshot
 }
 
 type OperationType = 'Compra' | 'Venta' | 'Dividendo' | 'Aportación' | 'Traspaso'
+type InvestmentFundingSource = 'saldo_existente' | 'capital_nuevo'
 type ActivityFilter = 'all' | 'Venta' | 'Compra' | 'income'
 type InvestmentTab = 'portfolio' | 'buscador'
 type OperationAssetSearchResult = {
@@ -312,6 +315,15 @@ function formatEuro(value: number | null | undefined) {
   return new Intl.NumberFormat('es-ES', {
     style: 'currency',
     currency: 'EUR',
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
+function formatCashAmount(value: number, currency: string) {
+  const safeCurrency = /^[A-Z]{3}$/.test(currency) ? currency : 'EUR'
+  return new Intl.NumberFormat('es-ES', {
+    style: 'currency',
+    currency: safeCurrency,
     maximumFractionDigits: 2,
   }).format(value)
 }
@@ -565,6 +577,7 @@ function InvestmentPortfolioContent() {
   const [openingDate, setOpeningDate] = useState('')
   const [savingDate, setSavingDate] = useState(false)
   const [operationType, setOperationType] = useState<OperationType>('Compra')
+  const [fundingSource, setFundingSource] = useState<InvestmentFundingSource>('saldo_existente')
   const [selectedPosition, setSelectedPosition] = useState('new')
   const [fecha, setFecha] = useState('')
   const [activo, setActivo] = useState('')
@@ -583,6 +596,7 @@ function InvestmentPortfolioContent() {
   const [notas, setNotas] = useState('')
   const [comision, setComision] = useState('')
   const [impuesto, setImpuesto] = useState('')
+  const [operationCurrency, setOperationCurrency] = useState('EUR')
   const [detailPositionId, setDetailPositionId] = useState<number | null>(null)
   const activeTab: InvestmentTab = searchParams.get('tab') === 'buscador' ? 'buscador' : 'portfolio'
 
@@ -720,6 +734,9 @@ function InvestmentPortfolioContent() {
   const notificationAlerts = activeData?.notificationAlerts ?? []
   const closedPositions = activeData?.closedPositions ?? []
   const analytics = activeData?.analytics ?? null
+  const cash = isDemoPortfolio ? null : data?.cash ?? null
+  const availableCashForOperation = cash?.balances.find((balance) => balance.custodia === custodia && balance.divisa === operationCurrency)?.saldo ?? 0
+  const cashSummary = cash?.balances.map((balance) => `${balance.custodia}: ${formatCashAmount(balance.saldo, balance.divisa)}`).join(' · ')
   const detailPosition = positions.find((position) => position.id === detailPositionId) ?? null
   const detailAnalytics = analytics?.positionAnalytics.find((item) => item.positionId === detailPositionId) ?? null
   const portfolioLastUpdated = useMemo(() => {
@@ -887,10 +904,6 @@ function InvestmentPortfolioContent() {
     () => new Map((analytics?.operationAnalytics ?? []).map((metric) => [metric.operationId, metric])),
     [analytics?.operationAnalytics],
   )
-  const latestSale = useMemo(() => [...operations]
-    .filter((operation) => operation.tipo === 'Venta')
-    .sort((left, right) => operationTimestamp(right) - operationTimestamp(left) || right.id - left.id)[0] ?? null, [operations])
-  const latestSaleMetric = latestSale ? operationMetricsById.get(latestSale.id) ?? null : null
   const visibleOperations = useMemo(() => operations
     .filter((operation) => {
       if (activityFilter === 'all') return true
@@ -954,6 +967,7 @@ function InvestmentPortfolioContent() {
 
   function resetOperation() {
     setOperationType('Compra')
+    setFundingSource('saldo_existente')
     setSelectedPosition('new')
     setFecha(new Date().toISOString().slice(0, 10))
     setActivo('')
@@ -972,6 +986,7 @@ function InvestmentPortfolioContent() {
     setNotas('')
     setComision('')
     setImpuesto('')
+    setOperationCurrency('EUR')
   }
 
   function seleccionarPosicion(value: string) {
@@ -988,6 +1003,7 @@ function InvestmentPortfolioContent() {
       setCustodia('')
       setCantidad('')
       setPrecio('')
+      setOperationCurrency('EUR')
       return
     }
     const position = positions.find((item) => String(item.id) === value)
@@ -1003,6 +1019,7 @@ function InvestmentPortfolioContent() {
     setTipoActivo(position.tipo as typeof tipoActivo)
     setCustodia(position.custodia)
     setPrecio(position.precio_actual?.toString() ?? '')
+    setOperationCurrency(position.divisa || 'EUR')
   }
 
   function handleOperationAssetChange(value: string) {
@@ -1014,6 +1031,7 @@ function InvestmentPortfolioContent() {
     setOperationMarketSymbol(null)
     setOperationCryptoId(null)
     setOperationIsin('')
+    setOperationCurrency('EUR')
   }
 
   function chooseOperationAsset(result: OperationAssetSearchResult) {
@@ -1028,6 +1046,7 @@ function InvestmentPortfolioContent() {
     setOperationCryptoId(result.crypto_id)
     setOperationIsin(result.isin || '')
     setTipoActivo(result.tipo_activo)
+    setOperationCurrency((result.divisa || 'EUR').toUpperCase())
   }
 
   function handleOperationType(value: OperationType) {
@@ -1061,6 +1080,7 @@ function InvestmentPortfolioContent() {
         fecha,
         fecha_hora: now,
         tipo: operationType,
+        origen_fondos: operationType === 'Compra' ? fundingSource : null,
         tipo_externo: null,
         activo,
         ticker,
@@ -1071,7 +1091,7 @@ function InvestmentPortfolioContent() {
         importe: quantity * unitPrice,
         comision: fee,
         impuesto: tax,
-        divisa: 'EUR',
+        divisa: operationCurrency,
         fuente: 'Escenario local',
         external_id: null,
         descripcion: 'Movimiento añadido a la vista de escenario',
@@ -1139,7 +1159,7 @@ function InvestmentPortfolioContent() {
           hoja_origen: activeDemoPortfolio?.name ?? 'Escenario local',
           fila_origen: null,
           incluido_resumen: true,
-          divisa: 'EUR',
+          divisa: operationCurrency,
           sector: null,
           pais: null,
           objetivo_precio: null,
@@ -1171,6 +1191,7 @@ function InvestmentPortfolioContent() {
         body: JSON.stringify({
           fecha,
           tipo: operationType,
+          origen_fondos: operationType === 'Compra' ? fundingSource : undefined,
           activo,
           ticker,
           tipo_activo: tipoActivo,
@@ -1179,6 +1200,7 @@ function InvestmentPortfolioContent() {
           precio_unitario: unitPrice,
           comision: fee,
           impuesto: tax,
+          divisa: operationCurrency,
           notas: notas || undefined,
           price_ticker: operationPriceTicker || ticker,
           market_symbol: operationMarketSymbol || undefined,
@@ -1199,7 +1221,9 @@ function InvestmentPortfolioContent() {
         const result = metric?.realisedPnlNet === null || metric?.realisedPnlNet === undefined ? null : formatEuro(metric.realisedPnlNet)
         toast.success(`Venta registrada${released ? ` · ${released} liberados` : ''}${result ? ` · resultado neto ${result}` : ''}`)
       } else {
-        toast.success(`${operationType} registrada y añadida al historial`)
+        toast.success(operationType === 'Compra'
+          ? `Compra registrada · ${fundingSource === 'capital_nuevo' ? 'capital nuevo aplicado' : 'saldo disponible descontado'}`
+          : `${operationType} registrada y añadida al historial`)
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo guardar la operación')
@@ -1372,7 +1396,7 @@ function InvestmentPortfolioContent() {
 
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label="Resumen del portfolio">
           <div className="rounded-xl bg-[#c8f56a] p-5 text-[#172016] shadow-[0_12px_30px_rgba(0,0,0,.14)] md:col-span-2 xl:col-span-1"><div className="flex items-center justify-between text-xs font-semibold text-[#536a38]"><span>Valor actual</span><CircleDollarSign className="h-5 w-5" /></div><p className="mt-5 text-4xl font-semibold tracking-[-0.06em] tabular-nums">{formatEuro(analytics?.performance.totalValue ?? summary.totalValue)}</p><p className="mt-4 text-[10px] text-[#617946]">{positions.length} posiciones · valoración en EUR</p></div>
-          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Capital disponible</span><Wallet className="h-4 w-4" /></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{formatEuro(latestSaleMetric?.netCash ?? 0)}</p><p className="mt-4 text-[10px] text-slate-400">{latestSale ? `Neto de la última venta · ${latestSale.ticker}` : 'Sin ventas registradas todavía'}</p></div>
+          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Efectivo disponible</span><Wallet className="h-4 w-4" /></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{isDemoPortfolio ? '—' : formatEuro(cash?.totalEur ?? 0)}</p><p className="mt-4 text-[10px] leading-relaxed text-slate-400">{isDemoPortfolio ? 'Escenario local · sin ledger persistido' : cashSummary || 'Sin movimientos de efectivo registrados'}</p></div>
           <div className="rounded-xl bg-[#e5edde] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado cartera abierta</span><span className={(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.unrealisedPnl ?? summary.knownPnl)}</p><p className="mt-4 text-[10px] text-slate-500">Solo posiciones actuales · {formatPct(analytics?.performance.currentReturnPct ?? summary.knownReturn)}</p></div>
           <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado realizado</span><span className={(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.historicalNetResult ?? 0)}</p><p className="mt-4 text-[10px] text-slate-400">Ventas realizadas + ingresos − comisiones e impuestos</p></div>
         </section>
@@ -1698,8 +1722,10 @@ function InvestmentPortfolioContent() {
                 <div className="grid min-w-0 gap-2"><Label htmlFor="operation-ticker">Ticker {selectedOperationAsset ? <span className="font-normal text-slate-400">(automático)</span> : null}</Label><Input id="operation-ticker" value={ticker} onChange={(event) => { setTicker(event.target.value.toUpperCase()); setSelectedOperationAsset(null); setOperationPriceTicker(''); setOperationMarketSymbol(null); setOperationCryptoId(null); setOperationIsin('') }} placeholder="BTC, SXR8…" readOnly={Boolean(selectedOperationAsset)} className="h-10 w-full min-w-0 text-base sm:text-sm" required /><p className="text-[9px] leading-relaxed text-slate-400">{selectedOperationAsset ? 'Se conservará el símbolo del mercado elegido.' : 'Puedes escribirlo manualmente si no aparece ninguna coincidencia.'}</p></div>
               </div>
               <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-type-asset">Tipo de activo</Label><select id="operation-type-asset" value={tipoActivo} onChange={(event) => setTipoActivo(event.target.value)} className="h-10 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-slate-500 sm:text-sm"><option value="Crypto">Crypto</option><option value="Crypto / Staking">Crypto / Staking</option><option value="ETF">ETF</option><option value="Acción">Acción</option><option value="Fondo">Fondo</option><option value="Otro">Otro</option></select></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-custody">Custodia / broker</Label><Input id="operation-custody" list="broker-suggestions" value={custodia} onChange={(event) => setCustodia(event.target.value)} placeholder="Trade Republic, XTB…" className="h-10 text-base sm:text-sm" required /><datalist id="broker-suggestions"><option value="Trade Republic" /><option value="XTB" /><option value="Cold wallet" /><option value="Otro" /></datalist><p className="text-[9px] leading-relaxed text-slate-400">Indica dónde está custodiada; la cotización se actualiza por proveedor de mercado.</p></div></div>
-              <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-quantity">Cantidad</Label><Input id="operation-quantity" type="number" min="0" step="any" value={cantidad} onChange={(event) => setCantidad(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" required /></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-price">Precio unitario (€)</Label><Input id="operation-price" type="number" min="0" step="any" value={precio} onChange={(event) => setPrecio(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" required /></div></div>
-              <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-fee">Comisión (€) <span className="font-normal text-slate-400">(opcional)</span></Label><Input id="operation-fee" type="number" min="0" step="any" value={comision} onChange={(event) => setComision(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" /></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-tax">Impuesto / retención (€) <span className="font-normal text-slate-400">(opcional)</span></Label><Input id="operation-tax" type="number" min="0" step="any" value={impuesto} onChange={(event) => setImpuesto(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" /></div></div>
+              <div className="grid min-w-0 gap-2"><Label>Divisa de liquidación</Label><div className="flex h-10 items-center rounded-md border border-slate-200 bg-[#eeece5] px-3 text-sm font-semibold text-slate-700">{operationCurrency}</div><p className="text-[9px] leading-relaxed text-slate-400">El efectivo se registra separado por custodia y divisa.</p></div>
+              {operationType === 'Compra' ? <fieldset className="grid gap-2 rounded-lg border border-slate-200 bg-white/70 p-3"><legend className="px-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Origen de fondos</legend><label className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 ${fundingSource === 'saldo_existente' ? 'border-[#90b85f] bg-[#e7f2d4]' : 'border-slate-200'}`}><input type="radio" name="investment-funding-source" value="saldo_existente" checked={fundingSource === 'saldo_existente'} onChange={() => setFundingSource('saldo_existente')} className="mt-0.5" /><span className="min-w-0"><span className="block text-xs font-semibold text-slate-800">Usar efectivo disponible</span><span className="mt-0.5 block text-[10px] leading-relaxed text-slate-500">{custodia ? `${formatCashAmount(availableCashForOperation, operationCurrency)} disponibles en ${custodia}` : 'Indica la custodia para consultar el saldo disponible.'}</span><span className="mt-0.5 block text-[10px] text-slate-400">Se descontará el coste total, incluida comisión e impuesto.</span></span></label><label className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 ${fundingSource === 'capital_nuevo' ? 'border-[#e7a35e] bg-[#fff3df]' : 'border-slate-200'}`}><input type="radio" name="investment-funding-source" value="capital_nuevo" checked={fundingSource === 'capital_nuevo'} onChange={() => setFundingSource('capital_nuevo')} className="mt-0.5" /><span className="min-w-0"><span className="block text-xs font-semibold text-slate-800">Registrar capital nuevo</span><span className="mt-0.5 block text-[10px] leading-relaxed text-slate-500">Crea una entrada de capital por el coste total y después registra el débito de la compra.</span></span></label></fieldset> : null}
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-quantity">Cantidad</Label><Input id="operation-quantity" type="number" min="0" step="any" value={cantidad} onChange={(event) => setCantidad(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" required /></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-price">Precio unitario ({operationCurrency})</Label><Input id="operation-price" type="number" min="0" step="any" value={precio} onChange={(event) => setPrecio(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" required /></div></div>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-fee">Comisión ({operationCurrency}) <span className="font-normal text-slate-400">(opcional)</span></Label><Input id="operation-fee" type="number" min="0" step="any" value={comision} onChange={(event) => setComision(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" /></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-tax">Impuesto / retención ({operationCurrency}) <span className="font-normal text-slate-400">(opcional)</span></Label><Input id="operation-tax" type="number" min="0" step="any" value={impuesto} onChange={(event) => setImpuesto(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" /></div></div>
               <div className="grid min-w-0 gap-2"><Label htmlFor="operation-notes">Nota <span className="font-normal text-slate-400">(opcional)</span></Label><textarea id="operation-notes" value={notas} onChange={(event) => setNotas(event.target.value)} rows={3} placeholder="Comisión, motivo, referencia…" className="min-w-0 resize-y rounded-md border border-slate-200 bg-white px-3 py-2 text-base outline-none placeholder:text-slate-400 focus:border-slate-500 sm:text-sm" /></div>
               <div className="flex min-w-0 gap-2 rounded-md bg-[#eeece5] px-3 py-2.5 text-[10px] leading-relaxed text-slate-500"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-400" /><span className="min-w-0">La operación queda guardada en tu cuenta. No envía órdenes al broker.</span></div>
               <DialogFooter className="sticky bottom-0 -mx-1 mt-1 border-t border-slate-200 bg-[#f7f5ef] px-1 pt-3 sm:static sm:mx-0 sm:mt-0 sm:border-0 sm:bg-transparent sm:px-0 sm:pt-0"><Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" className="w-full bg-slate-900 text-white hover:bg-slate-700 sm:w-auto" disabled={savingOperation}>{savingOperation ? 'Guardando…' : 'Guardar operación'}</Button></DialogFooter>

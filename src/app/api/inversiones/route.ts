@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
-import { and, asc, desc, eq } from 'drizzle-orm'
+import { and, asc, desc, eq, sql, type SQL } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import {
   inversiones_alertas,
+  inversiones_movimientos_efectivo,
   inversiones_operaciones,
   inversiones_posiciones,
   inversiones_snapshots_diarios,
@@ -14,6 +15,7 @@ import { priceIdentifiers } from '@/lib/inversiones/priceIdentifiers'
 import { inferIsin } from '@/lib/inversiones/instrumentIdentity'
 import { calculateInvestmentAnalytics } from '@/lib/inversiones/analytics'
 import { persistDailyInvestmentSnapshots } from '@/lib/inversiones/snapshots'
+import { getInvestmentCashSnapshot, operationCashAmount } from '@/lib/inversiones/cash'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -55,29 +57,33 @@ async function getPortfolio(userId: number, captureToday = false) {
     notificationAlerts,
     closedPositions: calculateClosedInvestmentPositions(operations, identityPositions),
     analytics: calculateInvestmentAnalytics(positions, operations, snapshots, identityPositions),
+    cash: getInvestmentCashSnapshot(userId),
   }
 }
 
-async function recalculateWeights(userId: number) {
-  const positions = await db.query.inversiones_posiciones.findMany({
-    where: and(
-      eq(inversiones_posiciones.usuario_id, userId),
-      eq(inversiones_posiciones.incluido_resumen, true)
-    ),
-  })
-  const total = positions.reduce((sum, position) => sum + (position.valor_actual ?? 0), 0)
+type TransactionRunner = {
+  run(query: SQL): unknown
+}
 
-  await Promise.all(
-    positions.map((position) =>
-      db
-        .update(inversiones_posiciones)
-        .set({
-          peso: total > 0 ? (position.valor_actual ?? 0) / total : 0,
-          updated_at: new Date().toISOString(),
-        })
-        .where(eq(inversiones_posiciones.id, position.id))
-    )
-  )
+function recalculateWeightsInTransaction(tx: TransactionRunner, userId: number, now: string) {
+  tx.run(sql`
+    UPDATE inversiones_posiciones
+    SET peso = CASE
+      WHEN (
+        SELECT COALESCE(SUM(valor_actual), 0)
+        FROM inversiones_posiciones
+        WHERE usuario_id = ${userId} AND incluido_resumen = 1
+      ) > 0
+      THEN COALESCE(valor_actual, 0) / (
+        SELECT COALESCE(SUM(valor_actual), 0)
+        FROM inversiones_posiciones
+        WHERE usuario_id = ${userId} AND incluido_resumen = 1
+      )
+      ELSE 0
+    END,
+    updated_at = ${now}
+    WHERE usuario_id = ${userId} AND incluido_resumen = 1
+  `)
 }
 
 export async function GET() {
@@ -104,131 +110,279 @@ export async function POST(req: Request) {
   const cryptoId = input.crypto_id?.trim() || identifiers.cryptoId
   const marketSymbol = input.market_symbol?.trim() || identifiers.marketSymbol
   const isin = input.isin?.trim() || inferIsin(input.ticker, selectedPriceTicker, marketSymbol)
-  const existing = await db.query.inversiones_posiciones.findFirst({
-    where: and(
-      eq(inversiones_posiciones.usuario_id, auth.userId),
-      eq(inversiones_posiciones.activo, input.activo),
-      eq(inversiones_posiciones.custodia, input.custodia),
-    ),
-    orderBy: [desc(inversiones_posiciones.incluido_resumen), desc(inversiones_posiciones.id)],
-  })
+  const divisa = input.divisa.trim().toUpperCase()
+  const transactionCost = importe + input.comision + input.impuesto
 
-  if (input.tipo === 'Venta') {
-    if (!existing || !existing.incluido_resumen) {
-      return NextResponse.json({ error: 'No existe esa posición en la custodia seleccionada' }, { status: 404 })
-    }
-    if (input.cantidad > existing.cantidad) {
-      return NextResponse.json({ error: 'La venta supera la cantidad disponible de la posición' }, { status: 400 })
-    }
-
-    const newQuantity = existing.cantidad - input.cantidad
-    const averageCost = existing.cantidad > 0 && existing.coste !== null
-      ? existing.coste / existing.cantidad
-      : null
-    const newCost = averageCost === null ? existing.coste : Math.max(0, existing.coste! - averageCost * input.cantidad)
-    const newValue = existing.precio_actual === null ? null : newQuantity * existing.precio_actual
-
-    await db
-      .update(inversiones_posiciones)
-      .set({
-        cantidad: newQuantity,
-        coste: newCost,
-        precio_compra: newCost !== null && newQuantity > 0 ? newCost / newQuantity : null,
-        valor_actual: newValue,
-        pnl: newValue !== null && newCost !== null ? newValue - newCost : null,
-        pnl_pct: newValue !== null && newCost !== null && newCost > 0 ? (newValue - newCost) / newCost : null,
-        incluido_resumen: newQuantity > QUANTITY_EPSILON,
-        updated_at: now,
-      })
-      .where(eq(inversiones_posiciones.id, existing.id))
-  } else if (input.tipo === 'Compra') {
-    if (existing) {
-      const newQuantity = existing.cantidad + input.cantidad
-      const newCost = (existing.coste ?? 0) + importe
-      const currentPrice = existing.precio_actual ?? input.precio_unitario
-      const newValue = newQuantity * currentPrice
-
-      await db
-        .update(inversiones_posiciones)
-        .set({
-          cantidad: newQuantity,
-          coste: newCost,
-          precio_compra: newCost / newQuantity,
-          precio_actual: existing.precio_actual ?? input.precio_unitario,
-          valor_actual: newValue,
-          pnl: newValue - newCost,
-          pnl_pct: newCost > 0 ? (newValue - newCost) / newCost : null,
-          estado_fuente: existing.estado_fuente === 'FALLBACK' ? 'FALLBACK' : 'MANUAL',
-          isin: existing.isin || isin,
-          price_ticker: input.price_ticker?.trim() || existing.price_ticker || selectedPriceTicker,
-          crypto_id: existing.crypto_id ?? cryptoId,
-          market_symbol: existing.market_symbol ?? marketSymbol,
-          fecha_apertura: !existing.fecha_apertura || input.fecha < existing.fecha_apertura
-            ? input.fecha
-            : existing.fecha_apertura,
-          incluido_resumen: true,
-          updated_at: now,
-        })
-        .where(eq(inversiones_posiciones.id, existing.id))
-    } else {
-      await db.insert(inversiones_posiciones).values({
-        usuario_id: auth.userId,
-        custodia: input.custodia,
-        broker: input.custodia,
-        activo: input.activo,
-        tipo: input.tipo_activo,
-        ticker: input.ticker,
-        isin,
-        price_ticker: selectedPriceTicker,
-        crypto_id: cryptoId,
-        cantidad: input.cantidad,
-        precio_compra: input.precio_unitario,
-        coste: importe,
-        precio_actual: input.precio_unitario,
-        valor_actual: importe,
-        pnl: 0,
-        pnl_pct: 0,
-        peso: 0,
-        fuente: 'Manual · operación registrada',
-        estado_fuente: 'MANUAL',
-        ultimo_valido: input.precio_unitario,
-        fallback_map: null,
-        proveedor: 'Usuario',
-        fuente_url: null,
-        nota: null,
-        snapshot_at: now,
-        fecha_apertura: input.fecha,
-        hoja_origen: 'App',
-        fila_origen: null,
-        incluido_resumen: true,
-        divisa: 'EUR',
-        sector: input.tipo_activo,
-        market_symbol: marketSymbol,
-      })
+  class InsufficientCashError extends Error {
+    constructor(readonly balance: number) {
+      super('INSUFFICIENT_INVESTMENT_CASH')
     }
   }
 
-  const [operation] = await db
-    .insert(inversiones_operaciones)
-    .values({
-      usuario_id: auth.userId,
-      fecha: input.fecha,
-      tipo: input.tipo,
-      activo: input.activo,
-      ticker: input.ticker,
-      tipo_activo: input.tipo_activo,
-      custodia: input.custodia,
-      cantidad: input.cantidad,
-      precio_unitario: input.precio_unitario,
-      importe,
-      comision: input.comision,
-      impuesto: input.impuesto,
-      fuente: 'App',
-      notas: input.notas,
-    })
-    .returning()
+  try {
+    const operation = db.transaction((tx) => {
+      const existing = tx
+        .select()
+        .from(inversiones_posiciones)
+        .where(and(
+          eq(inversiones_posiciones.usuario_id, auth.userId),
+          eq(inversiones_posiciones.activo, input.activo),
+          eq(inversiones_posiciones.custodia, input.custodia),
+        ))
+        .orderBy(desc(inversiones_posiciones.incluido_resumen), desc(inversiones_posiciones.id))
+        .limit(1)
+        .get()
 
-  await recalculateWeights(auth.userId)
-  const portfolio = await getPortfolio(auth.userId, true)
-  return NextResponse.json({ ...portfolio, operation }, { status: 201 })
+      if (input.tipo === 'Venta') {
+        if (!existing || !existing.incluido_resumen) {
+          throw new Error('POSITION_NOT_FOUND')
+        }
+        if (input.cantidad > existing.cantidad) {
+          throw new Error('POSITION_QUANTITY_EXCEEDED')
+        }
+      }
+
+      if (input.tipo === 'Compra' && input.origen_fondos === 'saldo_existente') {
+        const [cashRow] = tx
+          .select({
+            saldo: sql<number>`coalesce(sum(${inversiones_movimientos_efectivo.importe}), 0)`,
+          })
+          .from(inversiones_movimientos_efectivo)
+          .where(and(
+            eq(inversiones_movimientos_efectivo.usuario_id, auth.userId),
+            eq(inversiones_movimientos_efectivo.custodia, input.custodia),
+            eq(inversiones_movimientos_efectivo.divisa, divisa),
+          ))
+          .all()
+        const balance = Number(cashRow?.saldo ?? 0)
+        if (balance + QUANTITY_EPSILON < transactionCost) {
+          throw new InsufficientCashError(balance)
+        }
+      }
+
+      const createdOperation = tx
+        .insert(inversiones_operaciones)
+        .values({
+          usuario_id: auth.userId,
+          fecha: input.fecha,
+          fecha_hora: now,
+          tipo: input.tipo,
+          origen_fondos: input.tipo === 'Compra' ? input.origen_fondos ?? null : null,
+          activo: input.activo,
+          ticker: input.ticker,
+          tipo_activo: input.tipo_activo,
+          custodia: input.custodia,
+          cantidad: input.cantidad,
+          precio_unitario: input.precio_unitario,
+          importe,
+          comision: input.comision,
+          impuesto: input.impuesto,
+          divisa,
+          fuente: 'App',
+          notas: input.notas,
+        })
+        .returning()
+        .get()
+
+      if (!createdOperation) throw new Error('OPERATION_NOT_CREATED')
+
+      if (input.tipo === 'Venta' && existing) {
+        const newQuantity = existing.cantidad - input.cantidad
+        const averageCost = existing.cantidad > 0 && existing.coste !== null
+          ? existing.coste / existing.cantidad
+          : null
+        const newCost = averageCost === null ? existing.coste : Math.max(0, existing.coste! - averageCost * input.cantidad)
+        const newValue = existing.precio_actual === null ? null : newQuantity * existing.precio_actual
+
+        tx
+          .update(inversiones_posiciones)
+          .set({
+            cantidad: newQuantity,
+            coste: newCost,
+            precio_compra: newCost !== null && newQuantity > 0 ? newCost / newQuantity : null,
+            valor_actual: newValue,
+            pnl: newValue !== null && newCost !== null ? newValue - newCost : null,
+            pnl_pct: newValue !== null && newCost !== null && newCost > 0 ? (newValue - newCost) / newCost : null,
+            incluido_resumen: newQuantity > QUANTITY_EPSILON,
+            updated_at: now,
+          })
+          .where(eq(inversiones_posiciones.id, existing.id))
+          .run()
+      } else if (input.tipo === 'Compra') {
+        if (existing) {
+          const newQuantity = existing.cantidad + input.cantidad
+          const newCost = (existing.coste ?? 0) + transactionCost
+          const currentPrice = existing.precio_actual ?? input.precio_unitario
+          const newValue = newQuantity * currentPrice
+
+          tx
+            .update(inversiones_posiciones)
+            .set({
+              cantidad: newQuantity,
+              coste: newCost,
+              precio_compra: newCost / newQuantity,
+              precio_actual: existing.precio_actual ?? input.precio_unitario,
+              valor_actual: newValue,
+              pnl: newValue - newCost,
+              pnl_pct: newCost > 0 ? (newValue - newCost) / newCost : null,
+              estado_fuente: existing.estado_fuente === 'FALLBACK' ? 'FALLBACK' : 'MANUAL',
+              isin: existing.isin || isin,
+              price_ticker: input.price_ticker?.trim() || existing.price_ticker || selectedPriceTicker,
+              crypto_id: existing.crypto_id ?? cryptoId,
+              market_symbol: existing.market_symbol ?? marketSymbol,
+              fecha_apertura: !existing.fecha_apertura || input.fecha < existing.fecha_apertura
+                ? input.fecha
+                : existing.fecha_apertura,
+              incluido_resumen: true,
+              updated_at: now,
+            })
+            .where(eq(inversiones_posiciones.id, existing.id))
+            .run()
+        } else {
+          const currentValue = importe
+          tx.insert(inversiones_posiciones).values({
+            usuario_id: auth.userId,
+            custodia: input.custodia,
+            broker: input.custodia,
+            activo: input.activo,
+            tipo: input.tipo_activo,
+            ticker: input.ticker,
+            isin,
+            price_ticker: selectedPriceTicker,
+            crypto_id: cryptoId,
+            cantidad: input.cantidad,
+            precio_compra: transactionCost / input.cantidad,
+            coste: transactionCost,
+            precio_actual: input.precio_unitario,
+            valor_actual: currentValue,
+            pnl: currentValue - transactionCost,
+            pnl_pct: transactionCost > 0 ? (currentValue - transactionCost) / transactionCost : null,
+            peso: 0,
+            fuente: 'Manual · operación registrada',
+            estado_fuente: 'MANUAL',
+            ultimo_valido: input.precio_unitario,
+            fallback_map: null,
+            proveedor: 'Usuario',
+            fuente_url: null,
+            nota: null,
+            snapshot_at: now,
+            fecha_apertura: input.fecha,
+            hoja_origen: 'App',
+            fila_origen: null,
+            incluido_resumen: true,
+            divisa,
+            sector: input.tipo_activo,
+            market_symbol: marketSymbol,
+          }).run()
+        }
+      }
+
+      const netCash = operationCashAmount(importe, input.comision, input.impuesto)
+      if (input.tipo === 'Compra' && input.origen_fondos === 'capital_nuevo') {
+        tx
+          .insert(inversiones_movimientos_efectivo)
+          .values({
+            usuario_id: auth.userId,
+            custodia: input.custodia,
+            divisa,
+            fecha: input.fecha,
+            importe: transactionCost,
+            tipo: 'APORTACION_CAPITAL',
+            operacion_id: createdOperation.id,
+            referencia: `operacion:${createdOperation.id}:capital`,
+            descripcion: 'Capital nuevo aplicado a la compra',
+          })
+          .run()
+      }
+
+      if (input.tipo === 'Compra') {
+        tx
+          .insert(inversiones_movimientos_efectivo)
+          .values({
+            usuario_id: auth.userId,
+            custodia: input.custodia,
+            divisa,
+            fecha: input.fecha,
+            importe: -transactionCost,
+            tipo: 'COMPRA',
+            operacion_id: createdOperation.id,
+            referencia: `operacion:${createdOperation.id}:compra`,
+            descripcion: input.origen_fondos === 'capital_nuevo'
+              ? 'Débito de compra contra el capital aportado'
+              : 'Débito de compra contra saldo disponible',
+          })
+          .run()
+      } else if (input.tipo === 'Venta') {
+        tx
+          .insert(inversiones_movimientos_efectivo)
+          .values({
+            usuario_id: auth.userId,
+            custodia: input.custodia,
+            divisa,
+            fecha: input.fecha,
+            importe: netCash,
+            tipo: 'VENTA',
+            operacion_id: createdOperation.id,
+            referencia: `operacion:${createdOperation.id}:venta`,
+            descripcion: 'Neto de venta disponible en la custodia',
+          })
+          .run()
+      } else if (input.tipo === 'Dividendo') {
+        tx
+          .insert(inversiones_movimientos_efectivo)
+          .values({
+            usuario_id: auth.userId,
+            custodia: input.custodia,
+            divisa,
+            fecha: input.fecha,
+            importe: netCash,
+            tipo: 'DIVIDENDO',
+            operacion_id: createdOperation.id,
+            referencia: `operacion:${createdOperation.id}:dividendo`,
+            descripcion: 'Dividendo neto disponible en la custodia',
+          })
+          .run()
+      } else if (input.tipo === 'Aportación') {
+        tx
+          .insert(inversiones_movimientos_efectivo)
+          .values({
+            usuario_id: auth.userId,
+            custodia: input.custodia,
+            divisa,
+            fecha: input.fecha,
+            importe: netCash,
+            tipo: 'APORTACION',
+            operacion_id: createdOperation.id,
+            referencia: `operacion:${createdOperation.id}:aportacion`,
+            descripcion: 'Aportación disponible en la custodia',
+          })
+          .run()
+      }
+
+      recalculateWeightsInTransaction(tx, auth.userId, now)
+      return createdOperation
+    })
+
+    const portfolio = await getPortfolio(auth.userId, true)
+    return NextResponse.json({ ...portfolio, operation }, { status: 201 })
+  } catch (error) {
+    if (error instanceof InsufficientCashError) {
+      return NextResponse.json({
+        error: 'Saldo insuficiente en la custodia seleccionada',
+        detail: {
+          custodia: input.custodia,
+          divisa,
+          disponible: error.balance,
+          necesario: transactionCost,
+        },
+      }, { status: 400 })
+    }
+    if (error instanceof Error && error.message === 'POSITION_NOT_FOUND') {
+      return NextResponse.json({ error: 'No existe esa posición en la custodia seleccionada' }, { status: 404 })
+    }
+    if (error instanceof Error && error.message === 'POSITION_QUANTITY_EXCEEDED') {
+      return NextResponse.json({ error: 'La venta supera la cantidad disponible de la posición' }, { status: 400 })
+    }
+    throw error
+  }
 }

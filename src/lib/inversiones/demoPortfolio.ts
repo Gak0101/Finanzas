@@ -148,6 +148,7 @@ function createDemoOperation(position: InversionPosicion, index: number, opening
     fecha: openingDate,
     fecha_hora: isoAtNoon(openingDate),
     tipo: 'Compra',
+    origen_fondos: 'capital_nuevo',
     tipo_externo: null,
     activo: position.activo,
     ticker: position.ticker,

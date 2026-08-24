@@ -519,7 +519,11 @@ function replayOperations(operations: InversionOperacion[], resolveKey: Investme
       const quantity = absolute(operation.cantidad)
       const amount = absolute(operation.importe)
       state.quantity += quantity
-      state.costBasis += amount
+      // Only purchases processed after cash accounting have a persisted source
+      // of funds. Keep imported/historical replay unchanged while aligning new
+      // operation analytics with the position cost basis (fees included).
+      const processedBuyFees = operation.origen_fondos ? fee + tax : 0
+      state.costBasis += amount + processedBuyFees
       state.purchases += amount
       purchases += amount
       if (yearSummary) yearSummary.purchases += amount
