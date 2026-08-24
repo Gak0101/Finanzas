@@ -378,6 +378,35 @@ function hasPositionsPayload(payload: unknown): payload is PositionsPayload {
   return Boolean(payload && typeof payload === 'object' && Array.isArray((payload as { positions?: unknown }).positions))
 }
 
+type CashAdjustmentPayload = {
+  cash: InvestmentCashSnapshot
+  adjusted: boolean
+  detail: {
+    custodia: string
+    divisa: string
+    saldoAnterior: number
+    saldoObjetivo: number
+    importe: number
+  }
+}
+
+function hasCashAdjustmentPayload(payload: unknown): payload is CashAdjustmentPayload {
+  if (!payload || typeof payload !== 'object') return false
+  const candidate = payload as Partial<CashAdjustmentPayload>
+  return Boolean(
+    typeof candidate.adjusted === 'boolean'
+    && candidate.detail
+    && typeof candidate.detail.custodia === 'string'
+    && typeof candidate.detail.divisa === 'string'
+    && typeof candidate.detail.saldoAnterior === 'number'
+    && typeof candidate.detail.saldoObjetivo === 'number'
+    && typeof candidate.detail.importe === 'number'
+    && candidate.cash
+    && typeof candidate.cash.totalEur === 'number'
+    && Array.isArray(candidate.cash.balances),
+  )
+}
+
 function invalidApiResponseMessage(response: Response) {
   if (response.redirected || response.url.includes('/login')) {
     return 'Tu sesión ha caducado. Vuelve a iniciar sesión para consultar tus inversiones.'
@@ -568,6 +597,13 @@ function InvestmentPortfolioContent() {
   const [updatingPrices, setUpdatingPrices] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [savingOperation, setSavingOperation] = useState(false)
+  const [cashAdjustmentDialogOpen, setCashAdjustmentDialogOpen] = useState(false)
+  const [savingCashAdjustment, setSavingCashAdjustment] = useState(false)
+  const [cashAdjustmentCustodia, setCashAdjustmentCustodia] = useState('')
+  const [cashAdjustmentDivisa, setCashAdjustmentDivisa] = useState('EUR')
+  const [cashAdjustmentTarget, setCashAdjustmentTarget] = useState('')
+  const [cashAdjustmentDate, setCashAdjustmentDate] = useState('')
+  const [cashAdjustmentDescription, setCashAdjustmentDescription] = useState('')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>('all')
@@ -737,6 +773,9 @@ function InvestmentPortfolioContent() {
   const cash = isDemoPortfolio ? null : data?.cash ?? null
   const availableCashForOperation = cash?.balances.find((balance) => balance.custodia === custodia && balance.divisa === operationCurrency)?.saldo ?? 0
   const cashSummary = cash?.balances.map((balance) => `${balance.custodia}: ${formatCashAmount(balance.saldo, balance.divisa)}`).join(' · ')
+  const cashCustodyOptions = useMemo(() => [...new Set(cash?.balances.map((balance) => balance.custodia) ?? [])], [cash?.balances])
+  const cashCurrencyOptions = useMemo(() => [...new Set(['EUR', ...(cash?.balances.map((balance) => balance.divisa) ?? [])])], [cash?.balances])
+  const cashAdjustmentCurrentBalance = cash?.balances.find((balance) => balance.custodia === cashAdjustmentCustodia.trim() && balance.divisa === cashAdjustmentDivisa.trim().toUpperCase())?.saldo ?? 0
   const detailPosition = positions.find((position) => position.id === detailPositionId) ?? null
   const detailAnalytics = analytics?.positionAnalytics.find((item) => item.positionId === detailPositionId) ?? null
   const portfolioLastUpdated = useMemo(() => {
@@ -911,6 +950,73 @@ function InvestmentPortfolioContent() {
       return operation.tipo === activityFilter
     })
     .slice(0, 12), [activityFilter, operations])
+
+  function abrirAjusteEfectivo() {
+    if (isDemoPortfolio) return
+
+    const defaultBalance = cash?.balances.find((balance) => balance.divisa === 'EUR') ?? cash?.balances[0]
+    setCashAdjustmentCustodia(defaultBalance?.custodia ?? '')
+    setCashAdjustmentDivisa(defaultBalance?.divisa ?? 'EUR')
+    setCashAdjustmentTarget(String(defaultBalance?.saldo ?? 0))
+    setCashAdjustmentDate(new Date().toISOString().slice(0, 10))
+    setCashAdjustmentDescription('')
+    setCashAdjustmentDialogOpen(true)
+  }
+
+  async function guardarAjusteEfectivo() {
+    if (isDemoPortfolio) return
+
+    const selectedCustodia = cashAdjustmentCustodia.trim()
+    const selectedDivisa = cashAdjustmentDivisa.trim().toUpperCase()
+    const target = Number(cashAdjustmentTarget)
+
+    if (!selectedCustodia) {
+      toast.error('Indica la custodia del efectivo')
+      return
+    }
+    if (!/^[A-Z]{3}$/.test(selectedDivisa)) {
+      toast.error('Indica una divisa de tres letras, por ejemplo EUR')
+      return
+    }
+    if (!cashAdjustmentDate) {
+      toast.error('Indica la fecha del ajuste')
+      return
+    }
+    if (!Number.isFinite(target) || target < 0) {
+      toast.error('El saldo objetivo debe ser un número igual o mayor que cero')
+      return
+    }
+
+    setSavingCashAdjustment(true)
+    try {
+      const response = await fetch('/api/inversiones/efectivo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          custodia: selectedCustodia,
+          divisa: selectedDivisa,
+          fecha: cashAdjustmentDate,
+          saldo_objetivo: target,
+          descripcion: cashAdjustmentDescription.trim() || undefined,
+        }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(getErrorMessage(payload, 'No se pudo ajustar el saldo de efectivo'))
+      if (!hasCashAdjustmentPayload(payload)) throw new Error(invalidApiResponseMessage(response))
+
+      setData((current) => current ? { ...current, cash: payload.cash } : current)
+      setCashAdjustmentDialogOpen(false)
+      if (payload.adjusted) {
+        toast.success(`Saldo ajustado a ${formatCashAmount(payload.detail.saldoObjetivo, payload.detail.divisa)} en ${payload.detail.custodia}`)
+      } else {
+        toast.success('El saldo ya coincidía con el objetivo; no se creó ningún movimiento')
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo ajustar el saldo de efectivo')
+    } finally {
+      setSavingCashAdjustment(false)
+    }
+  }
 
   function abrirDialog() {
     setFecha(new Date().toISOString().slice(0, 10))
@@ -1396,7 +1502,7 @@ function InvestmentPortfolioContent() {
 
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label="Resumen del portfolio">
           <div className="rounded-xl bg-[#c8f56a] p-5 text-[#172016] shadow-[0_12px_30px_rgba(0,0,0,.14)] md:col-span-2 xl:col-span-1"><div className="flex items-center justify-between text-xs font-semibold text-[#536a38]"><span>Valor actual</span><CircleDollarSign className="h-5 w-5" /></div><p className="mt-5 text-4xl font-semibold tracking-[-0.06em] tabular-nums">{formatEuro(analytics?.performance.totalValue ?? summary.totalValue)}</p><p className="mt-4 text-[10px] text-[#617946]">{positions.length} posiciones · valoración en EUR</p></div>
-          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Efectivo disponible</span><Wallet className="h-4 w-4" /></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{isDemoPortfolio ? '—' : formatEuro(cash?.totalEur ?? 0)}</p><p className="mt-4 text-[10px] leading-relaxed text-slate-400">{isDemoPortfolio ? 'Escenario local · sin ledger persistido' : cashSummary || 'Sin movimientos de efectivo registrados'}</p></div>
+          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-500"><span>Efectivo disponible</span><div className="flex items-center gap-2">{!isDemoPortfolio && <Button type="button" variant="outline" size="sm" className="h-7 border-slate-300 bg-transparent px-2 text-[10px] text-slate-700 hover:bg-slate-100" onClick={abrirAjusteEfectivo}>Ajustar saldo</Button>}<Wallet className="h-4 w-4" /></div></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{isDemoPortfolio ? '—' : formatEuro(cash?.totalEur ?? 0)}</p><p className="mt-4 text-[10px] leading-relaxed text-slate-400">{isDemoPortfolio ? 'Escenario local · sin ledger persistido' : cashSummary || 'Sin movimientos de efectivo registrados'}</p></div>
           <div className="rounded-xl bg-[#e5edde] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado cartera abierta</span><span className={(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.unrealisedPnl ?? summary.knownPnl)}</p><p className="mt-4 text-[10px] text-slate-500">Solo posiciones actuales · {formatPct(analytics?.performance.currentReturnPct ?? summary.knownReturn)}</p></div>
           <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado realizado</span><span className={(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.historicalNetResult ?? 0)}</p><p className="mt-4 text-[10px] text-slate-400">Ventas realizadas + ingresos − comisiones e impuestos</p></div>
         </section>
@@ -1636,6 +1742,52 @@ function InvestmentPortfolioContent() {
           onStartOperation={abrirOperacionRapida}
           onSaveMetadata={isDemoPortfolio ? guardarMetadataEscenario : undefined}
         />
+
+      {!isDemoPortfolio && <Dialog open={cashAdjustmentDialogOpen} onOpenChange={setCashAdjustmentDialogOpen}>
+        <DialogContent className="border-slate-200 bg-[#f7f5ef] text-slate-900 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="tracking-[-0.04em]">Ajustar saldo de efectivo</DialogTitle>
+            <DialogDescription>
+              Reconcilia el saldo de una custodia y divisa sin crear ni modificar operaciones de inversión.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(event) => { event.preventDefault(); void guardarAjusteEfectivo() }} className="grid gap-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="cash-adjustment-custody">Custodia</Label>
+                <Input id="cash-adjustment-custody" list="cash-adjustment-custody-options" value={cashAdjustmentCustodia} onChange={(event) => setCashAdjustmentCustodia(event.target.value)} placeholder="Trade Republic, XTB…" required />
+                <datalist id="cash-adjustment-custody-options">{cashCustodyOptions.map((option) => <option key={option} value={option} />)}</datalist>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="cash-adjustment-currency">Divisa</Label>
+                <Input id="cash-adjustment-currency" list="cash-adjustment-currency-options" value={cashAdjustmentDivisa} onChange={(event) => setCashAdjustmentDivisa(event.target.value.toUpperCase())} placeholder="EUR" maxLength={3} required />
+                <datalist id="cash-adjustment-currency-options">{cashCurrencyOptions.map((option) => <option key={option} value={option} />)}</datalist>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded-lg bg-[#eeece5] px-3 py-2.5 text-[10px] text-slate-500">
+              <span>Saldo actual en la combinación seleccionada</span>
+              <strong className="text-sm tabular-nums text-slate-800">{formatCashAmount(cashAdjustmentCurrentBalance, cashAdjustmentDivisa)}</strong>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="cash-adjustment-target">Saldo objetivo</Label>
+              <Input id="cash-adjustment-target" type="number" min="0" step="any" value={cashAdjustmentTarget} onChange={(event) => setCashAdjustmentTarget(event.target.value)} placeholder="0,00" required />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="cash-adjustment-date">Fecha</Label>
+              <Input id="cash-adjustment-date" type="date" value={cashAdjustmentDate} onChange={(event) => setCashAdjustmentDate(event.target.value)} required />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="cash-adjustment-description">Nota <span className="font-normal text-slate-400">(opcional)</span></Label>
+              <textarea id="cash-adjustment-description" value={cashAdjustmentDescription} onChange={(event) => setCashAdjustmentDescription(event.target.value)} maxLength={500} rows={3} placeholder="Motivo de la conciliación…" className="resize-y rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-slate-500" />
+            </div>
+            <div className="flex gap-2 rounded-md bg-[#eeece5] px-3 py-2.5 text-[10px] leading-relaxed text-slate-500"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>Solo se registra la diferencia necesaria en el libro de efectivo. Si no hay diferencia relevante, no se crea ningún movimiento.</span></div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCashAdjustmentDialogOpen(false)}>Cancelar</Button>
+              <Button type="submit" className="bg-slate-900 text-white hover:bg-slate-700" disabled={savingCashAdjustment}>{savingCashAdjustment ? 'Guardando…' : 'Guardar ajuste'}</Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>}
 
       <Dialog open={dateDialogOpen} onOpenChange={(open) => { setDateDialogOpen(open); if (!open) setDatePosition(null) }}>
         <DialogContent className="border-slate-200 bg-[#f7f5ef] text-slate-900 sm:max-w-md">
