@@ -18,6 +18,8 @@ import { persistDailyInvestmentSnapshots } from '@/lib/inversiones/snapshots'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+const QUANTITY_EPSILON = 1e-7
+
 async function getPortfolio(userId: number, captureToday = false) {
   const [positions, operations, notificationAlerts] = await Promise.all([
     db.query.inversiones_posiciones.findMany({
@@ -104,12 +106,12 @@ export async function POST(req: Request) {
       eq(inversiones_posiciones.usuario_id, auth.userId),
       eq(inversiones_posiciones.activo, input.activo),
       eq(inversiones_posiciones.custodia, input.custodia),
-      eq(inversiones_posiciones.incluido_resumen, true)
     ),
+    orderBy: [desc(inversiones_posiciones.incluido_resumen), desc(inversiones_posiciones.id)],
   })
 
   if (input.tipo === 'Venta') {
-    if (!existing) {
+    if (!existing || !existing.incluido_resumen) {
       return NextResponse.json({ error: 'No existe esa posición en la custodia seleccionada' }, { status: 404 })
     }
     if (input.cantidad > existing.cantidad) {
@@ -132,6 +134,7 @@ export async function POST(req: Request) {
         valor_actual: newValue,
         pnl: newValue !== null && newCost !== null ? newValue - newCost : null,
         pnl_pct: newValue !== null && newCost !== null && newCost > 0 ? (newValue - newCost) / newCost : null,
+        incluido_resumen: newQuantity > QUANTITY_EPSILON,
         updated_at: now,
       })
       .where(eq(inversiones_posiciones.id, existing.id))
@@ -160,6 +163,7 @@ export async function POST(req: Request) {
           fecha_apertura: !existing.fecha_apertura || input.fecha < existing.fecha_apertura
             ? input.fecha
             : existing.fecha_apertura,
+          incluido_resumen: true,
           updated_at: now,
         })
         .where(eq(inversiones_posiciones.id, existing.id))

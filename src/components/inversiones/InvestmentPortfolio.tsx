@@ -64,6 +64,7 @@ type PortfolioData = {
 }
 
 type OperationType = 'Compra' | 'Venta' | 'Dividendo' | 'Aportación' | 'Traspaso'
+type ActivityFilter = 'all' | 'Venta' | 'Compra' | 'income'
 type InvestmentTab = 'portfolio' | 'buscador'
 type OperationAssetSearchResult = {
   key: string
@@ -118,6 +119,12 @@ const TYPE_COLORS: Record<string, string> = {
 }
 
 const OPERATION_TYPES: OperationType[] = ['Compra', 'Venta', 'Dividendo', 'Aportación', 'Traspaso']
+const QUANTITY_EPSILON = 1e-7
+
+function operationTimestamp(operation: InversionOperacion) {
+  const timestamp = new Date(operation.fecha_hora ?? `${operation.fecha}T00:00:00.000Z`).getTime()
+  return Number.isFinite(timestamp) ? timestamp : operation.id
+}
 
 const POSITION_SORT_OPTIONS: Array<{ value: PositionSort; label: string }> = [
   { value: 'value_desc', label: 'Mayor valor' },
@@ -551,6 +558,7 @@ function InvestmentPortfolioContent() {
   const [savingOperation, setSavingOperation] = useState(false)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
+  const [activityFilter, setActivityFilter] = useState<ActivityFilter>('all')
   const [positionSort, setPositionSort] = useState<PositionSort>('value_desc')
   const [dateDialogOpen, setDateDialogOpen] = useState(false)
   const [datePosition, setDatePosition] = useState<InversionPosicion | null>(null)
@@ -821,7 +829,8 @@ function InvestmentPortfolioContent() {
     const knownCost = knownPositions.reduce((sum, position) => sum + (position.coste ?? 0), 0)
     const knownPnl = knownPositions.reduce((sum, position) => sum + (position.pnl ?? 0), 0)
     const byType = positions.reduce<Record<string, number>>((acc, position) => {
-      const type = position.tipo.includes('Staking') ? 'Staking' : position.tipo === 'ETF' ? 'ETF' : 'Crypto'
+      const rawType = position.tipo.trim()
+      const type = rawType.toLocaleLowerCase('es').includes('crypto') ? 'Crypto' : rawType || 'Sin clasificar'
       acc[type] = (acc[type] ?? 0) + (position.valor_actual ?? 0)
       return acc
     }, {})
@@ -873,6 +882,22 @@ function InvestmentPortfolioContent() {
       return compareNullable(leftDate, rightDate, positionSort === 'oldest' ? 'asc' : 'desc')
     })
   }, [filter, positionSort, positions, search])
+
+  const operationMetricsById = useMemo(
+    () => new Map((analytics?.operationAnalytics ?? []).map((metric) => [metric.operationId, metric])),
+    [analytics?.operationAnalytics],
+  )
+  const latestSale = useMemo(() => [...operations]
+    .filter((operation) => operation.tipo === 'Venta')
+    .sort((left, right) => operationTimestamp(right) - operationTimestamp(left) || right.id - left.id)[0] ?? null, [operations])
+  const latestSaleMetric = latestSale ? operationMetricsById.get(latestSale.id) ?? null : null
+  const visibleOperations = useMemo(() => operations
+    .filter((operation) => {
+      if (activityFilter === 'all') return true
+      if (activityFilter === 'income') return ['Dividendo', 'Bonificación', 'Aportación', 'Traspaso'].includes(operation.tipo)
+      return operation.tipo === activityFilter
+    })
+    .slice(0, 12), [activityFilter, operations])
 
   function abrirDialog() {
     setFecha(new Date().toISOString().slice(0, 10))
@@ -1053,8 +1078,8 @@ function InvestmentPortfolioContent() {
         notas: notas || null,
         created_at: now,
       }
-      let nextPositions = positions.map((position) => {
-        if (!selectedScenarioPosition || position.id !== selectedScenarioPosition.id || operationType === 'Dividendo') return position
+      let nextPositions = positions.flatMap((position) => {
+        if (!selectedScenarioPosition || position.id !== selectedScenarioPosition.id || operationType === 'Dividendo') return [position]
         const currentQuantity = position.cantidad
         const currentCost = position.coste ?? 0
         const averageCost = currentQuantity > 0 ? currentCost / currentQuantity : unitPrice
@@ -1064,7 +1089,7 @@ function InvestmentPortfolioContent() {
           : Math.max(0, currentCost - quantity * averageCost)
         const nextValue = (position.precio_actual ?? unitPrice) * nextQuantity
         const nextPnl = nextValue - nextCost
-        return {
+        const updated = {
           ...position,
           cantidad: nextQuantity,
           coste: nextCost,
@@ -1074,6 +1099,7 @@ function InvestmentPortfolioContent() {
           pnl_pct: nextCost > 0 ? nextPnl / nextCost : null,
           updated_at: now,
         }
+        return nextQuantity > QUANTITY_EPSILON ? [updated] : []
       })
 
       if (!selectedScenarioPosition && operationType === 'Compra') {
@@ -1133,7 +1159,7 @@ function InvestmentPortfolioContent() {
       updateScenarioData((current) => recalculateScenarioData(current, nextPositions, [...current.operations, operation]))
       setDialogOpen(false)
       resetOperation()
-      toast.success(`${operationType} añadida al historial del escenario`)
+      toast.success(operationType === 'Venta' ? 'Venta añadida · revisa el capital liberado y el resultado arriba' : `${operationType} añadida al historial del escenario`)
       return
     }
 
@@ -1163,10 +1189,18 @@ function InvestmentPortfolioContent() {
       const payload = await response.json().catch(() => null)
       if (!response.ok) throw new Error(getErrorMessage(payload, 'No se pudo guardar la operación'))
       if (!hasPositionsPayload(payload)) throw new Error(invalidApiResponseMessage(response))
-      setData(payload as PortfolioData)
+      const returnedPayload = payload as PortfolioData & { operation?: InversionOperacion }
+      setData(returnedPayload)
       setDialogOpen(false)
       resetOperation()
-      toast.success(`${operationType} registrada y añadida al historial`)
+      if (operationType === 'Venta' && returnedPayload.operation) {
+        const metric = returnedPayload.analytics.operationAnalytics.find((item) => item.operationId === returnedPayload.operation?.id)
+        const released = metric?.netCash === null || metric?.netCash === undefined ? null : formatEuro(metric.netCash)
+        const result = metric?.realisedPnlNet === null || metric?.realisedPnlNet === undefined ? null : formatEuro(metric.realisedPnlNet)
+        toast.success(`Venta registrada${released ? ` · ${released} liberados` : ''}${result ? ` · resultado neto ${result}` : ''}`)
+      } else {
+        toast.success(`${operationType} registrada y añadida al historial`)
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo guardar la operación')
     } finally {
@@ -1334,14 +1368,14 @@ function InvestmentPortfolioContent() {
           </div>
         </section>
 
+        <MarketHoursPanel positions={positions} compact />
+
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label="Resumen del portfolio">
           <div className="rounded-xl bg-[#c8f56a] p-5 text-[#172016] shadow-[0_12px_30px_rgba(0,0,0,.14)] md:col-span-2 xl:col-span-1"><div className="flex items-center justify-between text-xs font-semibold text-[#536a38]"><span>Valor actual</span><CircleDollarSign className="h-5 w-5" /></div><p className="mt-5 text-4xl font-semibold tracking-[-0.06em] tabular-nums">{formatEuro(analytics?.performance.totalValue ?? summary.totalValue)}</p><p className="mt-4 text-[10px] text-[#617946]">{positions.length} posiciones · valoración en EUR</p></div>
-          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Capital actual conocido</span><Wallet className="h-4 w-4" /></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{formatEuro(analytics?.performance.knownCost ?? summary.knownCost)}</p><p className="mt-4 text-[10px] text-slate-400">{analytics ? `${analytics.performance.coverage.costPositions} de ${analytics.performance.coverage.totalPositions} posiciones con coste` : 'Calculando cobertura…'}</p></div>
+          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Capital disponible</span><Wallet className="h-4 w-4" /></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{formatEuro(latestSaleMetric?.netCash ?? 0)}</p><p className="mt-4 text-[10px] text-slate-400">{latestSale ? `Neto de la última venta · ${latestSale.ticker}` : 'Sin ventas registradas todavía'}</p></div>
           <div className="rounded-xl bg-[#e5edde] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado cartera abierta</span><span className={(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.unrealisedPnl ?? summary.knownPnl)}</p><p className="mt-4 text-[10px] text-slate-500">Solo posiciones actuales · {formatPct(analytics?.performance.currentReturnPct ?? summary.knownReturn)}</p></div>
-          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado histórico</span><span className={(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.historicalNetResult ?? 0)}</p><p className="mt-4 text-[10px] text-slate-400">Ventas + ingresos − costes · combinado: {formatEuro(analytics?.performance.totalNetResult ?? summary.knownPnl)}</p></div>
+          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado realizado</span><span className={(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.historicalNetResult ?? 0)}</p><p className="mt-4 text-[10px] text-slate-400">Ventas realizadas + ingresos − comisiones e impuestos</p></div>
         </section>
-
-        <MarketHoursPanel positions={positions} />
 
         <InvestmentNotificationAlerts
           rules={notificationAlerts}
@@ -1517,7 +1551,48 @@ function InvestmentPortfolioContent() {
 
         <ClosedPositionsPanel positions={closedPositions} />
 
-        <section className="mt-3 overflow-hidden rounded-xl bg-[#f7f5ef] text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]" id="activity-panel"><div className="flex flex-col gap-3 border-b border-slate-200 p-5 sm:flex-row sm:items-end sm:justify-between sm:p-6"><div><p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Registro / historial</p><h2 className="text-lg font-semibold tracking-[-0.04em]">Actividad reciente</h2><p className="mt-2 max-w-2xl text-[10px] leading-relaxed text-slate-500">Conserva el histórico inicial y añade automáticamente cada compra, venta, dividendo, aportación o traspaso que registres desde la app.</p></div><div className="flex items-center justify-between gap-5 text-[10px] text-slate-400 sm:justify-end"><span>{operations.length} movimientos</span><button type="button" onClick={exportarOperaciones} className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900"><Download className="h-3 w-3" />Exportar JSON</button></div></div><div className="overflow-x-auto"><table className="w-full min-w-[740px] border-collapse text-left"><thead><tr className="border-b border-slate-200 text-[9px] uppercase tracking-[0.1em] text-slate-400"><th className="px-5 py-3 font-bold sm:px-6">Fecha</th><th className="px-3 py-3 font-bold">Tipo</th><th className="px-3 py-3 font-bold">Activo</th><th className="px-3 py-3 font-bold">Custodia</th><th className="px-3 py-3 text-right font-bold">Cantidad</th><th className="px-3 py-3 text-right font-bold">Importe</th><th className="px-3 py-3 pr-5 font-bold sm:pr-6">Nota</th></tr></thead><tbody>{operations.slice(0, 8).map((operation) => <tr key={operation.id} className="border-b border-slate-100 text-[11px] last:border-0 hover:bg-[#f0eee8]"><td className="whitespace-nowrap px-5 py-3 text-slate-500 sm:px-6">{formatDate(operation.fecha)}</td><td className="px-3 py-3"><span className={`font-semibold ${operation.tipo === 'Compra' ? 'text-emerald-700' : operation.tipo === 'Venta' ? 'text-red-600' : 'text-slate-500'}`}>{operation.tipo}</span></td><td className="max-w-[240px] truncate px-3 py-3 font-medium text-slate-900">{operation.activo}</td><td className="px-3 py-3 text-slate-500">{operation.custodia}</td><td className="px-3 py-3 text-right tabular-nums text-slate-700">{formatQuantity(operation.cantidad)}</td><td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-900">{formatEuro(operation.importe)}</td><td className="max-w-[280px] truncate px-3 py-3 pr-5 text-slate-400 sm:pr-6">{operation.notas || '—'}</td></tr>)}</tbody></table></div>{operations.length === 0 && <div className="flex flex-col gap-1 p-6 text-[11px] text-slate-400"><strong className="text-slate-900">Aún no hay operaciones.</strong><span>Registra una compra, venta, dividendo o traspaso para construir tu historial.</span></div>}</section>
+        <section className="mt-3 overflow-hidden rounded-xl bg-[#f7f5ef] text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]" id="activity-panel">
+          <div className="flex flex-col gap-4 border-b border-slate-200 p-5 sm:p-6 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Registro / historial</p>
+              <h2 className="text-lg font-semibold tracking-[-0.04em]">Movimientos y resultados</h2>
+              <p className="mt-2 max-w-2xl text-[10px] leading-relaxed text-slate-500">Filtra las operaciones para ver rápidamente cuánto cobraste y qué resultado generó cada venta.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-400 lg:justify-end">
+              <span>{operations.length} movimientos</span>
+              <select aria-label="Filtrar movimientos" value={activityFilter} onChange={(event) => setActivityFilter(event.target.value as ActivityFilter)} className="h-8 rounded-md border border-slate-200 bg-[#eeece5] px-2.5 text-[10px] font-medium text-slate-600 outline-none">
+                <option value="all">Todos</option>
+                <option value="Venta">Ventas</option>
+                <option value="Compra">Compras</option>
+                <option value="income">Ingresos y aportaciones</option>
+              </select>
+              <button type="button" onClick={exportarOperaciones} className="inline-flex items-center gap-1 font-semibold text-slate-600 hover:text-slate-900"><Download className="h-3 w-3" />Exportar JSON</button>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1040px] border-collapse text-left">
+              <thead><tr className="border-b border-slate-200 text-[9px] uppercase tracking-[0.1em] text-slate-400"><th className="px-5 py-3 font-bold sm:px-6">Fecha</th><th className="px-3 py-3 font-bold">Tipo</th><th className="px-3 py-3 font-bold">Activo</th><th className="px-3 py-3 font-bold">Custodia</th><th className="px-3 py-3 text-right font-bold">Cantidad</th><th className="px-3 py-3 text-right font-bold">Importe</th><th className="px-3 py-3 text-right font-bold">Neto</th><th className="px-3 py-3 text-right font-bold">Resultado</th><th className="px-3 py-3 pr-5 font-bold sm:pr-6">Nota</th></tr></thead>
+              <tbody>
+                {visibleOperations.map((operation) => {
+                  const metric = operationMetricsById.get(operation.id)
+                  const result = metric?.realisedPnlNet
+                  return <tr key={operation.id} className="border-b border-slate-100 text-[11px] last:border-0 hover:bg-[#f0eee8]">
+                    <td className="whitespace-nowrap px-5 py-3 text-slate-500 sm:px-6">{formatDate(operation.fecha)}</td>
+                    <td className="px-3 py-3"><span className={`font-semibold ${operation.tipo === 'Compra' ? 'text-emerald-700' : operation.tipo === 'Venta' ? 'text-red-600' : 'text-slate-500'}`}>{operation.tipo}</span></td>
+                    <td className="max-w-[240px] truncate px-3 py-3 font-medium text-slate-900">{operation.activo}</td>
+                    <td className="px-3 py-3 text-slate-500">{operation.custodia}</td>
+                    <td className="px-3 py-3 text-right tabular-nums text-slate-700">{formatQuantity(operation.cantidad)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-900">{formatEuro(operation.importe)}</td>
+                    <td className={`px-3 py-3 text-right tabular-nums ${operation.tipo === 'Venta' ? 'font-semibold text-emerald-700' : 'text-slate-500'}`}>{metric?.netCash === null || metric?.netCash === undefined ? '—' : formatEuro(metric.netCash)}</td>
+                    <td className={`px-3 py-3 text-right font-semibold tabular-nums ${result === null || result === undefined ? 'text-slate-400' : result >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{result === null || result === undefined ? '—' : formatEuro(result)}</td>
+                    <td className="max-w-[280px] truncate px-3 py-3 pr-5 text-slate-400 sm:pr-6">{operation.notas || '—'}</td>
+                  </tr>
+                })}
+              </tbody>
+            </table>
+          </div>
+          {operations.length === 0 ? <div className="flex flex-col gap-1 p-6 text-[11px] text-slate-400"><strong className="text-slate-900">Aún no hay operaciones.</strong><span>Registra una compra, venta, dividendo o traspaso para construir tu historial.</span></div> : visibleOperations.length === 0 ? <div className="p-6 text-[11px] text-slate-500">No hay movimientos de este tipo.</div> : <div className="border-t border-slate-200 px-5 py-3 text-[10px] text-slate-400 sm:px-6">Mostrando {visibleOperations.length} movimientos filtrados · el resultado de una venta es neto de comisiones e impuestos registrados.</div>}
+        </section>
 
         <footer className="flex flex-col gap-1 py-5 text-[10px] text-slate-500 sm:flex-row sm:items-center sm:justify-between"><span>FIN · {isDemoPortfolio ? 'escenario local · precios de referencia' : 'cartera gestionada en la app'} · no es asesoramiento financiero</span><span className="inline-flex items-center gap-1.5"><ShieldCheck className="h-3 w-3" />{isDemoPortfolio ? 'Cambios locales en este escenario' : 'Operaciones persistidas en tu cuenta'}</span></footer>
 

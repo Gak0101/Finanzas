@@ -628,7 +628,7 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
         <CardHeader className="gap-2 border-b border-slate-200 px-5 py-5 sm:px-6">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Cartera abierta / histórico</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Cartera abierta / operaciones realizadas</p>
               <CardTitle className="mt-2 text-lg tracking-[-0.04em]">Qué está generando tu resultado</CardTitle>
             </div>
             <Badge variant="outline" className="shrink-0 border-slate-200 bg-white text-[11px] !text-slate-700">
@@ -639,7 +639,7 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
         <CardContent className="grid gap-3 px-5 py-5 sm:grid-cols-2 sm:px-6 xl:grid-cols-4">
           {[
             { label: 'Cartera abierta · P/L actual', value: analytics.performance.unrealisedPnl, detail: `${formatPercent(analytics.performance.currentReturnPct)} sobre el coste conocido` },
-            { label: 'Ventas realizadas', value: analytics.performance.realisedPnl, detail: `${closedPositions.length} ciclos cerrados abajo; incluye ventas parciales` },
+            { label: 'Ventas realizadas', value: analytics.performance.realisedPnl, detail: `${closedPositions.length} cierres completos abajo · también incluye ventas parciales` },
             { label: 'Ingresos registrados', value: incomeTotal, detail: `${formatEuro(analytics.performance.dividends)} dividendos · ${formatEuro(bonusValue)} bonificaciones` },
             { label: 'Costes registrados', value: -costs, detail: `${formatEuro(analytics.performance.commissions)} comisiones · ${formatEuro(analytics.performance.taxes)} impuestos` },
           ].map((item) => (
@@ -684,7 +684,7 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
               <p className="mt-1 text-[11px] leading-relaxed text-slate-500">Solo esas posiciones tienen un importe de compra registrado para calcular su P/L. Los importes de esta tarjeta salen de la actividad guardada en la app; no son una estimación fiscal.</p>
               <Progress value={costCoverage * 100} className="mt-3 h-2 bg-slate-200 [&_[data-slot=progress-indicator]]:bg-[#7e8bff]" />
             </div>
-            <p className="mt-3 text-[11px] leading-relaxed text-slate-500">Resultado histórico registrado: <strong className="text-slate-700">{formatEuro(historicalNetResult)}</strong> · combinado con la cartera abierta: <strong className="text-slate-700">{formatEuro(analytics.performance.totalNetResult)}</strong>.</p>
+            <p className="mt-3 text-[11px] leading-relaxed text-slate-500">Resultado realizado registrado: <strong className="text-slate-700">{formatEuro(historicalNetResult)}</strong> · combinado con la cartera abierta: <strong className="text-slate-700">{formatEuro(analytics.performance.totalNetResult)}</strong>.</p>
           </div>
         </CardContent>
       </Card>
@@ -802,19 +802,19 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
                 <p className={`mt-1 text-base font-semibold tabular-nums ${analytics.risk.drawdown.currentPct !== null && analytics.risk.drawdown.currentPct < 0 ? 'text-red-600' : 'text-slate-900'}`}>
                   {analytics.risk.drawdown.currentPct !== null ? formatPercent(analytics.risk.drawdown.currentPct) : 'Pendiente'}
                 </p>
-                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">Solo con valoraciones diarias guardadas.</p>
+                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">Compara la última valoración con el máximo de la serie. Un 0% significa que está en el máximo.</p>
               </div>
               <div className="rounded-lg bg-white/60 p-3">
                 <p className="text-[11px] text-slate-500">Peor caída registrada</p>
                 <p className={`mt-1 text-base font-semibold tabular-nums ${analytics.risk.drawdown.maxPct !== null && analytics.risk.drawdown.maxPct < 0 ? 'text-red-600' : 'text-slate-900'}`}>
                   {analytics.risk.drawdown.maxPct !== null ? formatPercent(analytics.risk.drawdown.maxPct) : 'Pendiente'}
                 </p>
-                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">Desde el máximo de la serie.</p>
+                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">Mayor descenso entre valoraciones guardadas.</p>
               </div>
               <div className="rounded-lg bg-white/60 p-3">
                 <p className="text-[11px] text-slate-500">Máximo observado</p>
                 <p className="mt-1 text-base font-semibold tabular-nums text-slate-900">{formatEuro(analytics.risk.drawdown.peakValue)}</p>
-                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">{analytics.risk.drawdown.peakDate ? formatSnapshotDate(analytics.risk.drawdown.peakDate) : 'Necesita dos valoraciones'}</p>
+                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">{analytics.risk.drawdown.peakDate ? `${formatSnapshotDate(analytics.risk.drawdown.peakDate)} · pico de referencia` : 'Necesita dos valoraciones'}</p>
               </div>
             </div>
             <div className="mt-5 border-t border-slate-200 pt-5">
@@ -822,7 +822,7 @@ export function InvestmentAnalyticsPanel({ analytics, positions, closedPositions
                 <div>
                   <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Comparativa gratuita</p>
                   <h3 className="mt-1 text-sm font-semibold text-slate-900">¿Cómo va frente a un índice?</h3>
-                  <p className="mt-1 max-w-xl text-[11px] leading-relaxed text-slate-500">Comparación porcentual desde la primera valoración disponible. No mezcla euros de tu cartera con el índice.</p>
+                  <p className="mt-1 max-w-xl text-[11px] leading-relaxed text-slate-500">Compara desde la primera valoración disponible con el cierre histórico del índice elegido en Yahoo Finance. No mezcla euros de tu cartera con el índice.</p>
                 </div>
                 <Select value={benchmarkKey} onValueChange={(value) => setBenchmarkKey(value as BenchmarkKey)} disabled={valuedSnapshots.length < 2 || benchmarkState === 'loading'}>
                   <SelectTrigger size="sm" className="min-w-40 border-slate-200 bg-white text-[11px] text-slate-700" aria-label="Índice de referencia">

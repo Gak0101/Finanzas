@@ -18,6 +18,8 @@ export type InvestmentPerformanceSummary = {
   knownCost: number
   unrealisedPnl: number
   realisedPnl: number
+  capitalReleasedBySales: number
+  netCashFromOperations: number
   dividends: number
   bonuses: number
   commissions: number
@@ -123,6 +125,21 @@ export type PositionInvestmentAnalytics = {
   lastOperation: string | null
 }
 
+export type InvestmentOperationAnalytics = {
+  operationId: number
+  tipo: string
+  activo: string
+  ticker: string
+  fecha: string
+  importe: number
+  netCash: number | null
+  matchedQuantity: number | null
+  unmatchedQuantity: number | null
+  assignedCost: number | null
+  realisedPnl: number | null
+  realisedPnlNet: number | null
+}
+
 export type InvestmentAlert = {
   id: string
   severity: 'info' | 'warning' | 'critical'
@@ -138,6 +155,7 @@ export type InvestmentAnalytics = {
   fiscalYears: InvestmentFiscalYear[]
   snapshotHistory: InvestmentSnapshotPoint[]
   positionAnalytics: PositionInvestmentAnalytics[]
+  operationAnalytics: InvestmentOperationAnalytics[]
   alerts: InvestmentAlert[]
 }
 
@@ -155,6 +173,15 @@ type ReplayState = {
   firstOperation: string | null
   lastOperation: string | null
   unmatchedSales: number
+}
+
+function operationNetCash(operation: InversionOperacion) {
+  const fees = absolute(operation.comision) + absolute(operation.impuesto)
+  const amount = absolute(operation.importe)
+  if (operation.tipo === 'Compra') return -(amount + fees)
+  if (operation.tipo === 'Venta') return amount - fees
+  if (operation.tipo === 'Dividendo' || operation.tipo === 'Bonificación' || operation.tipo === 'Aportación') return amount - fees
+  return null
 }
 
 function absolute(value: number | null | undefined) {
@@ -392,7 +419,10 @@ function fiscalYear(map: Map<number, InvestmentFiscalYear>, year: number) {
 function replayOperations(operations: InversionOperacion[]) {
   const states = new Map<string, ReplayState>()
   const fiscal = new Map<number, InvestmentFiscalYear>()
+  const operationAnalytics: InvestmentOperationAnalytics[] = []
   let realisedPnl = 0
+  let capitalReleasedBySales = 0
+  let netCashFromOperations = 0
   let dividends = 0
   let bonuses = 0
   let commissions = 0
@@ -413,6 +443,22 @@ function replayOperations(operations: InversionOperacion[]) {
     const yearSummary = Number.isInteger(year) ? fiscalYear(fiscal, year) : null
     const fee = absolute(operation.comision)
     const tax = absolute(operation.impuesto)
+    const operationMetric: InvestmentOperationAnalytics = {
+      operationId: operation.id,
+      tipo: operation.tipo,
+      activo: operation.activo,
+      ticker: operation.ticker,
+      fecha: operation.fecha,
+      importe: absolute(operation.importe),
+      netCash: operationNetCash(operation),
+      matchedQuantity: null,
+      unmatchedQuantity: null,
+      assignedCost: null,
+      realisedPnl: null,
+      realisedPnlNet: null,
+    }
+    operationAnalytics.push(operationMetric)
+    if (operationMetric.netCash !== null) netCashFromOperations += operationMetric.netCash
     state.commissions += fee
     state.taxes += tax
     commissions += fee
@@ -441,6 +487,13 @@ function replayOperations(operations: InversionOperacion[]) {
       const assignedCost = matchedQuantity * averageCost
       const matchedProceeds = quantity > QUANTITY_EPSILON ? proceeds * (matchedQuantity / quantity) : 0
       const result = matchedProceeds - assignedCost
+
+      operationMetric.matchedQuantity = matchedQuantity
+      operationMetric.unmatchedQuantity = Math.max(0, quantity - matchedQuantity)
+      operationMetric.assignedCost = assignedCost
+      operationMetric.realisedPnl = result
+      operationMetric.realisedPnlNet = result - fee - tax
+      capitalReleasedBySales += operationMetric.netCash ?? 0
 
       state.quantity = Math.max(0, state.quantity - matchedQuantity)
       state.costBasis = Math.max(0, state.costBasis - assignedCost)
@@ -493,12 +546,15 @@ function replayOperations(operations: InversionOperacion[]) {
     states,
     fiscalYears: [...fiscal.values()].toSorted((left, right) => right.year - left.year),
     realisedPnl,
+    capitalReleasedBySales,
+    netCashFromOperations,
     dividends,
     bonuses,
     commissions,
     taxes,
     purchases,
     unmatchedSales,
+    operationAnalytics,
   }
 }
 
@@ -511,6 +567,11 @@ function allocation(positions: InversionPosicion[], totalValue: number, selector
   return [...values.entries()]
     .map(([name, value]) => ({ name, value, percent: totalValue > 0 ? value / totalValue : 0 }))
     .toSorted((left, right) => right.value - left.value)
+}
+
+function allocationType(position: InversionPosicion) {
+  const type = position.tipo?.trim() ?? ''
+  return type.toLocaleLowerCase('es').includes('crypto') ? 'Crypto' : type || 'Sin clasificar'
 }
 
 function aggregateSnapshots(snapshots: InversionSnapshotDiario[]) {
@@ -632,6 +693,8 @@ export function calculateInvestmentAnalytics(
     knownCost,
     unrealisedPnl,
     realisedPnl: replay.realisedPnl,
+    capitalReleasedBySales: replay.capitalReleasedBySales,
+    netCashFromOperations: replay.netCashFromOperations,
     dividends: replay.dividends,
     bonuses: replay.bonuses,
     commissions: replay.commissions,
@@ -661,7 +724,7 @@ export function calculateInvestmentAnalytics(
   const top1Pct = weights[0] ?? 0
   const top3Pct = weights.slice(0, 3).reduce((sum, weight) => sum + weight, 0)
   const top5Pct = weights.slice(0, 5).reduce((sum, weight) => sum + weight, 0)
-  const byType = allocation(positions, totalValue, (position) => position.tipo)
+  const byType = allocation(positions, totalValue, (position) => allocationType(position))
   const cryptoPct = byType.filter((item) => item.name.toLocaleLowerCase('es').includes('crypto')).reduce((sum, item) => sum + item.percent, 0)
   const risk: InvestmentRiskSummary = {
     top1Pct,
@@ -704,6 +767,7 @@ export function calculateInvestmentAnalytics(
     fiscalYears: replay.fiscalYears,
     snapshotHistory,
     positionAnalytics,
+    operationAnalytics: replay.operationAnalytics,
     alerts: buildAlerts(positions, risk),
   }
 }

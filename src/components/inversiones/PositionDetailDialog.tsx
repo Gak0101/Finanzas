@@ -183,7 +183,7 @@ export function PositionDetailDialog({ position, analytics, operations, open, on
                 {[
                   ['Compras', analytics?.purchases],
                   ['Ventas', analytics?.saleProceeds],
-                  ['Realizado', analytics?.realisedPnl],
+                  ['Resultado realizado', analytics?.realisedPnl],
                   ['Dividendos', analytics?.dividends],
                   ['Comisiones', analytics?.commissions],
                   ['Impuestos', analytics?.taxes],
