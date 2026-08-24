@@ -1,4 +1,5 @@
-import type { InversionOperacion } from '@/lib/db/schema'
+import type { InversionOperacion, InversionPosicion } from '@/lib/db/schema'
+import { createInvestmentPositionKeyResolver } from '@/lib/inversiones/analytics'
 
 const QUANTITY_EPSILON = 1e-7
 const DAY_MS = 86_400_000
@@ -42,10 +43,6 @@ function operationTimestamp(operation: InversionOperacion) {
 function operationOrder(left: InversionOperacion, right: InversionOperacion) {
   const byTime = operationTimestamp(left) - operationTimestamp(right)
   return byTime || left.id - right.id
-}
-
-function positionKey(operation: InversionOperacion) {
-  return `${operation.custodia.trim().toLocaleLowerCase('es')}|${operation.activo.trim().toLocaleLowerCase('es')}`
 }
 
 function absolute(value: number | null | undefined) {
@@ -102,13 +99,14 @@ function addTrace(cycle: Cycle, operation: InversionOperacion) {
   cycle.operaciones += 1
 }
 
-export function calculateClosedInvestmentPositions(operations: InversionOperacion[]) {
+export function calculateClosedInvestmentPositions(operations: InversionOperacion[], identityPositions: InversionPosicion[] = []) {
+  const resolveKey = createInvestmentPositionKeyResolver(identityPositions)
   const groups = new Map<string, InversionOperacion[]>()
 
   for (const operation of operations) {
-    const rows = groups.get(positionKey(operation)) ?? []
+    const rows = groups.get(resolveKey(operation)) ?? []
     rows.push(operation)
-    groups.set(positionKey(operation), rows)
+    groups.set(resolveKey(operation), rows)
   }
 
   const closed: Cycle[] = []
@@ -145,7 +143,7 @@ export function calculateClosedInvestmentPositions(operations: InversionOperacio
 
       if (active.balance <= QUANTITY_EPSILON) {
         active.balance = 0
-        active.id = `${positionKey(operation)}|${active.fecha_apertura}|${active.fecha_cierre}|${groupCycles.length + 1}`
+        active.id = `${resolveKey(operation)}|${active.fecha_apertura}|${active.fecha_cierre}|${groupCycles.length + 1}`
         groupCycles.push(active)
         closed.push(active)
         active = null

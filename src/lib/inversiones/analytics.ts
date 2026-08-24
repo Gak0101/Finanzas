@@ -284,12 +284,18 @@ function returnMetrics(operations: InversionOperacion[], totalValue: number, sna
   return returnMetricsFromFlows(cashFlowsFromOperations(operations), totalValue, valuationDate(snapshots))
 }
 
-function openReturnMetrics(positions: InversionPosicion[], operations: InversionOperacion[], snapshots: InversionSnapshotDiario[], totalValue: number) {
+function openReturnMetrics(
+  positions: InversionPosicion[],
+  operations: InversionOperacion[],
+  snapshots: InversionSnapshotDiario[],
+  totalValue: number,
+  resolveKey: InvestmentPositionKeyResolver,
+) {
   const operationsByKey = new Map<string, ReturnCashFlow[]>()
   for (const operation of operations.toSorted((left, right) => timestamp(left) - timestamp(right) || left.id - right.id)) {
     const flow = operationCashFlow(operation)
     if (!flow) continue
-    const key = investmentPositionKey(operation)
+    const key = resolveKey(operation)
     operationsByKey.set(key, [...(operationsByKey.get(key) ?? []), flow])
   }
 
@@ -299,7 +305,7 @@ function openReturnMetrics(positions: InversionPosicion[], operations: Inversion
   for (const position of positions) {
     const value = position.valor_actual ?? 0
     if (value <= 0) continue
-    const positionFlows = [...(operationsByKey.get(investmentPositionKey(position)) ?? [])]
+    const positionFlows = [...(operationsByKey.get(resolveKey(position)) ?? [])]
     if (!positionFlows.some((flow) => flow.amount < 0) && position.coste !== null && position.coste > 0 && position.fecha_apertura) {
       positionFlows.unshift({ date: position.fecha_apertura, amount: -position.coste })
     }
@@ -376,6 +382,47 @@ export function investmentPositionKey(value: Pick<InversionOperacion, 'activo' |
   return `${value.custodia.trim().toLocaleLowerCase('es')}|${identity}`
 }
 
+type InvestmentIdentityValue = {
+  activo: string
+  custodia: string
+  ticker?: string | null
+  price_ticker?: string | null
+  market_symbol?: string | null
+  isin?: string | null
+}
+
+export type InvestmentPositionKeyResolver = (value: InvestmentIdentityValue) => string
+
+function identityAliases(value: InvestmentIdentityValue) {
+  const custody = value.custodia.trim().toLocaleLowerCase('es')
+  const values = [value.ticker, value.price_ticker, value.market_symbol, value.isin, value.activo]
+  return [...new Set(values
+    .map((item) => item?.trim().toLocaleLowerCase('es'))
+    .filter((item): item is string => Boolean(item)))]
+    .map((item) => `${custody}|value:${item}`)
+}
+
+/**
+ * Resolves the different identifiers used by imports and manual operations to
+ * the same position. For example, an imported purchase may use an ISIN while
+ * a manual sale uses the provider ticker of that same instrument.
+ */
+export function createInvestmentPositionKeyResolver(positions: InversionPosicion[]): InvestmentPositionKeyResolver {
+  const aliases = new Map<string, string>()
+  for (const position of positions) {
+    const canonical = investmentPositionKey(position)
+    for (const alias of identityAliases(position)) aliases.set(alias, canonical)
+  }
+
+  return (value) => {
+    for (const alias of identityAliases(value)) {
+      const canonical = aliases.get(alias)
+      if (canonical) return canonical
+    }
+    return investmentPositionKey({ activo: value.activo, custodia: value.custodia, ticker: value.ticker ?? '' })
+  }
+}
+
 function emptyReplayState(): ReplayState {
   return {
     quantity: 0,
@@ -416,7 +463,7 @@ function fiscalYear(map: Map<number, InvestmentFiscalYear>, year: number) {
   return created
 }
 
-function replayOperations(operations: InversionOperacion[]) {
+function replayOperations(operations: InversionOperacion[], resolveKey: InvestmentPositionKeyResolver) {
   const states = new Map<string, ReplayState>()
   const fiscal = new Map<number, InvestmentFiscalYear>()
   const operationAnalytics: InvestmentOperationAnalytics[] = []
@@ -431,7 +478,7 @@ function replayOperations(operations: InversionOperacion[]) {
   let unmatchedSales = 0
 
   for (const operation of operations.toSorted((left, right) => timestamp(left) - timestamp(right) || left.id - right.id)) {
-    const key = investmentPositionKey(operation)
+    const key = resolveKey(operation)
     const state = states.get(key) ?? emptyReplayState()
     states.set(key, state)
 
@@ -673,9 +720,11 @@ function buildAlerts(positions: InversionPosicion[], risk: InvestmentRiskSummary
 export function calculateInvestmentAnalytics(
   positions: InversionPosicion[],
   operations: InversionOperacion[],
-  snapshots: InversionSnapshotDiario[]
+  snapshots: InversionSnapshotDiario[],
+  identityPositions: InversionPosicion[] = positions,
 ): InvestmentAnalytics {
-  const replay = replayOperations(operations)
+  const resolveKey = createInvestmentPositionKeyResolver(identityPositions)
+  const replay = replayOperations(operations, resolveKey)
   const totalValue = positions.reduce((sum, position) => sum + (position.valor_actual ?? 0), 0)
   const known = positions.filter((position) => position.coste !== null)
   const knownCost = known.reduce((sum, position) => sum + (position.coste ?? 0), 0)
@@ -685,7 +734,7 @@ export function calculateInvestmentAnalytics(
   const totalNetResult = unrealisedPnl + historicalNetResult
   const snapshotHistory = aggregateSnapshots(snapshots)
   const flowReturn = returnMetrics(operations, totalValue, snapshots)
-  const openReturn = openReturnMetrics(positions, operations, snapshots, totalValue)
+  const openReturn = openReturnMetrics(positions, operations, snapshots, totalValue, resolveKey)
   const drawdown = drawdownSummary(snapshotHistory)
   const rebalance = rebalanceSummary(positions, totalValue)
   const performance: InvestmentPerformanceSummary = {
@@ -745,7 +794,7 @@ export function calculateInvestmentAnalytics(
   }
 
   const positionAnalytics = positions.map((position) => {
-    const state = replay.states.get(investmentPositionKey(position)) ?? emptyReplayState()
+    const state = replay.states.get(resolveKey(position)) ?? emptyReplayState()
     return {
       positionId: position.id,
       purchases: state.purchases,

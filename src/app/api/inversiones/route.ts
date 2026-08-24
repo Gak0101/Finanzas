@@ -21,13 +21,16 @@ export const runtime = 'nodejs'
 const QUANTITY_EPSILON = 1e-7
 
 async function getPortfolio(userId: number, captureToday = false) {
-  const [positions, operations, notificationAlerts] = await Promise.all([
+  const [positions, identityPositions, operations, notificationAlerts] = await Promise.all([
     db.query.inversiones_posiciones.findMany({
       where: and(
         eq(inversiones_posiciones.usuario_id, userId),
         eq(inversiones_posiciones.incluido_resumen, true)
       ),
       orderBy: [desc(inversiones_posiciones.valor_actual), desc(inversiones_posiciones.id)],
+    }),
+    db.query.inversiones_posiciones.findMany({
+      where: eq(inversiones_posiciones.usuario_id, userId),
     }),
     db.query.inversiones_operaciones.findMany({
       where: eq(inversiones_operaciones.usuario_id, userId),
@@ -50,8 +53,8 @@ async function getPortfolio(userId: number, captureToday = false) {
     positions,
     operations,
     notificationAlerts,
-    closedPositions: calculateClosedInvestmentPositions(operations),
-    analytics: calculateInvestmentAnalytics(positions, operations, snapshots),
+    closedPositions: calculateClosedInvestmentPositions(operations, identityPositions),
+    analytics: calculateInvestmentAnalytics(positions, operations, snapshots, identityPositions),
   }
 }
 

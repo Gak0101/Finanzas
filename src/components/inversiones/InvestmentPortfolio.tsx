@@ -751,7 +751,7 @@ function InvestmentPortfolioContent() {
       positions: nextPositions,
       operations: nextOperations,
       notificationAlerts: nextAlerts,
-      closedPositions: calculateClosedInvestmentPositions(nextOperations),
+      closedPositions: calculateClosedInvestmentPositions(nextOperations, nextPositions),
       snapshots: nextSnapshots,
       analytics: calculateInvestmentAnalytics(nextPositions, nextOperations, nextSnapshots),
     }
