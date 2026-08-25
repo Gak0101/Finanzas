@@ -213,7 +213,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
   )
   const nativeTargetCurrency = selectedAsset?.divisa?.trim().toUpperCase()
   const savedTargetCurrency = editingRule?.divisa_objetivo?.trim().toUpperCase()
-  const targetCurrencyOptions = [...new Set(['EUR', nativeTargetCurrency, savedTargetCurrency].filter((currency): currency is string => Boolean(currency)))]
+  const targetCurrencyOptions = [...new Set(['EUR', 'USD', nativeTargetCurrency, savedTargetCurrency].filter((currency): currency is string => Boolean(currency)))]
   const portfolioBaseValue = parsePositiveInput(referencePrice)
   const portfolioRiseLevel = thresholdPrice(portfolioBaseValue, rise, 'up')
   const portfolioDropLevel = thresholdPrice(portfolioBaseValue, drop, 'down')
@@ -260,7 +260,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
         const payload = await response.json().catch(() => null) as { results?: AssetSearchResult[]; error?: string } | null
         if (!response.ok) throw new Error(payload?.error || 'No se pudo buscar el activo')
         const remoteResults = (payload?.results ?? []).filter((result) => assetIntent === 'position' ? result.poseido : !result.poseido)
-        const results = [...localResults, ...remoteResults].filter((result, index, all) => all.findIndex((item) => item.key === result.key) === index)
+        const results = [...remoteResults, ...localResults].filter((result, index, all) => all.findIndex((item) => item.key === result.key) === index)
         setSearchResults(results)
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -373,8 +373,30 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
         poseido: Boolean(position),
         posicion_id: rule.posicion_id,
       })
+      void hydrateEditedAssetQuote(rule, position ?? null)
     }
     setDialogOpen(true)
+  }
+
+  async function hydrateEditedAssetQuote(rule: InversionAlerta, position: InversionPosicion | null) {
+    const query = position?.market_symbol || rule.market_symbol || position?.price_ticker || rule.price_ticker || position?.ticker || rule.ticker
+    if (!query) return
+
+    try {
+      const response = await fetch(`/api/inversiones/alertas/buscar-activo?q=${encodeURIComponent(query)}`, { cache: 'no-store' })
+      const payload = await response.json().catch(() => null) as { results?: AssetSearchResult[] } | null
+      if (!response.ok) return
+      const currentKey = rule.posicion_id ? `position:${rule.posicion_id}` : `alert:${rule.id}`
+      const result = (payload?.results ?? []).find((item) => item.key === currentKey || (item.market_symbol || '').toLocaleLowerCase('es') === query.toLocaleLowerCase('es'))
+      if (!result) return
+
+      setSelectedAsset((current) => current?.key === currentKey ? result : current)
+      if (rule.precio_objetivo === null && rule.precio_objetivo_importe === null) {
+        setTargetCurrency(result.divisa?.trim().toUpperCase() || 'EUR')
+      }
+    } catch {
+      // La cotización guardada sigue siendo válida como fallback del formulario.
+    }
   }
 
   function chooseAsset(result: AssetSearchResult) {
@@ -419,7 +441,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
     }
     const normalizedTargetCurrency = targetCurrency.trim().toUpperCase()
     if (scope === 'activo' && targetPriceValue !== null && !targetCurrencyOptions.includes(normalizedTargetCurrency)) {
-      toast.error('Elige EUR o la divisa nativa disponible para este activo')
+      toast.error('Elige una de las divisas disponibles para este activo')
       return
     }
     if (scope === 'activo' && selectedAsset && ((assetIntent === 'position') !== selectedAsset.poseido)) {

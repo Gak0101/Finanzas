@@ -117,15 +117,20 @@ export async function GET(req: Request) {
       const positionNativePrice = matchingPosition?.precio_actual_nativo ?? null
       const positionNativeCurrency = matchingPosition?.divisa_nativa || null
       const hasNativePositionQuote = positionNativePrice !== null && positionNativeCurrency !== null
+      const hasNativeMarketQuote = item.precio_actual !== null && Boolean(item.divisa)
       const positionCanonicalPrice = matchingPosition?.precio_actual ?? null
       const hasCanonicalPositionPrice = positionCanonicalPrice !== null
       const currentPrice = hasNativePositionQuote
         ? positionNativePrice
+        : hasNativeMarketQuote
+          ? item.precio_actual
         : hasCanonicalPositionPrice
           ? positionCanonicalPrice
           : item.precio_actual
       const currentCurrency = hasNativePositionQuote
         ? positionNativeCurrency
+        : hasNativeMarketQuote
+          ? item.divisa
         : hasCanonicalPositionPrice
           ? 'EUR'
           : item.divisa || 'EUR'
@@ -142,7 +147,7 @@ export async function GET(req: Request) {
         precio_actual: currentPrice,
         precio_actual_eur: matchingPosition?.precio_actual ?? item.precio_actual_eur,
         divisa: currentCurrency,
-        precio_actual_as_of: matchingPosition?.snapshot_at ?? item.precio_actual_as_of,
+        precio_actual_as_of: (hasNativePositionQuote ? matchingPosition?.snapshot_at ?? item.precio_actual_as_of : item.precio_actual_as_of ?? matchingPosition?.snapshot_at) ?? null,
         poseido: Boolean(matchingPosition),
         posicion_id: matchingPosition?.id ?? null,
         alerta_configurada: rules.some((rule) => matchingPosition
