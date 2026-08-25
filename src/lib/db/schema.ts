@@ -190,8 +190,9 @@ export const inversiones_posiciones = sqliteTable(
   (t) => [uniqueIndex('unique_inversion_usuario_activo_custodia').on(t.usuario_id, t.activo, t.custodia)]
 )
 
-// Reglas de notificación externas. Las credenciales de Telegram y correo viven
-// en n8n; aquí solo se guarda qué vigilar, los umbrales, el objetivo y los canales elegidos.
+// Reglas de notificación externas. Las credenciales de Telegram, correo y
+// WhatsApp viven en n8n; aquí solo se guarda qué vigilar, los umbrales, el
+// objetivo y los canales elegidos.
 // `posicion_id` es nulo para una alerta de seguimiento de un activo que todavía
 // no forma parte de la cartera.
 export const inversiones_alertas = sqliteTable(
@@ -222,6 +223,7 @@ export const inversiones_alertas = sqliteTable(
     estado: text('estado').notNull().default('normal'),
     canal_telegram: integer('canal_telegram', { mode: 'boolean' }).notNull().default(true),
     canal_email: integer('canal_email', { mode: 'boolean' }).notNull().default(true),
+    canal_whatsapp: integer('canal_whatsapp', { mode: 'boolean' }).notNull().default(false),
     activa: integer('activa', { mode: 'boolean' }).notNull().default(true),
     ultima_comprobacion_at: text('ultima_comprobacion_at'),
     ultima_alerta_at: text('ultima_alerta_at'),

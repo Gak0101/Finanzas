@@ -1,0 +1,1 @@
+ALTER TABLE `inversiones_alertas` ADD `canal_whatsapp` integer DEFAULT false NOT NULL;

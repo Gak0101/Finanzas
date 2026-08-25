@@ -10,6 +10,7 @@ import {
   Loader2,
   MapPin,
   Mail,
+  MessageCircle,
   Pencil,
   Plus,
   RefreshCw,
@@ -170,7 +171,7 @@ async function copiarIsin(isin: string) {
 }
 
 function ruleChannels(rule: InversionAlerta) {
-  const channels = [rule.canal_telegram ? 'Telegram' : null, rule.canal_email ? 'email' : null].filter(Boolean)
+  const channels = [rule.canal_telegram ? 'Telegram' : null, rule.canal_email ? 'email' : null, rule.canal_whatsapp ? 'WhatsApp' : null].filter(Boolean)
   return channels.length > 0 ? channels.join(' + ') : 'Sin canal'
 }
 
@@ -190,6 +191,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
   const [rearm, setRearm] = useState('1')
   const [telegram, setTelegram] = useState(true)
   const [email, setEmail] = useState(true)
+  const [whatsapp, setWhatsapp] = useState(false)
   const [active, setActive] = useState(true)
   const [referencePrice, setReferencePrice] = useState('')
   const [targetPrice, setTargetPrice] = useState('')
@@ -309,6 +311,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
     setRearm('1')
     setTelegram(true)
     setEmail(true)
+    setWhatsapp(false)
     setActive(true)
     setReferencePrice('')
     setTargetPrice('')
@@ -331,6 +334,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
       setRearm(percentInput(rule.rearmar_pct))
       setTelegram(rule.canal_telegram)
       setEmail(rule.canal_email)
+      setWhatsapp(rule.canal_whatsapp)
       setActive(rule.activa)
     }
     setDialogOpen(true)
@@ -349,6 +353,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
       setRearm(percentInput(rule.rearmar_pct))
       setTelegram(rule.canal_telegram)
       setEmail(rule.canal_email)
+      setWhatsapp(rule.canal_whatsapp)
       setActive(rule.activa)
       setReferencePrice(rule.precio_referencia === null ? '' : String(rule.precio_referencia))
       const savedTarget = ruleTarget(rule)
@@ -431,8 +436,8 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
       toast.error('El precio objetivo solo está disponible para activos')
       return
     }
-    if (!telegram && !email) {
-      toast.error('Selecciona Telegram, email o ambos')
+    if (!telegram && !email && !whatsapp) {
+      toast.error('Selecciona Telegram, email o WhatsApp')
       return
     }
     if (scope === 'activo' && !selectedAsset) {
@@ -452,7 +457,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
     setSaving(true)
     try {
       const body = scope === 'cartera'
-        ? { alcance: 'cartera', precio_referencia: referenceValue, umbral_subida_pct: risePct, umbral_caida_pct: dropPct, rearmar_pct: rearmPct, canal_telegram: telegram, canal_email: email, activa: active }
+        ? { alcance: 'cartera', precio_referencia: referenceValue, umbral_subida_pct: risePct, umbral_caida_pct: dropPct, rearmar_pct: rearmPct, canal_telegram: telegram, canal_email: email, canal_whatsapp: whatsapp, activa: active }
         : {
             alcance: 'activo',
             posicion_id: selectedAsset?.posicion_id,
@@ -471,6 +476,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
             rearmar_pct: rearmPct,
             canal_telegram: telegram,
             canal_email: email,
+            canal_whatsapp: whatsapp,
             activa: active,
              }
 
@@ -538,6 +544,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
           estado: editingRule?.estado ?? 'normal',
           canal_telegram: telegram,
           canal_email: email,
+          canal_whatsapp: whatsapp,
           activa: active,
           ultima_comprobacion_at: editingRule?.ultima_comprobacion_at ?? null,
           ultima_alerta_at: editingRule?.ultima_alerta_at ?? null,
@@ -561,7 +568,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
         method: editingRule ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editingRule
-          ? { umbral_subida_pct: risePct, umbral_caida_pct: dropPct, rearmar_pct: rearmPct, canal_telegram: telegram, canal_email: email, activa: active, ...(scope === 'cartera' ? { precio_referencia: referenceValue } : { isin: isin.trim() || null, precio_objetivo_importe: targetPriceValue, divisa_objetivo: targetPriceValue === null ? null : normalizedTargetCurrency }) }
+          ? { umbral_subida_pct: risePct, umbral_caida_pct: dropPct, rearmar_pct: rearmPct, canal_telegram: telegram, canal_email: email, canal_whatsapp: whatsapp, activa: active, ...(scope === 'cartera' ? { precio_referencia: referenceValue } : { isin: isin.trim() || null, precio_objetivo_importe: targetPriceValue, divisa_objetivo: targetPriceValue === null ? null : normalizedTargetCurrency }) }
           : body),
       })
       const payload = await response.json().catch(() => null) as { error?: string } | null
@@ -691,7 +698,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
       <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="mb-1 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400"><BellRing className="h-3.5 w-3.5" /> Alertas</p>
-          <h2 className="text-base font-semibold tracking-[-0.04em]">Telegram y email</h2>
+          <h2 className="text-base font-semibold tracking-[-0.04em]">Telegram, email y WhatsApp</h2>
           <p className="mt-1.5 max-w-2xl text-[10px] leading-relaxed text-slate-500">{scenarioMode ? 'Prueba local; no modifica n8n ni tu cartera principal.' : 'n8n envía los avisos.'}</p>
         </div>
         <Button type="button" size="sm" className="bg-slate-900 text-white hover:bg-slate-700" onClick={() => openAssetRule(null, 'position')}><Plus />Nueva alerta de posición</Button>
@@ -710,7 +717,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
         <div className="rounded-lg border border-slate-200 bg-white p-3">
           <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Activos vigilados</p><p className="mt-1 text-[13px] font-semibold">Posiciones y watchlist</p></div><span className="text-2xl font-semibold tracking-[-0.05em] tabular-nums">{assetRules.length}</span></div>
           <p className="mt-2 text-[10px] leading-relaxed text-slate-500">Posiciones de tu cartera o activos que todavía no tienes.</p>
-          <div className="mt-3 flex items-center justify-between gap-3"><span className="flex items-center gap-1.5 text-[10px] text-slate-500"><Mail className="h-3.5 w-3.5 text-[#5d8236]" />Telegram · email</span><Button type="button" size="sm" variant="outline" className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => openAssetRule(null, 'watchlist')}><Plus />Añadir seguimiento</Button></div>
+          <div className="mt-3 flex items-center justify-between gap-3"><span className="flex items-center gap-1.5 text-[10px] text-slate-500"><MessageCircle className="h-3.5 w-3.5 text-[#5d8236]" />Telegram · email · WhatsApp</span><Button type="button" size="sm" variant="outline" className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => openAssetRule(null, 'watchlist')}><Plus />Añadir seguimiento</Button></div>
         </div>
       </div>
 
@@ -736,7 +743,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
         <DialogContent className="border-slate-200 bg-[#f7f5ef] text-slate-900 sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Eliminar alerta</DialogTitle>
-            <DialogDescription>Se eliminará la alerta de {rulePendingDeletion?.activo || rulePendingDeletion?.ticker || 'este activo'} y dejarás de recibir sus avisos por Telegram y email.</DialogDescription>
+            <DialogDescription>Se eliminará la alerta de {rulePendingDeletion?.activo || rulePendingDeletion?.ticker || 'este activo'} y dejarás de recibir sus avisos por Telegram, email y WhatsApp.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setRulePendingDeletion(null)} disabled={busyRuleId !== null}>Cancelar</Button>
@@ -755,7 +762,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
             {scope === 'activo' && selectedAsset ? <div className="grid gap-2"><Label htmlFor="alert-target-price">Importe objetivo de alerta (opcional)</Label><div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_8rem]"><Input id="alert-target-price" aria-label={`Importe objetivo en ${targetCurrency}`} type="number" min="0.000001" step="any" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} placeholder="Ej. 120,00" /><select id="alert-target-currency" aria-label="Divisa del objetivo de alerta" value={targetCurrency} onChange={(event) => setTargetCurrency(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-500">{targetCurrencyOptions.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></div><p className="text-[10px] leading-relaxed text-slate-500">La alerta comparará el objetivo en la divisa elegida. EUR usa la valoración normalizada; USD u otra divisa disponible usa la cotización del mercado.</p></div> : null}
             <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-2"><Label htmlFor="alert-rise">Avisar si sube (%)</Label><Input id="alert-rise" type="number" min="0.1" step="0.1" value={rise} onChange={(event) => setRise(event.target.value)} placeholder="Ej. 10" /></div><div className="grid gap-2"><Label htmlFor="alert-drop">Avisar si cae (%)</Label><Input id="alert-drop" type="number" min="0.1" step="0.1" value={drop} onChange={(event) => setDrop(event.target.value)} placeholder="Ej. 10" /></div></div>
             <div className="grid gap-2"><Label htmlFor="alert-rearm">Recuperación para volver a avisar (%)</Label><Input id="alert-rearm" type="number" min="0.1" step="0.1" value={rearm} onChange={(event) => setRearm(event.target.value)} /><p className="text-[10px] leading-relaxed text-slate-500">No es el número de avisos: es cuánto debe recuperar la rentabilidad para rearmar la alerta. Ejemplo: si cae un 10% y pones 1%, volverá a avisar al recuperar hasta −9%.</p></div>
-            <div className="grid gap-2"><Label>Canales</Label><div className="flex flex-wrap gap-2"><button type="button" aria-pressed={telegram} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${channelButtonClass(telegram)}`} onClick={() => setTelegram((value) => !value)}><Send className="h-3.5 w-3.5" />Telegram</button><button type="button" aria-pressed={email} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${channelButtonClass(email)}`} onClick={() => setEmail((value) => !value)}><Mail className="h-3.5 w-3.5" />Email</button></div><p className="text-[10px] text-slate-500">{scenarioMode ? 'Se guardan como preferencias locales; esta vista no envía mensajes.' : 'El workflow de n8n usa estas marcas para decidir a qué canal enviar cada cruce.'}</p></div>
+            <div className="grid gap-2"><Label>Canales</Label><div className="flex flex-wrap gap-2"><button type="button" aria-pressed={telegram} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${channelButtonClass(telegram)}`} onClick={() => setTelegram((value) => !value)}><Send className="h-3.5 w-3.5" />Telegram</button><button type="button" aria-pressed={email} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${channelButtonClass(email)}`} onClick={() => setEmail((value) => !value)}><Mail className="h-3.5 w-3.5" />Email</button><button type="button" aria-pressed={whatsapp} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${channelButtonClass(whatsapp)}`} onClick={() => setWhatsapp((value) => !value)}><MessageCircle className="h-3.5 w-3.5" />WhatsApp</button></div><p className="text-[10px] text-slate-500">{scenarioMode ? 'Se guardan como preferencias locales; esta vista no envía mensajes.' : 'El workflow de n8n usa estas marcas para decidir a qué canal enviar cada cruce. WhatsApp requiere configurar las variables WHATSAPP_* en n8n.'}</p></div>
             <div className="flex items-center justify-between rounded-md border border-slate-200 bg-[#eeece5] px-3 py-2"><div><p className="text-xs font-semibold text-slate-700">Regla activa</p><p className="text-[10px] text-slate-500">Pausarla conserva su configuración y estado.</p></div><button type="button" aria-pressed={active} className={`relative h-6 w-11 rounded-full transition ${active ? 'bg-[#739b43]' : 'bg-slate-300'}`} onClick={() => setActive((value) => !value)}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${active ? 'left-6' : 'left-1'}`} /></button></div>
             <DialogFooter><Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button><Button type="submit" className="bg-slate-900 text-white hover:bg-slate-700" disabled={saving}>{saving ? <><Loader2 className="animate-spin" />Guardando…</> : 'Guardar alerta'}</Button></DialogFooter>
           </form>

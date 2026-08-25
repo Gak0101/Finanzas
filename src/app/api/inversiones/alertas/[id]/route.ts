@@ -39,7 +39,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const values: Record<string, unknown> = { updated_at: new Date().toISOString() }
-  for (const key of ['isin', 'precio_referencia', 'umbral_subida_pct', 'umbral_caida_pct', 'rearmar_pct', 'canal_telegram', 'canal_email', 'activa']) {
+  for (const key of ['isin', 'precio_referencia', 'umbral_subida_pct', 'umbral_caida_pct', 'rearmar_pct', 'canal_telegram', 'canal_email', 'canal_whatsapp', 'activa']) {
     if (Object.hasOwn(input, key)) {
       values[key] = key === 'isin' ? normalizeIsin(input.isin) : input[key as keyof typeof input]
     }

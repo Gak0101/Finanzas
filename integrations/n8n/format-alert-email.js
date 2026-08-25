@@ -63,6 +63,7 @@ return alerts.map((alert) => {
   const channelHint = [
     alert.canal_telegram ? 'Telegram' : null,
     alert.canal_email ? 'Email' : null,
+    alert.canal_whatsapp ? 'WhatsApp' : null,
   ].filter(Boolean).join(' · ')
   const currentReturn = formatPercent(alert.rendimiento_pct)
   const threshold = formatThreshold(alert.umbral_pct, isDrop)

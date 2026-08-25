@@ -182,6 +182,7 @@ export async function POST(req: Request) {
     estado: 'normal',
     canal_telegram: input.canal_telegram,
     canal_email: input.canal_email,
+    canal_whatsapp: input.canal_whatsapp,
     activa: input.activa,
     ultimo_error: null,
     updated_at: now,

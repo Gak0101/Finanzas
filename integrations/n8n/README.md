@@ -1,8 +1,8 @@
 # Alertas de inversiones con n8n
 
-El workflow `finanzas-alertas-telegram-email.json` consulta Finanzas cada 15 minutos,
-actualiza precios, detecta cruces nuevos y envía cada alerta a Telegram, email o
-ambos según la regla guardada en la aplicación.
+El workflow `finanzas-alertas-telegram-email.json` consulta Finanzas cada 5 minutos,
+actualiza precios, detecta cruces nuevos y envía cada alerta a Telegram, email,
+WhatsApp o una combinación de ellos según la regla guardada en la aplicación.
 
 Las reglas pueden dispararse por rentabilidad porcentual, por un precio objetivo
 en EUR o por ambas condiciones. El precio objetivo solo está disponible para
@@ -27,6 +27,12 @@ activos individuales; la cartera completa se vigila por porcentaje.
    FINANZAS_AUTOMATION_SECRET=el-mismo-secreto-que-en-finanzas
    TELEGRAM_CHAT_ID=tu-chat-id
    ALERT_EMAIL_TO=tu-destino@tudominio.com
+   WHATSAPP_GRAPH_URL=https://graph.facebook.com/vXX.X
+   WHATSAPP_ACCESS_TOKEN=token-de-Meta-Cloud-API
+   WHATSAPP_PHONE_NUMBER_ID=id-del-numero-de-WhatsApp-Cloud
+   WHATSAPP_TO=34600000000
+   WHATSAPP_TEMPLATE_NAME=finanzas_alerta
+   WHATSAPP_TEMPLATE_LANGUAGE=es_ES
    N8N_BLOCK_ENV_ACCESS_IN_NODE=false
    ```
 
@@ -37,6 +43,10 @@ activos individuales; la cartera completa se vigila por porcentaje.
    - Email: una credencial `gmailOAuth2` llamada `Gmail account`, autorizada con
      OAuth2 en Google Cloud. El nodo Gmail envía desde la cuenta autorizada y
      utiliza `ALERT_EMAIL_TO` como destinatario.
+   - WhatsApp: crea una plantilla aprobada en Meta con un único parámetro de
+     texto en el cuerpo y completa las variables `WHATSAPP_*` anteriores en el
+     entorno de n8n. `WHATSAPP_TO` debe ir en formato internacional, sin `+` ni
+     espacios. El token no se guarda en Finanzas ni en Git.
 
 5. Activa el workflow cuando las credenciales estén disponibles.
 

@@ -23,6 +23,7 @@ const inversionAlertaBaseSchema = z.object({
   rearmar_pct: z.number().min(0).max(1).default(0.01),
   canal_telegram: z.boolean().default(true),
   canal_email: z.boolean().default(true),
+  canal_whatsapp: z.boolean().default(false),
   activa: z.boolean().default(true),
 })
 
@@ -49,8 +50,8 @@ export const inversionAlertaSchema = inversionAlertaBaseSchema.superRefine((valu
   if (value.alcance === 'cartera' && hasTargetConfiguration(value)) {
     context.addIssue({ code: 'custom', message: 'El precio objetivo solo está disponible para activos', path: ['precio_objetivo'] })
   }
-  if (!value.canal_telegram && !value.canal_email) {
-    context.addIssue({ code: 'custom', message: 'Selecciona Telegram, email o ambos', path: ['canal_telegram'] })
+  if (!value.canal_telegram && !value.canal_email && !value.canal_whatsapp) {
+    context.addIssue({ code: 'custom', message: 'Selecciona Telegram, email o WhatsApp', path: ['canal_telegram'] })
   }
   if (value.alcance === 'activo' && !value.posicion_id && !value.ticker) {
     context.addIssue({ code: 'custom', message: 'Selecciona o indica un activo', path: ['ticker'] })
@@ -62,8 +63,11 @@ export const inversionAlertaPatchSchema = inversionAlertaBaseSchema.partial().su
   if (value.alcance === 'cartera' && hasTargetConfiguration(value)) {
     context.addIssue({ code: 'custom', message: 'El precio objetivo solo está disponible para activos', path: ['precio_objetivo'] })
   }
-  if (value.canal_telegram === false && value.canal_email === false) {
-    context.addIssue({ code: 'custom', message: 'Selecciona Telegram, email o ambos', path: ['canal_telegram'] })
+  const disablesAllChannels = value.canal_telegram === false
+    && value.canal_email === false
+    && (!Object.hasOwn(value, 'canal_whatsapp') || value.canal_whatsapp === false)
+  if (disablesAllChannels) {
+    context.addIssue({ code: 'custom', message: 'Selecciona Telegram, email o WhatsApp', path: ['canal_telegram'] })
   }
 })
 

@@ -25,6 +25,7 @@ export type TriggeredInvestmentAlert = {
   divisa_objetivo: string | null
   canal_telegram: boolean
   canal_email: boolean
+  canal_whatsapp: boolean
   checked_at: string
 }
 
@@ -251,6 +252,7 @@ async function evaluateRule(
       divisa_objetivo: rule.divisa_objetivo ?? null,
       canal_telegram: rule.canal_telegram,
       canal_email: rule.canal_email,
+      canal_whatsapp: rule.canal_whatsapp,
       checked_at: checkedAt,
     } satisfies TriggeredInvestmentAlert : null,
   }
