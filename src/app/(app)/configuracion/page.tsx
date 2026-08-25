@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { signOut } from 'next-auth/react'
-import { CheckCircle2, Database, ExternalLink, Globe2, KeyRound, Leaf, Loader2, PlugZap, ShieldCheck, Sparkles, XCircle } from 'lucide-react'
+import { CheckCircle2, Database, ExternalLink, Globe2, KeyRound, Leaf, Loader2, MessageCircle, PlugZap, ShieldCheck, Sparkles, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -52,6 +52,17 @@ type InvestmentSourcesResponse = {
   alphaVantage: CredentialStatus
   financialDatasets: CredentialStatus
   newsApi: CredentialStatus
+}
+
+type WhatsappSettingsResponse = {
+  graphUrl: string
+  phoneNumberId: string
+  recipient: string
+  templateName: string
+  templateLanguage: string
+  accessToken: CredentialStatus
+  ready: boolean
+  missing: string[]
 }
 
 const aiProviderHelp: Record<AiProvider, { url: string; label: string }> = {
@@ -146,6 +157,15 @@ export default function ConfiguracionPage() {
   const [newsApiKey, setNewsApiKey] = useState('')
   const [firecrawlBaseUrl, setFirecrawlBaseUrl] = useState('')
   const [firecrawlApiKey, setFirecrawlApiKey] = useState('')
+  const [whatsappSettings, setWhatsappSettings] = useState<WhatsappSettingsResponse | null>(null)
+  const [loadingWhatsapp, setLoadingWhatsapp] = useState(true)
+  const [savingWhatsapp, setSavingWhatsapp] = useState(false)
+  const [whatsappGraphUrl, setWhatsappGraphUrl] = useState('')
+  const [whatsappAccessToken, setWhatsappAccessToken] = useState('')
+  const [whatsappPhoneNumberId, setWhatsappPhoneNumberId] = useState('')
+  const [whatsappRecipient, setWhatsappRecipient] = useState('')
+  const [whatsappTemplateName, setWhatsappTemplateName] = useState('')
+  const [whatsappTemplateLanguage, setWhatsappTemplateLanguage] = useState('es_ES')
 
   useEffect(() => {
     const controller = new AbortController()
@@ -201,6 +221,32 @@ export default function ConfiguracionPage() {
       }
     }
     void loadSources()
+    return () => controller.abort()
+  }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    async function loadWhatsappSettings() {
+      try {
+        const response = await fetch('/api/configuracion/whatsapp', { cache: 'no-store', signal: controller.signal })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok || !payload) throw new Error(payloadError(payload, 'No se pudo cargar la configuración de WhatsApp'))
+        const settings = payload as WhatsappSettingsResponse
+        setWhatsappSettings(settings)
+        setWhatsappGraphUrl(settings.graphUrl)
+        setWhatsappPhoneNumberId(settings.phoneNumberId)
+        setWhatsappRecipient(settings.recipient)
+        setWhatsappTemplateName(settings.templateName)
+        setWhatsappTemplateLanguage(settings.templateLanguage)
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') {
+          toast.error(error instanceof Error ? error.message : 'No se pudo cargar la configuración de WhatsApp')
+        }
+      } finally {
+        setLoadingWhatsapp(false)
+      }
+    }
+    void loadWhatsappSettings()
     return () => controller.abort()
   }, [])
 
@@ -352,6 +398,40 @@ export default function ConfiguracionPage() {
       toast.error(error instanceof Error ? error.message : 'No se pudieron guardar las fuentes')
     } finally {
       setSavingSources(false)
+    }
+  }
+
+  async function saveWhatsappSettings() {
+    setSavingWhatsapp(true)
+    try {
+      const response = await fetch('/api/configuracion/whatsapp', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          graph_url: whatsappGraphUrl.trim(),
+          ...(whatsappAccessToken.trim() ? { access_token: whatsappAccessToken.trim() } : {}),
+          phone_number_id: whatsappPhoneNumberId.trim(),
+          recipient: whatsappRecipient.trim(),
+          template_name: whatsappTemplateName.trim(),
+          template_language: whatsappTemplateLanguage.trim() || 'es_ES',
+        }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok || !payload) throw new Error(payloadError(payload, 'No se pudo guardar la configuración de WhatsApp'))
+
+      const settings = payload as WhatsappSettingsResponse
+      setWhatsappSettings(settings)
+      setWhatsappGraphUrl(settings.graphUrl)
+      setWhatsappPhoneNumberId(settings.phoneNumberId)
+      setWhatsappRecipient(settings.recipient)
+      setWhatsappTemplateName(settings.templateName)
+      setWhatsappTemplateLanguage(settings.templateLanguage)
+      setWhatsappAccessToken('')
+      toast.success(settings.ready ? 'WhatsApp listo para las alertas que lo seleccionen' : 'Configuración de WhatsApp guardada; faltan algunos datos')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo guardar la configuración de WhatsApp')
+    } finally {
+      setSavingWhatsapp(false)
     }
   }
 
@@ -619,6 +699,81 @@ export default function ConfiguracionPage() {
                 </Button>
               </div>
             </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card id="whatsapp-alertas" className="overflow-hidden border-slate-200">
+        <CardHeader className="border-b border-slate-200">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-lg"><MessageCircle className="h-5 w-5 text-[#82a53f]" /> WhatsApp para alertas</CardTitle>
+              <CardDescription className="mt-2 max-w-2xl leading-5">Configuración opcional. Telegram y email siguen funcionando igual; WhatsApp solo se usará en las alertas donde lo selecciones.</CardDescription>
+            </div>
+            <span className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold ${whatsappSettings?.ready ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>
+              {whatsappSettings?.ready ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
+              {whatsappSettings?.ready ? 'Listo para usar' : 'Pendiente de configurar'}
+            </span>
+          </div>
+        </CardHeader>
+        <CardContent className="p-6 sm:p-7">
+          {loadingWhatsapp ? (
+            <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Cargando WhatsApp…</div>
+          ) : (
+            <div className="grid gap-5">
+              <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-4 text-xs leading-5 text-amber-950">
+                <p className="font-semibold">Qué falta para activarlo</p>
+                <p className="mt-1">
+                  {whatsappSettings?.ready
+                    ? 'La configuración está completa. Al marcar WhatsApp en una alerta, se enviará la plantilla usando estos datos.'
+                    : `Puedes dejarlo pendiente. Faltan: ${(whatsappSettings?.missing ?? ['los datos de WhatsApp']).join(', ')}.`}
+                </p>
+              </div>
+
+              <div className="grid gap-6 md:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="whatsapp-graph-url">URL de WhatsApp Cloud / Graph API</Label>
+                  <Input id="whatsapp-graph-url" type="url" value={whatsappGraphUrl} onChange={(event) => setWhatsappGraphUrl(event.target.value)} placeholder="https://graph.facebook.com/vXX.X" spellCheck={false} />
+                  <p className="text-[11px] leading-5 text-muted-foreground">Pega la versión de Graph API que te indique Meta.</p>
+                </div>
+                <SourceSecretField
+                  id="whatsapp-access-token"
+                  label="Token de acceso de Meta"
+                  description="Se cifra al guardarlo y nunca se vuelve a mostrar completo. Déjalo vacío para conservar el token actual."
+                  value={whatsappAccessToken}
+                  configured={whatsappSettings?.accessToken.configured ?? false}
+                  onChange={setWhatsappAccessToken}
+                />
+                <div className="grid gap-2">
+                  <Label htmlFor="whatsapp-phone-number-id">Phone Number ID</Label>
+                  <Input id="whatsapp-phone-number-id" value={whatsappPhoneNumberId} onChange={(event) => setWhatsappPhoneNumberId(event.target.value)} placeholder="123456789012345" spellCheck={false} />
+                  <p className="text-[11px] leading-5 text-muted-foreground">Es el identificador del número en WhatsApp Business, no el número visible.</p>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="whatsapp-recipient">Número destinatario</Label>
+                  <Input id="whatsapp-recipient" type="tel" inputMode="numeric" value={whatsappRecipient} onChange={(event) => setWhatsappRecipient(event.target.value)} placeholder="34612345678" spellCheck={false} />
+                  <p className="text-[11px] leading-5 text-muted-foreground">Formato internacional, solo dígitos y sin «+», espacios ni guiones.</p>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="whatsapp-template-name">Nombre de plantilla aprobada</Label>
+                  <Input id="whatsapp-template-name" value={whatsappTemplateName} onChange={(event) => setWhatsappTemplateName(event.target.value)} placeholder="finanzas_alerta" spellCheck={false} />
+                  <p className="text-[11px] leading-5 text-muted-foreground">Debe coincidir exactamente con la plantilla aprobada en Meta.</p>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="whatsapp-template-language">Idioma de la plantilla</Label>
+                  <Input id="whatsapp-template-language" value={whatsappTemplateLanguage} onChange={(event) => setWhatsappTemplateLanguage(event.target.value)} placeholder="es_ES" spellCheck={false} />
+                  <p className="text-[11px] leading-5 text-muted-foreground">Normalmente es <code>es_ES</code>; usa el código que figure en Meta.</p>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-[10px] leading-4 text-muted-foreground">Necesitas una plantilla aprobada en Meta con un parámetro de texto para recibir el contenido de la alerta.</p>
+                <Button type="button" onClick={saveWhatsappSettings} disabled={savingWhatsapp || loadingWhatsapp}>
+                  {savingWhatsapp ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
+                  {savingWhatsapp ? 'Guardando…' : 'Guardar WhatsApp'}
+                </Button>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>

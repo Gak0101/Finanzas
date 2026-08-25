@@ -10,7 +10,7 @@ activos individuales; la cartera completa se vigila por porcentaje.
 
 ## Configuración
 
-1. En Finanzas configura variables secretas:
+1. En Finanzas configura las variables secretas de automatización:
 
    ```dotenv
    AUTOMATION_SECRET=un-secreto-largo-y-unico
@@ -27,12 +27,6 @@ activos individuales; la cartera completa se vigila por porcentaje.
    FINANZAS_AUTOMATION_SECRET=el-mismo-secreto-que-en-finanzas
    TELEGRAM_CHAT_ID=tu-chat-id
    ALERT_EMAIL_TO=tu-destino@tudominio.com
-   WHATSAPP_GRAPH_URL=https://graph.facebook.com/vXX.X
-   WHATSAPP_ACCESS_TOKEN=token-de-Meta-Cloud-API
-   WHATSAPP_PHONE_NUMBER_ID=id-del-numero-de-WhatsApp-Cloud
-   WHATSAPP_TO=34600000000
-   WHATSAPP_TEMPLATE_NAME=finanzas_alerta
-   WHATSAPP_TEMPLATE_LANGUAGE=es_ES
    N8N_BLOCK_ENV_ACCESS_IN_NODE=false
    ```
 
@@ -44,9 +38,10 @@ activos individuales; la cartera completa se vigila por porcentaje.
      OAuth2 en Google Cloud. El nodo Gmail envía desde la cuenta autorizada y
      utiliza `ALERT_EMAIL_TO` como destinatario.
    - WhatsApp: crea una plantilla aprobada en Meta con un único parámetro de
-     texto en el cuerpo y completa las variables `WHATSAPP_*` anteriores en el
-     entorno de n8n. `WHATSAPP_TO` debe ir en formato internacional, sin `+` ni
-     espacios. El token no se guarda en Finanzas ni en Git.
+     texto en el cuerpo y completa la tarjeta **WhatsApp para alertas** de
+     `/configuracion` en Finanzas. Allí se guardan cifrados el token, el Graph
+     URL, el Phone Number ID, el destinatario y la plantilla. n8n solo llama al
+     endpoint protegido de Finanzas; no necesita duplicar esos secretos.
 
 5. Activa el workflow cuando las credenciales estén disponibles.
 
@@ -69,7 +64,8 @@ esa regla de prueba. El
 workflow devuelve `200` al aceptar la ejecución y n8n conserva el resultado en
 el historial de ejecuciones.
 
-Las credenciales no se guardan en Finanzas ni en Git. El endpoint solo devuelve
+Las credenciales de Telegram y email siguen en n8n. La configuración de WhatsApp
+se guarda cifrada en Finanzas y no se devuelve completa. El endpoint solo devuelve
 alertas nuevas al cruzar el umbral; mientras el activo siga por encima o por
 debajo no repite el mensaje. El rearme predeterminado es de un punto porcentual.
 

@@ -267,7 +267,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.WHATSAPP_GRAPH_URL + '/' + $env.WHATSAPP_PHONE_NUMBER_ID + '/messages'}}",
+        "url": "={{$env.FINANZAS_BASE_URL + '/api/automatizaciones/inversiones/whatsapp'}}",
         "authentication": "none",
         "sendHeaders": true,
         "specifyHeaders": "keypair",
@@ -275,7 +275,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "={{'Bearer ' + $env.WHATSAPP_ACCESS_TOKEN}}"
+              "value": "={{'Bearer ' + $env.FINANZAS_AUTOMATION_SECRET}}"
             },
             {
               "name": "Content-Type",
@@ -286,7 +286,7 @@
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{JSON.stringify({messaging_product: 'whatsapp', to: $env.WHATSAPP_TO, type: 'template', template: {name: $env.WHATSAPP_TEMPLATE_NAME, language: {code: $env.WHATSAPP_TEMPLATE_LANGUAGE || 'es_ES'}, components: [{type: 'body', parameters: [{type: 'text', text: $json.text}]}]}})}}",
+        "jsonBody": "={{JSON.stringify({text: $json.text})}}",
         "options": {},
         "response": {
           "response": {

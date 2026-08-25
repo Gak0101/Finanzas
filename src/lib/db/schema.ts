@@ -31,7 +31,7 @@ export const configuraciones_ia = sqliteTable(
   (t) => [uniqueIndex('unique_configuracion_ia_usuario').on(t.usuario_id)]
 )
 
-// ─── FUENTES DE INVESTIGACIÓN POR USUARIO ──────────────────────────────────
+// ─── FUENTES E INTEGRACIONES EXTERNAS POR USUARIO ──────────────────────────
 // Las credenciales son opcionales y se cifran antes de persistirse.
 // El modo premium nunca se activa implícitamente.
 export const configuraciones_fuentes_inversion = sqliteTable(
@@ -47,6 +47,12 @@ export const configuraciones_fuentes_inversion = sqliteTable(
     newsapi_key_cifrada: text('newsapi_key_cifrada'),
     firecrawl_base_url: text('firecrawl_base_url'),
     firecrawl_api_key_cifrada: text('firecrawl_api_key_cifrada'),
+    whatsapp_graph_url: text('whatsapp_graph_url'),
+    whatsapp_access_token_cifrada: text('whatsapp_access_token_cifrada'),
+    whatsapp_phone_number_id: text('whatsapp_phone_number_id'),
+    whatsapp_to: text('whatsapp_to'),
+    whatsapp_template_name: text('whatsapp_template_name'),
+    whatsapp_template_language: text('whatsapp_template_language'),
     permitir_busqueda_web_pago: integer('permitir_busqueda_web_pago', { mode: 'boolean' }).notNull().default(false),
     created_at: text('created_at').default(sql`(datetime('now'))`),
     updated_at: text('updated_at').default(sql`(datetime('now'))`),
