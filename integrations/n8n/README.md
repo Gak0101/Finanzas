@@ -1,6 +1,6 @@
 # Alertas de inversiones con n8n
 
-El workflow `finanzas-alertas-telegram-email.json` consulta Finanzas cada hora,
+El workflow `finanzas-alertas-telegram-email.json` consulta Finanzas cada 15 minutos,
 actualiza precios, detecta cruces nuevos y envía cada alerta a Telegram, email o
 ambos según la regla guardada en la aplicación.
 

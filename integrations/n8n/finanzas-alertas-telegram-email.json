@@ -66,14 +66,14 @@
         "rule": {
           "interval": [
             {
-              "field": "hours",
-              "hoursInterval": 1
+              "field": "minutes",
+              "minutesInterval": 15
             }
           ]
         }
       },
-      "id": "finanzas-schedule-hourly",
-      "name": "Cada hora",
+      "id": "finanzas-schedule-15m",
+      "name": "Cada 15 minutos",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [
@@ -269,7 +269,7 @@
         ]
       ]
     },
-    "Cada hora": {
+    "Cada 15 minutos": {
       "main": [
         [
           {
