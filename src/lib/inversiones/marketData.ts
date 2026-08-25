@@ -42,6 +42,7 @@ export type PriceResult = {
   sourceUrl: string
   provider: string
   asOf?: string
+  nativePrice: number
   nativeCurrency?: string
   fxRate?: number
 }
@@ -71,6 +72,18 @@ function normalizeType(value: string) {
   return value.toLocaleLowerCase('es')
 }
 
+type NormalizedNativeQuote = {
+  price: number
+  currency: string
+}
+
+function normalizeNativeQuote(price: number | null | undefined, currency: string | null | undefined): NormalizedNativeQuote | null {
+  const effectiveCurrency = currency?.trim()
+  if (!effectiveCurrency || price === null || price === undefined || !Number.isFinite(price)) return null
+  if (effectiveCurrency === 'GBp') return { price: price / 100, currency: 'GBP' }
+  return { price, currency: effectiveCurrency }
+}
+
 async function fetchYahooCloseRaw(symbol: string): Promise<PriceResult> {
   const sourceUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=5d&interval=1d&events=history`
   const response = await fetch(sourceUrl, {
@@ -93,25 +106,28 @@ async function fetchYahooCloseRaw(symbol: string): Promise<PriceResult> {
     sourceUrl,
     provider: `Yahoo Finance · ${symbol} · último cierre`,
     asOf: asOfTimestamp ? new Date(asOfTimestamp * 1000).toISOString() : undefined,
+    nativePrice: price,
     nativeCurrency: result?.meta?.currency,
   }
 }
 
 export async function fetchYahooClose(symbol: string): Promise<PriceResult> {
   const result = await fetchYahooCloseRaw(symbol)
-  let currency = result.nativeCurrency
-  let nativePrice = result.price
+  const rawCurrency = result.nativeCurrency?.trim()
+  if (!rawCurrency) throw new Error(`Yahoo ${symbol}: divisa nativa no informada`)
+  const nativeQuote = normalizeNativeQuote(result.nativePrice, rawCurrency)
+  if (!nativeQuote) throw new Error(`Yahoo ${symbol}: precio nativo no válido`)
+  const { price: nativePrice, currency } = nativeQuote
 
-  if (!currency || currency === 'EUR') return result
-  if (currency === 'GBp') {
-    currency = 'GBP'
-    nativePrice /= 100
+  if (currency === 'EUR') {
+    return { ...result, price: nativePrice, nativePrice, nativeCurrency: currency }
   }
 
   const fx = await fetchYahooCloseRaw(`${currency}EUR=X`)
   return {
     ...result,
     price: nativePrice * fx.price,
+    nativePrice,
     nativeCurrency: currency,
     fxRate: fx.price,
     provider: `${result.provider} · convertido ${currency}/EUR`,
@@ -131,6 +147,8 @@ async function fetchCoinGeckoPrice(cryptoId: string): Promise<PriceResult> {
   if (typeof price !== 'number' || price <= 0) throw new Error(`CoinGecko ${cryptoId}: sin precio EUR`)
   return {
     price,
+    nativePrice: price,
+    nativeCurrency: 'EUR',
     provider: `CoinGecko · ${cryptoId} · spot EUR`,
     sourceUrl,
   }
@@ -158,6 +176,7 @@ export async function searchYahooAssets(query: string): Promise<Array<{
   market_symbol: string
   isin: string | null
   precio_actual: number | null
+  precio_actual_eur: number | null
   divisa: string | null
   precio_actual_as_of: string | null
 }>> {
@@ -176,11 +195,13 @@ export async function searchYahooAssets(query: string): Promise<Array<{
       const quoteType = quote.quoteType?.toUpperCase()
       let latestPrice: PriceResult | null = null
       try {
-        latestPrice = await fetchYahooCloseRaw(quote.symbol!)
+        latestPrice = await fetchYahooClose(quote.symbol!)
       } catch {
         // El resultado de búsqueda sigue siendo útil aunque Yahoo no tenga una
         // cotización reciente para uno de los mercados devueltos.
       }
+      const effectiveCurrency = latestPrice?.nativeCurrency ?? quote.currency
+      const nativeQuote = normalizeNativeQuote(latestPrice?.nativePrice, effectiveCurrency)
       return {
         ticker: quote.symbol!,
         name: quote.longname || quote.shortname || quote.symbol!,
@@ -188,8 +209,9 @@ export async function searchYahooAssets(query: string): Promise<Array<{
         exchange: quote.exchDisp || quote.exchange || null,
         market_symbol: quote.symbol!,
         isin: inferIsin(quote.symbol),
-        precio_actual: latestPrice?.price ?? null,
-        divisa: latestPrice?.nativeCurrency || quote.currency || null,
+        precio_actual: nativeQuote?.price ?? null,
+        precio_actual_eur: latestPrice?.price ?? null,
+        divisa: nativeQuote?.currency ?? null,
         precio_actual_as_of: latestPrice?.asOf ?? null,
       }
     }))
@@ -237,6 +259,8 @@ export async function refreshInvestmentPrices(userId: number): Promise<RefreshPr
             id: position.id,
             result: {
               price,
+              nativePrice: price,
+              nativeCurrency: 'EUR',
               provider: `CoinGecko · ${position.crypto_id} · spot EUR`,
               sourceUrl: `https://api.coingecko.com/api/v3/simple/price?ids=${position.crypto_id}&vs_currencies=eur`,
             },
@@ -269,6 +293,8 @@ export async function refreshInvestmentPrices(userId: number): Promise<RefreshPr
       .update(inversiones_posiciones)
       .set({
         precio_actual: update.result.price,
+        precio_actual_nativo: update.result.nativeCurrency ? update.result.nativePrice : null,
+        divisa_nativa: update.result.nativeCurrency ?? null,
         valor_actual: value,
         pnl,
         pnl_pct: pnlPct,

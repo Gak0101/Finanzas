@@ -43,6 +43,7 @@ type AssetSearchResult = {
   exchange: string | null
   isin: string | null
   precio_actual: number | null
+  precio_actual_eur: number | null
   divisa: string | null
   precio_actual_as_of: string | null
   poseido: boolean
@@ -57,10 +58,45 @@ type Props = {
   onChanged: () => Promise<void>
   scenarioMode?: boolean
   onScenarioRulesChange?: (rules: InversionAlerta[]) => Promise<void> | void
-  onScenarioPriceRefresh?: (positionId: number, update: { price: number; sourceUrl: string; provider: string; asOf?: string }) => Promise<void> | void
+  onScenarioPriceRefresh?: (positionId: number, update: { price: number; nativePrice: number; nativeCurrency?: string; sourceUrl: string; provider: string; asOf?: string }) => Promise<void> | void
 }
 
 type AssetIntent = 'position' | 'watchlist'
+
+type PresentationPriceSource = Partial<Pick<InversionPosicion | InversionAlerta, 'precio_actual' | 'precio_actual_nativo' | 'divisa_nativa'>>
+
+type PresentationQuote = {
+  price: number | null
+  currency: string
+}
+
+function completePresentationQuote(price: number | null | undefined, currency: string | null | undefined): PresentationQuote | null {
+  const normalizedCurrency = currency?.trim()
+  if (price === null || price === undefined || !Number.isFinite(price) || !normalizedCurrency) return null
+  return { price, currency: normalizedCurrency }
+}
+
+function selectNativePresentationQuote(position?: PresentationPriceSource | null, rule?: PresentationPriceSource | null): PresentationQuote | null {
+  for (const source of [position, rule]) {
+    const quote = completePresentationQuote(source?.precio_actual_nativo, source?.divisa_nativa)
+    if (quote) return quote
+  }
+  return null
+}
+
+function selectPresentationQuote(position?: PresentationPriceSource | null, rule?: PresentationPriceSource | null): PresentationQuote {
+  const nativeQuote = selectNativePresentationQuote(position, rule)
+  if (nativeQuote) return nativeQuote
+
+  const canonicalPrice = position?.precio_actual ?? rule?.precio_actual ?? null
+  return { price: Number.isFinite(canonicalPrice) ? canonicalPrice : null, currency: 'EUR' }
+}
+
+function ruleTarget(rule: InversionAlerta): PresentationQuote | null {
+  const amount = rule.precio_objetivo_importe ?? rule.precio_objetivo
+  const currency = rule.divisa_objetivo ?? 'EUR'
+  return completePresentationQuote(amount, currency)
+}
 
 function percentInput(value: number | null) {
   return value === null ? '' : (value * 100).toFixed(1).replace(/\.0$/, '')
@@ -157,6 +193,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
   const [active, setActive] = useState(true)
   const [referencePrice, setReferencePrice] = useState('')
   const [targetPrice, setTargetPrice] = useState('')
+  const [targetCurrency, setTargetCurrency] = useState('EUR')
   const [isin, setIsin] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<AssetSearchResult[]>([])
@@ -174,6 +211,9 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
     () => positions.reduce((sum, position) => sum + (position.valor_actual ?? 0), 0),
     [positions]
   )
+  const nativeTargetCurrency = selectedAsset?.divisa?.trim().toUpperCase()
+  const savedTargetCurrency = editingRule?.divisa_objetivo?.trim().toUpperCase()
+  const targetCurrencyOptions = [...new Set(['EUR', nativeTargetCurrency, savedTargetCurrency].filter((currency): currency is string => Boolean(currency)))]
   const portfolioBaseValue = parsePositiveInput(referencePrice)
   const portfolioRiseLevel = thresholdPrice(portfolioBaseValue, rise, 'up')
   const portfolioDropLevel = thresholdPrice(portfolioBaseValue, drop, 'down')
@@ -195,22 +235,26 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
             return [position.activo, position.ticker, position.price_ticker, position.market_symbol, position.isin]
               .some((value) => value?.toLocaleLowerCase('es').includes(query))
           })
-          .map((position) => ({
-            key: `position:${position.id}`,
-            activo: position.activo,
-            ticker: position.ticker,
-            tipo_activo: position.tipo,
-            price_ticker: position.price_ticker || position.ticker,
-            crypto_id: position.crypto_id,
-            market_symbol: position.market_symbol,
-            exchange: exchangeLabelFromSymbol(position.market_symbol) || position.market_symbol,
-            isin: position.isin || inferIsin(position.ticker, position.market_symbol),
-            precio_actual: position.precio_actual,
-            divisa: position.divisa,
-            precio_actual_as_of: position.snapshot_at,
-            poseido: true,
-            posicion_id: position.id,
-          }))
+          .map((position) => {
+            const presentationQuote = selectPresentationQuote(position)
+            return {
+              key: `position:${position.id}`,
+              activo: position.activo,
+              ticker: position.ticker,
+              tipo_activo: position.tipo,
+              price_ticker: position.price_ticker || position.ticker,
+              crypto_id: position.crypto_id,
+              market_symbol: position.market_symbol,
+              exchange: exchangeLabelFromSymbol(position.market_symbol) || position.market_symbol,
+              isin: position.isin || inferIsin(position.ticker, position.market_symbol),
+              precio_actual: presentationQuote.price,
+              precio_actual_eur: position.precio_actual,
+              divisa: presentationQuote.currency,
+              precio_actual_as_of: position.snapshot_at,
+              poseido: true,
+              posicion_id: position.id,
+            }
+          })
 
         const response = await fetch(`/api/inversiones/alertas/buscar-activo?q=${encodeURIComponent(searchQuery.trim())}`, { cache: 'no-store', signal: controller.signal })
         const payload = await response.json().catch(() => null) as { results?: AssetSearchResult[]; error?: string } | null
@@ -223,22 +267,26 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
           const localResults = positions
             .filter((position) => [position.activo, position.ticker, position.price_ticker, position.market_symbol, position.isin]
               .some((value) => value?.toLocaleLowerCase('es').includes(searchQuery.trim().toLocaleLowerCase('es'))))
-            .map((position) => ({
-              key: `position:${position.id}`,
-              activo: position.activo,
-              ticker: position.ticker,
-              tipo_activo: position.tipo,
-              price_ticker: position.price_ticker || position.ticker,
-              crypto_id: position.crypto_id,
-              market_symbol: position.market_symbol,
-              exchange: exchangeLabelFromSymbol(position.market_symbol) || position.market_symbol,
-              isin: position.isin || inferIsin(position.ticker, position.market_symbol),
-              precio_actual: position.precio_actual,
-              divisa: position.divisa,
-              precio_actual_as_of: position.snapshot_at,
-              poseido: true,
-              posicion_id: position.id,
-            }))
+            .map((position) => {
+              const presentationQuote = selectPresentationQuote(position)
+              return {
+                key: `position:${position.id}`,
+                activo: position.activo,
+                ticker: position.ticker,
+                tipo_activo: position.tipo,
+                price_ticker: position.price_ticker || position.ticker,
+                crypto_id: position.crypto_id,
+                market_symbol: position.market_symbol,
+                exchange: exchangeLabelFromSymbol(position.market_symbol) || position.market_symbol,
+                isin: position.isin || inferIsin(position.ticker, position.market_symbol),
+                precio_actual: presentationQuote.price,
+                precio_actual_eur: position.precio_actual,
+                divisa: presentationQuote.currency,
+                precio_actual_as_of: position.snapshot_at,
+                poseido: true,
+                posicion_id: position.id,
+              }
+            })
           setSearchResults(assetIntent === 'position' ? localResults : [])
           if (!localResults.length) toast.error(error instanceof Error ? error.message : 'No se pudo buscar el activo')
         }
@@ -264,6 +312,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
     setActive(true)
     setReferencePrice('')
     setTargetPrice('')
+    setTargetCurrency('EUR')
     setIsin('')
     setSearchQuery('')
     setSearchResults([])
@@ -302,8 +351,11 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
       setEmail(rule.canal_email)
       setActive(rule.activa)
       setReferencePrice(rule.precio_referencia === null ? '' : String(rule.precio_referencia))
-      setTargetPrice(rule.precio_objetivo === null ? '' : String(rule.precio_objetivo))
+      const savedTarget = ruleTarget(rule)
+      setTargetPrice(savedTarget ? String(savedTarget.price) : '')
+      setTargetCurrency(rule.divisa_objetivo ?? 'EUR')
       setIsin(rule.isin || position?.isin || inferIsin(position?.ticker, position?.market_symbol, rule.market_symbol) || '')
+      const presentationQuote = selectPresentationQuote(position, rule)
       setSelectedAsset({
         key: rule.posicion_id ? `position:${rule.posicion_id}` : `alert:${rule.id}`,
         activo: position?.activo || rule.activo || rule.ticker || 'Activo vigilado',
@@ -314,8 +366,9 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
         market_symbol: position?.market_symbol || rule.market_symbol,
         exchange: exchangeLabelFromSymbol(position?.market_symbol) || null,
         isin: rule.isin || position?.isin || inferIsin(position?.ticker, position?.market_symbol, rule.market_symbol),
-        precio_actual: position?.precio_actual ?? rule.precio_actual,
-        divisa: position?.divisa || 'EUR',
+        precio_actual: presentationQuote.price,
+        precio_actual_eur: position?.precio_actual ?? rule.precio_actual,
+        divisa: presentationQuote.currency,
         precio_actual_as_of: position?.snapshot_at || rule.ultima_comprobacion_at,
         poseido: Boolean(position),
         posicion_id: rule.posicion_id,
@@ -326,9 +379,10 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
 
   function chooseAsset(result: AssetSearchResult) {
     setSelectedAsset(result)
+    setTargetCurrency(result.divisa?.trim().toUpperCase() || 'EUR')
     setIsin(result.isin || '')
-    if (!result.poseido && result.precio_actual !== null && (result.divisa || 'EUR') === 'EUR') {
-      setReferencePrice(formatReferencePrice(result.precio_actual))
+    if (!result.poseido && result.precio_actual_eur !== null && (result.divisa || 'EUR') === 'EUR') {
+      setReferencePrice(formatReferencePrice(result.precio_actual_eur))
     } else {
       setReferencePrice('')
     }
@@ -363,6 +417,11 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
       toast.error('Busca y selecciona un activo para vigilar')
       return
     }
+    const normalizedTargetCurrency = targetCurrency.trim().toUpperCase()
+    if (scope === 'activo' && targetPriceValue !== null && !targetCurrencyOptions.includes(normalizedTargetCurrency)) {
+      toast.error('Elige EUR o la divisa nativa disponible para este activo')
+      return
+    }
     if (scope === 'activo' && selectedAsset && ((assetIntent === 'position') !== selectedAsset.poseido)) {
       toast.error(assetIntent === 'position' ? 'Selecciona una posición que ya esté en tu cartera' : 'Selecciona un activo que no esté en tu cartera')
       return
@@ -383,7 +442,8 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
              market_symbol: selectedAsset?.market_symbol,
              isin: isin.trim() || undefined,
              precio_referencia: referencePrice.trim() === '' ? undefined : Number(referencePrice),
-             precio_objetivo: targetPriceValue,
+             precio_objetivo_importe: targetPriceValue,
+             divisa_objetivo: targetPriceValue === null ? null : normalizedTargetCurrency,
             umbral_subida_pct: risePct,
             umbral_caida_pct: dropPct,
             rearmar_pct: rearmPct,
@@ -402,13 +462,29 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
             : null
         const currentPrice = scope === 'cartera'
           ? portfolioCurrentValue
-          : selectedPosition?.precio_actual ?? selectedAsset?.precio_actual ?? null
+          : selectedPosition?.precio_actual ?? selectedAsset?.precio_actual_eur ?? null
+        const nativeQuote = scope === 'cartera'
+          ? null
+          : selectedPosition || editingRule
+            ? selectNativePresentationQuote(selectedPosition, editingRule)
+            : completePresentationQuote(selectedAsset?.precio_actual, selectedAsset?.divisa)
+        const currentNativePrice = nativeQuote?.price ?? null
+        const nativeCurrency = nativeQuote?.currency ?? null
+        const normalizedNativeCurrency = nativeCurrency?.trim().toUpperCase() ?? null
         const currentReturn = scope === 'cartera'
           ? currentPrice !== null && scenarioReferenceValue !== null && scenarioReferenceValue > 0
             ? (currentPrice - scenarioReferenceValue) / scenarioReferenceValue
             : null
           : selectedPosition?.pnl_pct
             ?? (currentPrice !== null && scenarioReferenceValue !== null && scenarioReferenceValue > 0 ? (currentPrice - scenarioReferenceValue) / scenarioReferenceValue : null)
+        if (scope === 'activo' && targetPriceValue !== null && normalizedTargetCurrency !== 'EUR' && (currentPrice === null || currentNativePrice === null || currentNativePrice <= 0)) {
+          toast.error(`No hay una cotización nativa ${normalizedTargetCurrency} válida para guardar este objetivo en el escenario`)
+          return
+        }
+        if (scope === 'activo' && targetPriceValue !== null && normalizedTargetCurrency !== 'EUR' && normalizedNativeCurrency !== normalizedTargetCurrency) {
+          toast.error(`La cotización nativa disponible está en ${normalizedNativeCurrency ?? 'otra divisa'}, no en ${normalizedTargetCurrency}`)
+          return
+        }
         const changes: Omit<InversionAlerta, 'id' | 'created_at'> = {
           usuario_id: editingRule?.usuario_id ?? 0,
           alcance: scope,
@@ -421,8 +497,18 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
           market_symbol: scope === 'activo' ? selectedAsset?.market_symbol ?? editingRule?.market_symbol ?? null : null,
           isin: scope === 'activo' ? isin.trim() || selectedAsset?.isin || editingRule?.isin || null : null,
           precio_referencia: scenarioReferenceValue,
-          precio_objetivo: scope === 'activo' ? targetPriceValue : null,
+          precio_objetivo: scope === 'activo' && targetPriceValue !== null
+            ? normalizedTargetCurrency === 'EUR'
+              ? targetPriceValue
+              : currentPrice !== null && currentNativePrice !== null && currentNativePrice > 0
+                ? targetPriceValue * (currentPrice / currentNativePrice)
+                : null
+            : null,
+          precio_objetivo_importe: scope === 'activo' ? targetPriceValue : null,
+          divisa_objetivo: scope === 'activo' && targetPriceValue !== null ? normalizedTargetCurrency : null,
           precio_actual: currentPrice,
+          precio_actual_nativo: currentNativePrice,
+          divisa_nativa: nativeCurrency,
           rendimiento_pct: currentReturn,
           umbral_subida_pct: risePct,
           umbral_caida_pct: dropPct,
@@ -453,7 +539,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
         method: editingRule ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editingRule
-          ? { umbral_subida_pct: risePct, umbral_caida_pct: dropPct, rearmar_pct: rearmPct, canal_telegram: telegram, canal_email: email, activa: active, ...(scope === 'cartera' ? { precio_referencia: referenceValue } : { isin: isin.trim() || null, precio_objetivo: targetPriceValue }) }
+          ? { umbral_subida_pct: risePct, umbral_caida_pct: dropPct, rearmar_pct: rearmPct, canal_telegram: telegram, canal_email: email, activa: active, ...(scope === 'cartera' ? { precio_referencia: referenceValue } : { isin: isin.trim() || null, precio_objetivo_importe: targetPriceValue, divisa_objetivo: targetPriceValue === null ? null : normalizedTargetCurrency }) }
           : body),
       })
       const payload = await response.json().catch(() => null) as { error?: string } | null
@@ -499,6 +585,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
         const position = rule.posicion_id ? positionById.get(rule.posicion_id) : null
         const now = new Date().toISOString()
         let currentPrice = position?.precio_actual ?? rule.precio_actual
+        let currentNativeQuote = selectNativePresentationQuote(position, rule)
         let currentReturn = position?.pnl_pct ?? rule.rendimiento_pct
         const refreshAsset = position
           ? { id: position.id, tipo_activo: position.tipo, ticker: position.ticker, crypto_id: position.crypto_id }
@@ -511,11 +598,12 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ assets: [refreshAsset] }),
           })
-          const payload = await response.json().catch(() => null) as { updates?: Array<{ id: number; price: number; sourceUrl: string; provider: string; asOf?: string }>; errors?: Array<{ error?: string }>; error?: string } | null
+          const payload = await response.json().catch(() => null) as { updates?: Array<{ id: number; price: number; nativePrice: number; nativeCurrency?: string; sourceUrl: string; provider: string; asOf?: string }>; errors?: Array<{ error?: string }>; error?: string } | null
           const update = payload?.updates?.[0]
           if (!response.ok || !update) throw new Error(payload?.errors?.[0]?.error || payload?.error || 'No se pudo actualizar el precio')
           if (position && onScenarioPriceRefresh) await onScenarioPriceRefresh(position.id, update)
           currentPrice = update.price
+          currentNativeQuote = completePresentationQuote(update.nativePrice, update.nativeCurrency) ?? currentNativeQuote
           currentReturn = position && position.coste !== null && position.coste > 0
             ? (position.cantidad * update.price - position.coste) / position.coste
             : rule.precio_referencia !== null && rule.precio_referencia > 0
@@ -525,23 +613,26 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
         await onScenarioRulesChange(rules.map((item) => item.id === rule.id ? {
           ...item,
           precio_actual: currentPrice,
+          precio_actual_nativo: currentNativeQuote?.price ?? null,
+          divisa_nativa: currentNativeQuote?.currency ?? null,
           rendimiento_pct: currentReturn,
           ultima_comprobacion_at: now,
           ultimo_error: null,
           updated_at: now,
         } : item))
         toast.success(currentPrice !== null && currentPrice !== undefined
-          ? `Precio de referencia comprobado · ${formatAssetPrice(currentPrice, position?.divisa || 'EUR')} · ${formatPercent(currentReturn)}`
+          ? `Precio de referencia comprobado · ${formatAssetPrice(currentNativeQuote?.price ?? currentPrice, currentNativeQuote?.currency || 'EUR')} · ${formatPercent(currentReturn)}`
           : 'Precio de referencia comprobado')
         return
       }
 
       const response = await fetch(`/api/inversiones/alertas/${rule.id}/actualizar`, { method: 'POST' })
-      const payload = await response.json().catch(() => null) as { error?: string; precio_actual?: number | null; rendimiento_pct?: number | null } | null
+      const payload = await response.json().catch(() => null) as { error?: string; precio_actual?: number | null; precio_actual_nativo?: number | null; divisa_nativa?: string | null; rendimiento_pct?: number | null } | null
       if (!response.ok) throw new Error(payload?.error || 'No se pudo actualizar el precio')
       await onChanged()
+      const presentationQuote = selectPresentationQuote(null, payload)
       toast.success(payload?.precio_actual !== null && payload?.precio_actual !== undefined
-        ? `Precio actualizado · ${formatAssetPrice(payload.precio_actual, 'EUR')} · ${formatPercent(payload.rendimiento_pct)}`
+        ? `Precio actualizado · ${formatAssetPrice(presentationQuote.price, presentationQuote.currency)} · ${formatPercent(payload.rendimiento_pct)}`
         : 'Precio actualizado')
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudo actualizar el precio')
@@ -606,13 +697,14 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
           const position = rule.posicion_id ? positionById.get(rule.posicion_id) : null
           const name = position?.activo || rule.activo || rule.ticker || 'Activo vigilado'
           const ticker = position?.price_ticker || position?.ticker || rule.price_ticker || rule.ticker || '—'
-          const currentPrice = position?.precio_actual ?? rule.precio_actual
+          const presentationQuote = selectPresentationQuote(position, rule)
+          const displayedTarget = ruleTarget(rule)
           const currentReturnPct = position?.pnl_pct ?? rule.rendimiento_pct
           const referencePrice = rule.precio_referencia
           const isBusy = busyRuleId === rule.id || refreshingRuleId === rule.id
           const isRefreshing = refreshingRuleId === rule.id
           return <div key={rule.id} className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">{name}</p><span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500">{ticker}</span><span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${rule.activa ? 'bg-[#e7f2d4] text-[#31531d]' : 'bg-slate-100 text-slate-500'}`}>{position ? 'En cartera' : 'No poseído'}</span></div><div className="mt-3 grid max-w-md grid-cols-2 gap-2"><div className="rounded-md bg-slate-50 px-3 py-2"><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Precio actual</p><p className="mt-1 text-sm font-semibold tabular-nums text-slate-800">{formatAssetPrice(currentPrice, 'EUR')}</p></div><div className={`rounded-md px-3 py-2 ${currentReturnPct !== null && currentReturnPct !== undefined && currentReturnPct < 0 ? 'bg-rose-50' : 'bg-[#eef6e5]'}`}><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Variación actual</p><p className={`mt-1 text-sm font-semibold tabular-nums ${currentReturnPct !== null && currentReturnPct !== undefined && currentReturnPct < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{formatPercent(currentReturnPct)}</p><p className="mt-0.5 text-[9px] text-slate-500">{position ? 'desde el coste' : referencePrice !== null ? `desde ${formatAssetPrice(referencePrice, 'EUR')}` : 'esperando referencia'}</p></div></div><p className="mt-2 text-[10px] text-slate-500">Avisar si sube {percentInput(rule.umbral_subida_pct) || '—'}% o cae {percentInput(rule.umbral_caida_pct) || '—'}%{rule.precio_objetivo !== null ? ` · objetivo ${formatAssetPrice(rule.precio_objetivo, 'EUR')}` : ''} · {ruleChannels(rule)}</p><p className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-400">{rule.ultimo_error ? <><CircleAlert className="h-3.5 w-3.5 text-amber-600" />{rule.ultimo_error}</> : rule.ultima_comprobacion_at ? <><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />Última comprobación {new Intl.DateTimeFormat('es-ES', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(rule.ultima_comprobacion_at))}</> : 'Pendiente de la próxima comprobación'}</p></div>
+            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">{name}</p><span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-semibold text-slate-500">{ticker}</span><span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${rule.activa ? 'bg-[#e7f2d4] text-[#31531d]' : 'bg-slate-100 text-slate-500'}`}>{position ? 'En cartera' : 'No poseído'}</span></div><div className="mt-3 grid max-w-md grid-cols-2 gap-2"><div className="rounded-md bg-slate-50 px-3 py-2"><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Precio actual</p><p className="mt-1 text-sm font-semibold tabular-nums text-slate-800">{formatAssetPrice(presentationQuote.price, presentationQuote.currency)}</p></div><div className={`rounded-md px-3 py-2 ${currentReturnPct !== null && currentReturnPct !== undefined && currentReturnPct < 0 ? 'bg-rose-50' : 'bg-[#eef6e5]'}`}><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Variación actual</p><p className={`mt-1 text-sm font-semibold tabular-nums ${currentReturnPct !== null && currentReturnPct !== undefined && currentReturnPct < 0 ? 'text-red-700' : 'text-emerald-700'}`}>{formatPercent(currentReturnPct)}</p><p className="mt-0.5 text-[9px] text-slate-500">{position ? 'coste y variación en EUR' : referencePrice !== null ? `referencia EUR: ${formatAssetPrice(referencePrice, 'EUR')}` : 'esperando referencia EUR'}</p></div></div>{displayedTarget ? <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2"><p className="text-[9px] font-bold uppercase tracking-[0.1em] text-amber-800">Objetivo de alerta ({displayedTarget.currency})</p><p className="mt-1 text-sm font-semibold tabular-nums text-amber-950">{formatAssetPrice(displayedTarget.price, displayedTarget.currency)}</p></div> : null}<p className="mt-2 text-[10px] text-slate-500">Avisar si sube {percentInput(rule.umbral_subida_pct) || '—'}% o cae {percentInput(rule.umbral_caida_pct) || '—'}% · {ruleChannels(rule)}</p><p className="mt-1 flex items-center gap-1.5 text-[10px] text-slate-400">{rule.ultimo_error ? <><CircleAlert className="h-3.5 w-3.5 text-amber-600" />{rule.ultimo_error}</> : rule.ultima_comprobacion_at ? <><CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />Última comprobación {new Intl.DateTimeFormat('es-ES', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(rule.ultima_comprobacion_at))}</> : 'Pendiente de la próxima comprobación'}</p></div>
             <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end"><Button type="button" size="sm" variant="outline" className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => void refreshAssetPrice(rule)} disabled={isBusy}>{isRefreshing ? <Loader2 className="animate-spin" /> : <RefreshCw />} {isRefreshing ? 'Actualizando…' : 'Actualizar precio'}</Button><Button type="button" size="sm" variant="outline" className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => void updateRule(rule, { activa: !rule.activa })} disabled={isBusy}>{isBusy ? <Loader2 className="animate-spin" /> : rule.activa ? 'Pausar' : 'Activar'}</Button><Button type="button" size="icon" variant="outline" aria-label={`Editar alerta de ${name}`} className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => openAssetRule(rule)} disabled={isBusy}><Pencil /></Button><Button type="button" size="icon" variant="outline" aria-label={`Eliminar alerta de ${name}`} className="border-slate-200 bg-transparent text-red-700 hover:bg-red-50" onClick={() => setRulePendingDeletion(rule)} disabled={isBusy}><Trash2 /></Button></div>
           </div>
         })}
@@ -635,10 +727,10 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[620px]">
           <DialogHeader><DialogTitle>{editingRule ? scope === 'cartera' ? 'Editar alerta de cartera completa' : 'Editar alerta de activo' : scope === 'cartera' ? 'Alerta de cartera completa' : assetIntent === 'position' ? 'Nueva alerta de posición' : 'Nuevo seguimiento de activo'}</DialogTitle><DialogDescription>{scope === 'cartera' ? 'Configura un aviso desde el valor base de tu cartera. Por defecto se propone el valor actual y puedes modificarlo.' : assetIntent === 'position' ? 'Elige una posición que ya tengas en cartera. El aviso seguirá su rentabilidad.' : 'Busca un activo que todavía no tengas. Se guardará como seguimiento, sin crear una operación.'} Se avisa al cruzar el nivel y vuelve a quedar listo cuando recupera el margen indicado.{scenarioMode ? ' En este escenario, la regla se guarda solo localmente y no la recibe n8n.' : ''}</DialogDescription></DialogHeader>
           <form onSubmit={saveRule} className="grid gap-5 py-2">
-            {scope === 'activo' ? <div className="grid gap-2"><Label htmlFor="alert-asset-search">{assetIntent === 'position' ? 'Posición de tu cartera' : 'Activo para seguir'}</Label>{selectedAsset ? <div className="rounded-md border border-[#90b85f] bg-[#e7f2d4] px-3 py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#31531d]">{selectedAsset.activo}</p><p className="text-[10px] text-[#52783a]">{selectedAsset.price_ticker} · {selectedAsset.poseido ? 'En cartera' : 'No poseído; se guardará como seguimiento'}</p></div>{!editingRule ? <Button type="button" size="sm" variant="outline" className="shrink-0 border-[#90b85f] bg-transparent text-[#31531d] hover:bg-[#dceec0]" onClick={() => { setSelectedAsset(null); setIsin(''); setReferencePrice(''); setTargetPrice('') }}>Cambiar</Button> : null}</div><div className="mt-3 grid gap-3 border-t border-[#c7dda7] pt-3 sm:grid-cols-2"><div><p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#52783a]">Precio actual</p><p className="mt-1 text-sm font-semibold tabular-nums text-[#31531d]">{formatAssetPrice(selectedAsset.precio_actual, selectedAsset.divisa)}</p><p className="mt-1 flex items-center gap-1 text-[10px] text-[#52783a]"><Clock3 className="h-3 w-3" />{formatAssetDate(selectedAsset.precio_actual_as_of) ? `Dato ${formatAssetDate(selectedAsset.precio_actual_as_of)}` : 'Último precio disponible'}</p></div><div><p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#52783a]">Mercado seleccionado</p><p className="mt-1 flex items-center gap-1 text-sm font-semibold text-[#31531d]"><MapPin className="h-3.5 w-3.5" />{selectedAsset.exchange || 'Mercado no identificado'}</p><p className="mt-1 text-[10px] text-[#52783a]">{selectedAsset.market_symbol || selectedAsset.price_ticker}</p></div></div></div> : <div className="relative"><Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><Input id="alert-asset-search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={assetIntent === 'position' ? 'Busca una posición (SXR8, BTC, NVDA…)' : 'Busca un activo que no tengas (AAPL, BTC…)'} className="pl-9" autoFocus />{searching ? <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-slate-400" /> : null}{searchResults.length > 0 ? <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-slate-200 bg-white p-1 shadow-xl">{searchResults.map((result) => <button type="button" key={result.key} className="flex w-full items-start justify-between gap-3 rounded px-3 py-2 text-left hover:bg-slate-50" onClick={() => chooseAsset(result)}><span className="min-w-0"><span className="block truncate text-xs font-semibold text-slate-800">{result.activo}</span><span className="block text-[10px] text-slate-500">{result.price_ticker}{result.exchange ? ` · ${result.exchange}` : ' · Mercado no identificado'}</span><span className="block text-[10px] text-slate-400">{formatAssetPrice(result.precio_actual, result.divisa)} · ISIN {result.isin || 'no disponible'}</span></span><span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold ${result.poseido ? 'bg-[#e7f2d4] text-[#31531d]' : 'bg-slate-100 text-slate-500'}`}>{result.poseido ? 'En cartera' : 'No poseído'}</span></button>)}</div> : null}</div>} {selectedAsset ? <div className="grid gap-2 rounded-md border border-slate-200 bg-white p-3"><div className="flex items-center justify-between gap-2"><Label className="text-slate-700" htmlFor="alert-isin">ISIN para confirmar el instrumento (opcional)</Label>{isin ? <button type="button" title="Copiar ISIN" aria-label={`Copiar ISIN ${isin}`} className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10px] font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-900" onClick={() => void copiarIsin(isin)}><Copy className="h-3 w-3" />Copiar</button> : null}</div><Input id="alert-isin" value={isin} onChange={(event) => setIsin(event.target.value.toUpperCase())} placeholder="Ej. CY0106002112" maxLength={12} className="text-slate-900 placeholder:text-slate-400" /><p className="text-[10px] text-slate-500">{isin ? 'Se guardará junto con el ticker y el mercado seleccionado.' : 'Si el proveedor no lo devuelve, puedes pegarlo aquí. La alerta seguirá ligada a esta cotización concreta.'}</p></div> : null} {!selectedAsset && !editingRule ? <p className="text-[10px] text-slate-500">{assetIntent === 'position' ? 'Elige una posición de tu cartera.' : 'Elige un activo que no esté en tu cartera.'}</p> : null}</div> : null}
+            {scope === 'activo' ? <div className="grid gap-2"><Label htmlFor="alert-asset-search">{assetIntent === 'position' ? 'Posición de tu cartera' : 'Activo para seguir'}</Label>{selectedAsset ? <div className="rounded-md border border-[#90b85f] bg-[#e7f2d4] px-3 py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#31531d]">{selectedAsset.activo}</p><p className="text-[10px] text-[#52783a]">{selectedAsset.price_ticker} · {selectedAsset.poseido ? 'En cartera' : 'No poseído; se guardará como seguimiento'}</p></div>{!editingRule ? <Button type="button" size="sm" variant="outline" className="shrink-0 border-[#90b85f] bg-transparent text-[#31531d] hover:bg-[#dceec0]" onClick={() => { setSelectedAsset(null); setIsin(''); setReferencePrice(''); setTargetPrice(''); setTargetCurrency('EUR') }}>Cambiar</Button> : null}</div><div className="mt-3 grid gap-3 border-t border-[#c7dda7] pt-3 sm:grid-cols-2"><div><p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#52783a]">Precio actual</p><p className="mt-1 text-sm font-semibold tabular-nums text-[#31531d]">{formatAssetPrice(selectedAsset.precio_actual, selectedAsset.divisa)}</p><p className="mt-1 flex items-center gap-1 text-[10px] text-[#52783a]"><Clock3 className="h-3 w-3" />{formatAssetDate(selectedAsset.precio_actual_as_of) ? `Dato ${formatAssetDate(selectedAsset.precio_actual_as_of)}` : 'Último precio disponible'}</p></div><div><p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#52783a]">Mercado seleccionado</p><p className="mt-1 flex items-center gap-1 text-sm font-semibold text-[#31531d]"><MapPin className="h-3.5 w-3.5" />{selectedAsset.exchange || 'Mercado no identificado'}</p><p className="mt-1 text-[10px] text-[#52783a]">{selectedAsset.market_symbol || selectedAsset.price_ticker}</p></div></div></div> : <div className="relative"><Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><Input id="alert-asset-search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={assetIntent === 'position' ? 'Busca una posición (SXR8, BTC, NVDA…)' : 'Busca un activo que no tengas (AAPL, BTC…)'} className="pl-9" autoFocus />{searching ? <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-slate-400" /> : null}{searchResults.length > 0 ? <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-slate-200 bg-white p-1 shadow-xl">{searchResults.map((result) => <button type="button" key={result.key} className="flex w-full items-start justify-between gap-3 rounded px-3 py-2 text-left hover:bg-slate-50" onClick={() => chooseAsset(result)}><span className="min-w-0"><span className="block truncate text-xs font-semibold text-slate-800">{result.activo}</span><span className="block text-[10px] text-slate-500">{result.price_ticker}{result.exchange ? ` · ${result.exchange}` : ' · Mercado no identificado'}</span><span className="block text-[10px] text-slate-400">{formatAssetPrice(result.precio_actual, result.divisa)} · ISIN {result.isin || 'no disponible'}</span></span><span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold ${result.poseido ? 'bg-[#e7f2d4] text-[#31531d]' : 'bg-slate-100 text-slate-500'}`}>{result.poseido ? 'En cartera' : 'No poseído'}</span></button>)}</div> : null}</div>} {selectedAsset ? <div className="grid gap-2 rounded-md border border-slate-200 bg-white p-3"><div className="flex items-center justify-between gap-2"><Label className="text-slate-700" htmlFor="alert-isin">ISIN para confirmar el instrumento (opcional)</Label>{isin ? <button type="button" title="Copiar ISIN" aria-label={`Copiar ISIN ${isin}`} className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10px] font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-900" onClick={() => void copiarIsin(isin)}><Copy className="h-3 w-3" />Copiar</button> : null}</div><Input id="alert-isin" value={isin} onChange={(event) => setIsin(event.target.value.toUpperCase())} placeholder="Ej. CY0106002112" maxLength={12} className="text-slate-900 placeholder:text-slate-400" /><p className="text-[10px] text-slate-500">{isin ? 'Se guardará junto con el ticker y el mercado seleccionado.' : 'Si el proveedor no lo devuelve, puedes pegarlo aquí. La alerta seguirá ligada a esta cotización concreta.'}</p></div> : null} {!selectedAsset && !editingRule ? <p className="text-[10px] text-slate-500">{assetIntent === 'position' ? 'Elige una posición de tu cartera.' : 'Elige un activo que no esté en tu cartera.'}</p> : null}</div> : null}
            {scope === 'activo' && selectedAsset && !selectedAsset.poseido && !editingRule ? <div className="grid gap-2"><Label htmlFor="alert-reference-price">Precio de referencia en EUR (opcional)</Label><Input id="alert-reference-price" type="number" min="0.000001" step="any" value={referencePrice} onChange={(event) => setReferencePrice(event.target.value)} placeholder="Se consulta automáticamente si lo dejas vacío" /><p className="text-[10px] text-slate-500">{selectedAsset.divisa && selectedAsset.divisa !== 'EUR' ? 'El precio mostrado está en la divisa del mercado; si dejas esto vacío, la alerta se normalizará a EUR al guardar.' : 'La variación se medirá desde este precio. Si lo dejas vacío, Finanzas capturará la cotización al guardar.'}</p></div> : null}
             {scope === 'cartera' ? <div className="grid gap-2 rounded-md border border-emerald-200 bg-[#eef6e5] p-3"><Label htmlFor="alert-reference-price">Valor base de la cartera (€)</Label><Input id="alert-reference-price" type="number" min="0.01" step="any" value={referencePrice} onChange={(event) => setReferencePrice(event.target.value)} placeholder="Valor actual de la cartera" /><p className="text-[10px] leading-relaxed text-slate-600">Se propone el valor actual al abrir este cuadro. Puedes modificarlo: la alerta medirá la subida o la caída desde esta base.</p>{portfolioBaseValue !== null && (portfolioRiseLevel !== null || portfolioDropLevel !== null) ? <p className="rounded-md bg-white/70 px-2.5 py-2 text-[10px] font-medium leading-relaxed text-slate-700">Con base en {formatAssetPrice(portfolioBaseValue, 'EUR')}{portfolioRiseLevel !== null ? ` · +${rise}%: ${formatAssetPrice(portfolioRiseLevel, 'EUR')}` : ''}{portfolioDropLevel !== null ? ` · −${drop}%: ${formatAssetPrice(portfolioDropLevel, 'EUR')}` : ''}</p> : null}</div> : null}
-            {scope === 'activo' && selectedAsset ? <div className="grid gap-2"><Label htmlFor="alert-target-price">Precio objetivo en EUR (opcional)</Label><Input id="alert-target-price" type="number" min="0.000001" step="any" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} placeholder="Ej. 120,00" /><p className="text-[10px] leading-relaxed text-slate-500">Recibirás el aviso cuando el precio normalizado a EUR alcance este nivel. Puedes usarlo solo o combinarlo con los porcentajes.</p></div> : null}
+            {scope === 'activo' && selectedAsset ? <div className="grid gap-2"><Label htmlFor="alert-target-price">Importe objetivo de alerta (opcional)</Label><div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_8rem]"><Input id="alert-target-price" aria-label={`Importe objetivo en ${targetCurrency}`} type="number" min="0.000001" step="any" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} placeholder="Ej. 120,00" /><select id="alert-target-currency" aria-label="Divisa del objetivo de alerta" value={targetCurrency} onChange={(event) => setTargetCurrency(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-500">{targetCurrencyOptions.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></div><p className="text-[10px] leading-relaxed text-slate-500">La alerta comparará el objetivo en la divisa elegida. EUR usa la valoración normalizada; USD u otra divisa disponible usa la cotización del mercado.</p></div> : null}
             <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-2"><Label htmlFor="alert-rise">Avisar si sube (%)</Label><Input id="alert-rise" type="number" min="0.1" step="0.1" value={rise} onChange={(event) => setRise(event.target.value)} placeholder="Ej. 10" /></div><div className="grid gap-2"><Label htmlFor="alert-drop">Avisar si cae (%)</Label><Input id="alert-drop" type="number" min="0.1" step="0.1" value={drop} onChange={(event) => setDrop(event.target.value)} placeholder="Ej. 10" /></div></div>
             <div className="grid gap-2"><Label htmlFor="alert-rearm">Recuperación para volver a avisar (%)</Label><Input id="alert-rearm" type="number" min="0.1" step="0.1" value={rearm} onChange={(event) => setRearm(event.target.value)} /><p className="text-[10px] leading-relaxed text-slate-500">No es el número de avisos: es cuánto debe recuperar la rentabilidad para rearmar la alerta. Ejemplo: si cae un 10% y pones 1%, volverá a avisar al recuperar hasta −9%.</p></div>
             <div className="grid gap-2"><Label>Canales</Label><div className="flex flex-wrap gap-2"><button type="button" aria-pressed={telegram} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${channelButtonClass(telegram)}`} onClick={() => setTelegram((value) => !value)}><Send className="h-3.5 w-3.5" />Telegram</button><button type="button" aria-pressed={email} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${channelButtonClass(email)}`} onClick={() => setEmail((value) => !value)}><Mail className="h-3.5 w-3.5" />Email</button></div><p className="text-[10px] text-slate-500">{scenarioMode ? 'Se guardan como preferencias locales; esta vista no envía mensajes.' : 'El workflow de n8n usa estas marcas para decidir a qué canal enviar cada cruce.'}</p></div>

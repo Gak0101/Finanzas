@@ -38,6 +38,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       const [updated] = await db.update(inversiones_alertas).set({
         precio_referencia: rule.precio_referencia ?? referencePrice,
         precio_actual: position.precio_actual,
+        precio_actual_nativo: position.precio_actual_nativo,
+        divisa_nativa: position.divisa_nativa,
         rendimiento_pct: rendimientoPct,
         ultima_comprobacion_at: checkedAt,
         ultimo_error: null,
@@ -57,6 +59,8 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     const [updated] = await db.update(inversiones_alertas).set({
       precio_referencia: referencePrice,
       precio_actual: price.price,
+      precio_actual_nativo: price.nativeCurrency ? price.nativePrice : null,
+      divisa_nativa: price.nativeCurrency ?? null,
       rendimiento_pct: rendimientoPct,
       ultima_comprobacion_at: checkedAt,
       ultimo_error: null,

@@ -1,6 +1,8 @@
 import { z } from 'zod'
 
 const threshold = z.number().min(0.0001, 'El umbral debe ser mayor que 0').max(10).nullable()
+const targetAmount = z.number().positive('El importe objetivo debe ser mayor que 0').nullable().optional()
+const targetCurrency = z.string().trim().regex(/^[A-Z]{3}$/i, 'La divisa objetivo debe ser un código ISO de tres letras').transform((value) => value.toUpperCase()).nullable().optional()
 
 const inversionAlertaBaseSchema = z.object({
   alcance: z.enum(['cartera', 'activo']),
@@ -14,6 +16,8 @@ const inversionAlertaBaseSchema = z.object({
   isin: z.string().trim().regex(/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/i, 'El ISIN debe tener 12 caracteres y un formato válido').nullable().optional(),
   precio_referencia: z.number().positive().nullable().optional(),
   precio_objetivo: z.number().positive('El precio objetivo debe ser mayor que 0').nullable().optional(),
+  precio_objetivo_importe: targetAmount,
+  divisa_objetivo: targetCurrency,
   umbral_subida_pct: threshold,
   umbral_caida_pct: threshold,
   rearmar_pct: z.number().min(0).max(1).default(0.01),
@@ -22,11 +26,27 @@ const inversionAlertaBaseSchema = z.object({
   activa: z.boolean().default(true),
 })
 
+type AlertInputShape = Partial<z.infer<typeof inversionAlertaBaseSchema>>
+
+function hasTargetConfiguration(value: AlertInputShape) {
+  return value.precio_objetivo != null || value.precio_objetivo_importe != null || value.divisa_objetivo != null
+}
+
+function validateTargetPair(value: AlertInputShape, context: z.RefinementCtx) {
+  const hasAmount = Object.hasOwn(value, 'precio_objetivo_importe')
+  const hasCurrency = Object.hasOwn(value, 'divisa_objetivo')
+  if (!hasAmount && !hasCurrency) return
+  if (!hasAmount || !hasCurrency || (value.precio_objetivo_importe === null) !== (value.divisa_objetivo === null)) {
+    context.addIssue({ code: 'custom', message: 'El importe y la divisa del objetivo deben indicarse juntos', path: hasAmount ? ['divisa_objetivo'] : ['precio_objetivo_importe'] })
+  }
+}
+
 export const inversionAlertaSchema = inversionAlertaBaseSchema.superRefine((value, context) => {
-  if (value.umbral_subida_pct === null && value.umbral_caida_pct === null && value.precio_objetivo == null) {
+  validateTargetPair(value, context)
+  if (value.umbral_subida_pct === null && value.umbral_caida_pct === null && !hasTargetConfiguration(value)) {
     context.addIssue({ code: 'custom', message: 'Configura una alerta porcentual o un precio objetivo', path: ['umbral_subida_pct'] })
   }
-  if (value.alcance === 'cartera' && value.precio_objetivo != null) {
+  if (value.alcance === 'cartera' && hasTargetConfiguration(value)) {
     context.addIssue({ code: 'custom', message: 'El precio objetivo solo está disponible para activos', path: ['precio_objetivo'] })
   }
   if (!value.canal_telegram && !value.canal_email) {
@@ -38,10 +58,8 @@ export const inversionAlertaSchema = inversionAlertaBaseSchema.superRefine((valu
 })
 
 export const inversionAlertaPatchSchema = inversionAlertaBaseSchema.partial().superRefine((value, context) => {
-  if (value.umbral_subida_pct === null && value.umbral_caida_pct === null && value.precio_objetivo == null) {
-    context.addIssue({ code: 'custom', message: 'Configura una alerta porcentual o un precio objetivo', path: ['umbral_subida_pct'] })
-  }
-  if (value.alcance === 'cartera' && value.precio_objetivo != null) {
+  validateTargetPair(value, context)
+  if (value.alcance === 'cartera' && hasTargetConfiguration(value)) {
     context.addIssue({ code: 'custom', message: 'El precio objetivo solo está disponible para activos', path: ['precio_objetivo'] })
   }
   if (value.canal_telegram === false && value.canal_email === false) {

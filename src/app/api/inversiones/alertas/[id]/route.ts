@@ -3,6 +3,8 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { inversiones_alertas } from '@/lib/db/schema'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
+import { AlertTargetResolutionError, resolveAlertTarget, targetFromInput } from '@/lib/inversiones/alertTarget'
+import { fetchAssetPrice } from '@/lib/inversiones/marketData'
 import { inversionAlertaPatchSchema } from '@/lib/validations/inversionAlerta'
 import { normalizeIsin } from '@/lib/inversiones/instrumentIdentity'
 
@@ -21,13 +23,56 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? 'Datos no válidos' }, { status: 400 })
   }
   const input = parsed.data
+  const rule = await db.query.inversiones_alertas.findFirst({
+    where: and(eq(inversiones_alertas.id, id), eq(inversiones_alertas.usuario_id, auth.userId)),
+  })
+  if (!rule) return NextResponse.json({ error: 'Alerta no encontrada' }, { status: 404 })
+
+  let targetInput
+  try {
+    targetInput = targetFromInput(input)
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Objetivo no válido' }, { status: 400 })
+  }
+  if (targetInput !== undefined && rule.alcance !== 'activo') {
+    return NextResponse.json({ error: 'El precio objetivo solo está disponible para activos' }, { status: 400 })
+  }
+
   const values: Record<string, unknown> = { updated_at: new Date().toISOString() }
-  for (const key of ['isin', 'precio_referencia', 'precio_objetivo', 'umbral_subida_pct', 'umbral_caida_pct', 'rearmar_pct', 'canal_telegram', 'canal_email', 'activa']) {
-    if (Object.prototype.hasOwnProperty.call(input, key)) {
+  for (const key of ['isin', 'precio_referencia', 'umbral_subida_pct', 'umbral_caida_pct', 'rearmar_pct', 'canal_telegram', 'canal_email', 'activa']) {
+    if (Object.hasOwn(input, key)) {
       values[key] = key === 'isin' ? normalizeIsin(input.isin) : input[key as keyof typeof input]
     }
   }
-  if (Object.prototype.hasOwnProperty.call(input, 'precio_referencia') || Object.prototype.hasOwnProperty.call(input, 'precio_objetivo') || Object.prototype.hasOwnProperty.call(input, 'umbral_subida_pct') || Object.prototype.hasOwnProperty.call(input, 'umbral_caida_pct')) {
+
+  if (targetInput !== undefined) {
+    let capturedPrice: Awaited<ReturnType<typeof fetchAssetPrice>> | null = null
+    if (targetInput !== null && targetInput.divisa !== 'EUR') {
+      try {
+        capturedPrice = await fetchAssetPrice({
+          tipoActivo: rule.tipo_activo || 'Acción',
+          ticker: rule.price_ticker || rule.ticker || '',
+          cryptoId: rule.crypto_id,
+          marketSymbol: rule.market_symbol,
+        })
+      } catch (error) {
+        return NextResponse.json({
+          error: error instanceof Error
+            ? `No se pudo obtener una cotización nativa actual para este objetivo: ${error.message}`
+            : 'No se pudo obtener una cotización nativa actual para este objetivo.',
+        }, { status: 400 })
+      }
+    }
+    try {
+      Object.assign(values, resolveAlertTarget(targetInput, capturedPrice))
+    } catch (error) {
+      return NextResponse.json({
+        error: error instanceof AlertTargetResolutionError ? error.message : 'No se pudo resolver el objetivo de alerta.',
+      }, { status: 400 })
+    }
+  }
+
+  if (Object.hasOwn(input, 'precio_referencia') || targetInput !== undefined || Object.hasOwn(input, 'umbral_subida_pct') || Object.hasOwn(input, 'umbral_caida_pct')) {
     values.estado = 'normal'
     values.ultimo_error = null
   }
@@ -36,7 +81,6 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     .set(values)
     .where(and(eq(inversiones_alertas.id, id), eq(inversiones_alertas.usuario_id, auth.userId)))
     .returning()
-  if (!updated) return NextResponse.json({ error: 'Alerta no encontrada' }, { status: 404 })
   return NextResponse.json(updated)
 }
 

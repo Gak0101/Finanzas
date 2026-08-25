@@ -39,6 +39,7 @@ export async function GET(req: Request) {
     exchange: string | null
     isin: string | null
     precio_actual: number | null
+    precio_actual_eur: number | null
     divisa: string | null
     precio_actual_as_of: string | null
     poseido: boolean
@@ -51,6 +52,10 @@ export async function GET(req: Request) {
       .filter(Boolean)
       .some((value) => value!.toLocaleLowerCase('es').includes(normalizedQuery))
     if (!hayCoincidencia) continue
+    const nativePrice = position.precio_actual_nativo ?? null
+    const nativeCurrency = position.divisa_nativa || null
+    const hasNativeQuote = nativePrice !== null && nativeCurrency !== null
+    const canonicalPrice = position.precio_actual ?? null
     const key = `position:${position.id}`
     results.set(key, {
       key,
@@ -62,8 +67,9 @@ export async function GET(req: Request) {
       market_symbol: position.market_symbol,
       exchange: exchangeLabelFromSymbol(position.market_symbol),
       isin: position.isin || inferIsin(position.ticker, position.market_symbol),
-      precio_actual: position.precio_actual,
-      divisa: position.divisa || 'EUR',
+      precio_actual: hasNativeQuote ? nativePrice : canonicalPrice,
+      precio_actual_eur: canonicalPrice,
+      divisa: hasNativeQuote ? nativeCurrency : 'EUR',
       precio_actual_as_of: position.snapshot_at,
       poseido: true,
       posicion_id: position.id,
@@ -89,8 +95,9 @@ export async function GET(req: Request) {
       market_symbol: null,
       exchange: 'CoinGecko',
       isin: null,
-      precio_actual: cryptoPrice?.price ?? null,
-      divisa: 'EUR',
+      precio_actual: cryptoPrice?.nativePrice ?? null,
+      precio_actual_eur: cryptoPrice?.price ?? null,
+      divisa: cryptoPrice?.nativeCurrency ?? 'EUR',
       precio_actual_as_of: cryptoPrice?.asOf ?? null,
       poseido: false,
       posicion_id: null,
@@ -107,6 +114,21 @@ export async function GET(req: Request) {
           .some((value) => value!.toLocaleLowerCase('es') === item.market_symbol.toLocaleLowerCase('es'))
       )
       const key = matchingPosition ? `position:${matchingPosition.id}` : `market:${item.market_symbol.toUpperCase()}`
+      const positionNativePrice = matchingPosition?.precio_actual_nativo ?? null
+      const positionNativeCurrency = matchingPosition?.divisa_nativa || null
+      const hasNativePositionQuote = positionNativePrice !== null && positionNativeCurrency !== null
+      const positionCanonicalPrice = matchingPosition?.precio_actual ?? null
+      const hasCanonicalPositionPrice = positionCanonicalPrice !== null
+      const currentPrice = hasNativePositionQuote
+        ? positionNativePrice
+        : hasCanonicalPositionPrice
+          ? positionCanonicalPrice
+          : item.precio_actual
+      const currentCurrency = hasNativePositionQuote
+        ? positionNativeCurrency
+        : hasCanonicalPositionPrice
+          ? 'EUR'
+          : item.divisa || 'EUR'
       results.set(key, {
         key,
         activo: item.name,
@@ -117,8 +139,9 @@ export async function GET(req: Request) {
         market_symbol: item.market_symbol,
         exchange: item.exchange || exchangeLabelFromSymbol(item.market_symbol),
         isin: matchingPosition?.isin || item.isin || inferIsin(matchingPosition?.ticker, query, item.market_symbol),
-        precio_actual: matchingPosition?.precio_actual ?? item.precio_actual,
-        divisa: matchingPosition?.divisa || item.divisa || 'EUR',
+        precio_actual: currentPrice,
+        precio_actual_eur: matchingPosition?.precio_actual ?? item.precio_actual_eur,
+        divisa: currentCurrency,
         precio_actual_as_of: matchingPosition?.snapshot_at ?? item.precio_actual_as_of,
         poseido: Boolean(matchingPosition),
         posicion_id: matchingPosition?.id ?? null,
@@ -144,6 +167,7 @@ export async function GET(req: Request) {
       exchange: null,
       isin: inferIsin(query, identifiers.marketSymbol),
       precio_actual: null,
+      precio_actual_eur: null,
       divisa: 'EUR',
       precio_actual_as_of: null,
       poseido: false,

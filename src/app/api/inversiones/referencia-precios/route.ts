@@ -45,7 +45,7 @@ export async function POST(req: Request) {
   }))
 
   return NextResponse.json({
-    updates: updates.filter((item): item is { id: number; price: number; sourceUrl: string; provider: string; asOf?: string; nativeCurrency?: string; fxRate?: number } => 'price' in item),
+    updates: updates.filter((item): item is { id: number; price: number; nativePrice: number; sourceUrl: string; provider: string; asOf?: string; nativeCurrency?: string; fxRate?: number } => 'price' in item),
     errors: updates.filter((item): item is { id: number; error: string } => 'error' in item),
   })
 }

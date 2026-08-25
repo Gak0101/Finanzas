@@ -113,6 +113,8 @@ function createDemoPosition(
     coste: cost,
     objetivo_peso_pct: null,
     precio_actual: currentPrice,
+    precio_actual_nativo: definition.currentAdjustedCloseUsd,
+    divisa_nativa: 'USD',
     valor_actual: value,
     pnl,
     pnl_pct: cost > 0 ? pnl / cost : null,

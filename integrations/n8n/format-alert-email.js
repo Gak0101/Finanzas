@@ -27,10 +27,16 @@ const formatThreshold = (value, isDrop) => {
   })}%`
 }
 
-const formatPrice = (value) => `${Number(value).toLocaleString('es-ES', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})} €`
+const formatPrice = (value, currency = 'EUR') => {
+  const numericValue = Number(value)
+  if (!Number.isFinite(numericValue)) return '—'
+  const normalizedCurrency = String(currency || 'EUR').trim().toUpperCase()
+  const symbol = normalizedCurrency === 'EUR' ? '€' : normalizedCurrency === 'USD' ? '$' : normalizedCurrency === 'GBP' ? '£' : normalizedCurrency
+  return `${numericValue.toLocaleString('es-ES', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} ${symbol}`
+}
 
 const formatDate = (value) => new Date(value).toLocaleString('es-ES', {
   dateStyle: 'medium',
@@ -60,15 +66,21 @@ return alerts.map((alert) => {
   ].filter(Boolean).join(' · ')
   const currentReturn = formatPercent(alert.rendimiento_pct)
   const threshold = formatThreshold(alert.umbral_pct, isDrop)
-  const targetPrice = Number(alert.precio_objetivo)
+  const targetPrice = Number(alert.precio_objetivo_importe ?? alert.precio_objetivo)
+  const targetCurrency = String(alert.divisa_objetivo || 'EUR').trim().toUpperCase()
+  const nativeCurrency = String(alert.divisa_nativa || '').trim().toUpperCase()
+  const nativePrice = Number(alert.precio_actual_nativo)
+  const hasNativeQuote = Boolean(nativeCurrency) && Number.isFinite(nativePrice) && nativePrice > 0
+  const currentPrice = hasNativeQuote ? nativePrice : Number(alert.precio_actual)
+  const currentPriceCurrency = hasNativeQuote ? nativeCurrency : 'EUR'
   const hasTargetTrigger = alert.razon === 'precio_objetivo' && Number.isFinite(targetPrice) && targetPrice > 0
-  const targetPriceText = Number.isFinite(targetPrice) && targetPrice > 0 ? formatPrice(targetPrice) : null
+  const targetPriceText = Number.isFinite(targetPrice) && targetPrice > 0 ? formatPrice(targetPrice, targetCurrency) : null
   const triggerValue = hasTargetTrigger ? targetPriceText : threshold
   const triggerLabel = hasTargetTrigger ? 'Precio objetivo' : 'Aviso enviado'
   const triggerDetail = hasTargetTrigger ? 'Nivel alcanzado' : 'Al cruzar este nivel'
   const referencePrice = Number(alert.precio_referencia)
-  const referencePriceText = Number.isFinite(referencePrice) && referencePrice > 0 ? formatPrice(referencePrice) : null
-  const referenceLabel = alert.alcance === 'cartera' ? 'Precio base configurado' : 'Precio de referencia'
+  const referencePriceText = Number.isFinite(referencePrice) && referencePrice > 0 ? formatPrice(referencePrice, 'EUR') : null
+  const referenceLabel = alert.alcance === 'cartera' ? 'Precio base configurado (EUR)' : 'Precio de referencia (EUR)'
   const referenceDescription = alert.alcance === 'cartera' ? `la base configurada en ${referencePriceText}` : `el precio de referencia de ${referencePriceText}`
   const triggerDescription = hasTargetTrigger
     ? `el precio objetivo de ${targetPriceText}`
@@ -78,11 +90,11 @@ return alerts.map((alert) => {
     ? `Finanzas · ${assetName} ha alcanzado ${targetPriceText}`
     : `Finanzas · ${movementText}`
   const priceRows = [
-    alert.precio_actual !== null && alert.precio_actual !== undefined
-      ? `<tr><td style="padding:8px 0;color:#8997a3;font-size:12px;">Precio actual</td><td align="right" style="padding:8px 0;color:#f7f5ef;font-size:12px;font-weight:700;">${formatPrice(alert.precio_actual)}</td></tr>`
+    Number.isFinite(currentPrice) && currentPrice > 0
+      ? `<tr><td style="padding:8px 0;color:#8997a3;font-size:12px;">Precio actual (${currentPriceCurrency})</td><td align="right" style="padding:8px 0;color:#f7f5ef;font-size:12px;font-weight:700;">${formatPrice(currentPrice, currentPriceCurrency)}</td></tr>`
       : '',
     alert.precio_referencia !== null && alert.precio_referencia !== undefined
-      ? `<tr><td style="padding:8px 0;color:#8997a3;font-size:12px;">${referenceLabel}</td><td align="right" style="padding:8px 0;color:#f7f5ef;font-size:12px;font-weight:700;">${formatPrice(alert.precio_referencia)}</td></tr>`
+      ? `<tr><td style="padding:8px 0;color:#8997a3;font-size:12px;">${referenceLabel}</td><td align="right" style="padding:8px 0;color:#f7f5ef;font-size:12px;font-weight:700;">${formatPrice(alert.precio_referencia, 'EUR')}</td></tr>`
       : '',
     targetPriceText
       ? `<tr><td style="padding:8px 0;color:#8997a3;font-size:12px;">Precio objetivo</td><td align="right" style="padding:8px 0;color:#f7f5ef;font-size:12px;font-weight:700;">${targetPriceText}</td></tr>`
@@ -94,8 +106,8 @@ return alerts.map((alert) => {
     `${scope} · ${alert.ticker}`,
     `Rentabilidad actual: ${currentReturn}`,
     hasTargetTrigger ? `Precio objetivo alcanzado: ${targetPriceText}` : `Aviso enviado al cruzar: ${threshold}`,
-    alert.precio_actual !== null && alert.precio_actual !== undefined ? `Precio actual: ${formatPrice(alert.precio_actual)}` : null,
-    alert.precio_referencia !== null && alert.precio_referencia !== undefined ? `${referenceLabel}: ${formatPrice(alert.precio_referencia)}` : null,
+    Number.isFinite(currentPrice) && currentPrice > 0 ? `Precio actual (${currentPriceCurrency}): ${formatPrice(currentPrice, currentPriceCurrency)}` : null,
+    alert.precio_referencia !== null && alert.precio_referencia !== undefined ? `${referenceLabel}: ${formatPrice(alert.precio_referencia, 'EUR')}` : null,
     `Canales: ${channelHint}`,
     `Comprobado: ${checkedAt}`,
   ].filter(Boolean).join('\n')

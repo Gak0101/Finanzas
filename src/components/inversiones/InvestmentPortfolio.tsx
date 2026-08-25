@@ -91,6 +91,8 @@ type ScenarioPriceUpdate = {
   sourceUrl: string
   provider: string
   asOf?: string
+  nativePrice: number
+  nativeCurrency?: string
 }
 type PositionSort =
   | 'name_asc'
@@ -839,6 +841,8 @@ function InvestmentPortfolioContent() {
         return {
           ...position,
           precio_actual: update.price,
+          precio_actual_nativo: update.nativeCurrency ? update.nativePrice : null,
+          divisa_nativa: update.nativeCurrency ?? null,
           valor_actual: value,
           pnl,
           pnl_pct: cost !== null && cost > 0 && pnl !== null ? pnl / cost : null,
@@ -1249,6 +1253,8 @@ function InvestmentPortfolioContent() {
           coste: positionCost,
           objetivo_peso_pct: null,
           precio_actual: currentPrice,
+          precio_actual_nativo: null,
+          divisa_nativa: null,
           valor_actual: currentValue,
           pnl: currentValue - positionCost,
           pnl_pct: positionCost > 0 ? (currentValue - positionCost) / positionCost : null,
@@ -1378,7 +1384,7 @@ function InvestmentPortfolioContent() {
           }),
         })
         const payload = await response.json().catch(() => null) as {
-          updates?: Array<{ id: number; price: number; sourceUrl: string; provider: string; asOf?: string }>
+          updates?: Array<{ id: number; price: number; nativePrice: number; nativeCurrency?: string; sourceUrl: string; provider: string; asOf?: string }>
           errors?: Array<{ id: number; error: string }>
           error?: string
         } | null
