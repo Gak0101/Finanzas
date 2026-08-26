@@ -1580,7 +1580,7 @@ function InvestmentPortfolioContent() {
                   </span>
                   <span className="text-right">
                     <strong className="block text-sm tabular-nums text-slate-900">{formatEuro(position.valor_actual)}</strong>
-                    <span className={`mt-1 block text-[11px] font-semibold tabular-nums ${positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'text-slate-400' : positionAnalytics.totalNetResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'Total histórico pendiente' : `Total: ${formatEuro(positionAnalytics.totalNetResult)} · ${formatPct(positionAnalytics.totalReturnPct)}`}</span>
+                    <span className={`mt-1 block text-[11px] font-semibold tabular-nums ${positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'text-slate-400' : positionAnalytics.totalNetResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'Total histórico pendiente' : `Total histórico: ${formatEuro(positionAnalytics.totalNetResult)} · ${formatPct(positionAnalytics.totalReturnPct)}`}</span>
                     <span className={`mt-0.5 block text-[10px] tabular-nums ${position.pnl === null ? 'text-slate-400' : position.pnl >= 0 ? 'text-emerald-700/80' : 'text-red-600/80'}`}>{position.pnl === null ? 'Abierta: pendiente' : `Abierta: ${formatEuro(position.pnl)} · ${formatPct(position.pnl_pct)}`}</span>
                   </span>
                 </div>
@@ -1635,10 +1635,10 @@ function InvestmentPortfolioContent() {
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums font-semibold text-slate-900">{formatEuro(position.precio_actual)}</td>
                         <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums font-semibold text-slate-900">{formatEuro(position.valor_actual)}</td>
-                        <td className={`whitespace-nowrap px-3 py-3 text-right tabular-nums font-semibold ${positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'text-slate-400' : positionAnalytics.totalNetResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                          <p>{positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? '—' : `${positionAnalytics.totalNetResult >= 0 ? '+' : ''}${formatEuro(positionAnalytics.totalNetResult)}`}</p>
-                          <p className="mt-0.5 text-[9px] opacity-70">Total {formatPct(positionAnalytics?.totalReturnPct)}</p>
-                          <p className="mt-0.5 text-[9px] font-normal opacity-60">Abierta {position.pnl === null ? '—' : `${position.pnl >= 0 ? '+' : ''}${formatEuro(position.pnl)} · ${formatPct(position.pnl_pct)}`}</p>
+                        <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
+                          <p className={`font-semibold ${positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'text-slate-400' : positionAnalytics.totalNetResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? '—' : `${positionAnalytics.totalNetResult >= 0 ? '+' : ''}${formatEuro(positionAnalytics.totalNetResult)}`}</p>
+                          <p className={`mt-0.5 text-[9px] font-semibold ${positionAnalytics?.totalReturnPct === null || positionAnalytics?.totalReturnPct === undefined ? 'text-slate-400' : positionAnalytics.totalReturnPct >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>Total histórico {formatPct(positionAnalytics?.totalReturnPct)}</p>
+                          <p className={`mt-0.5 text-[9px] font-normal ${position.pnl === null ? 'text-slate-400' : position.pnl >= 0 ? 'text-emerald-700/80' : 'text-red-600/80'}`}>Abierta {position.pnl === null ? '—' : `${position.pnl >= 0 ? '+' : ''}${formatEuro(position.pnl)} · ${formatPct(position.pnl_pct)}`}</p>
                         </td>
                         <td className="px-3 py-3">
                           {position.fecha_apertura && metrics ? (
