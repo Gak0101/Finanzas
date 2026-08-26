@@ -116,6 +116,8 @@ export type PositionInvestmentAnalytics = {
   purchases: number
   saleProceeds: number
   realisedPnl: number
+  totalNetResult: number | null
+  totalReturnPct: number | null
   dividends: number
   bonuses: number
   commissions: number
@@ -799,11 +801,24 @@ export function calculateInvestmentAnalytics(
 
   const positionAnalytics = positions.map((position) => {
     const state = replay.states.get(resolveKey(position)) ?? emptyReplayState()
+    const openPnl = position.pnl ?? (
+      position.valor_actual !== null && position.coste !== null
+        ? position.valor_actual - position.coste
+        : null
+    )
+    const capitalTrackedForPosition = state.purchases + state.commissions + state.taxes
+    const totalNetResult = state.operations > 0 && openPnl !== null
+      ? state.realisedPnl + openPnl + state.dividends + state.bonuses - state.commissions - state.taxes
+      : null
     return {
       positionId: position.id,
       purchases: state.purchases,
       saleProceeds: state.saleProceeds,
       realisedPnl: state.realisedPnl,
+      totalNetResult,
+      totalReturnPct: totalNetResult !== null && capitalTrackedForPosition > 0
+        ? totalNetResult / capitalTrackedForPosition
+        : null,
       dividends: state.dividends,
       bonuses: state.bonuses,
       commissions: state.commissions,

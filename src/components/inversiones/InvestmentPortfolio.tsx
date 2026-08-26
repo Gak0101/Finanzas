@@ -780,6 +780,10 @@ function InvestmentPortfolioContent() {
   const cashAdjustmentCurrentBalance = cash?.balances.find((balance) => balance.custodia === cashAdjustmentCustodia.trim() && balance.divisa === cashAdjustmentDivisa.trim().toUpperCase())?.saldo ?? 0
   const detailPosition = positions.find((position) => position.id === detailPositionId) ?? null
   const detailAnalytics = analytics?.positionAnalytics.find((item) => item.positionId === detailPositionId) ?? null
+  const positionAnalyticsById = useMemo(
+    () => new Map((analytics?.positionAnalytics ?? []).map((item) => [item.positionId, item])),
+    [analytics?.positionAnalytics],
+  )
   const portfolioLastUpdated = useMemo(() => {
     const timestamps = positions
       .map((position) => position.updated_at ?? position.snapshot_at)
@@ -1558,6 +1562,7 @@ function InvestmentPortfolioContent() {
             <div className="grid gap-2 p-4 lg:hidden">
               {filteredPositions.map((position) => {
                 const isin = positionIsin(position)
+                const positionAnalytics = positionAnalyticsById.get(position.id)
                 return <div
                   key={position.id}
                   role="button"
@@ -1575,7 +1580,8 @@ function InvestmentPortfolioContent() {
                   </span>
                   <span className="text-right">
                     <strong className="block text-sm tabular-nums text-slate-900">{formatEuro(position.valor_actual)}</strong>
-                    <span className={`mt-1 block text-[11px] font-semibold tabular-nums ${position.pnl === null ? 'text-slate-400' : position.pnl >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{position.pnl === null ? 'P/L pendiente' : `${formatEuro(position.pnl)} · ${formatPct(position.pnl_pct)}`}</span>
+                    <span className={`mt-1 block text-[11px] font-semibold tabular-nums ${positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'text-slate-400' : positionAnalytics.totalNetResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'Total histórico pendiente' : `Total: ${formatEuro(positionAnalytics.totalNetResult)} · ${formatPct(positionAnalytics.totalReturnPct)}`}</span>
+                    <span className={`mt-0.5 block text-[10px] tabular-nums ${position.pnl === null ? 'text-slate-400' : position.pnl >= 0 ? 'text-emerald-700/80' : 'text-red-600/80'}`}>{position.pnl === null ? 'Abierta: pendiente' : `Abierta: ${formatEuro(position.pnl)} · ${formatPct(position.pnl_pct)}`}</span>
                   </span>
                 </div>
               })}
@@ -1603,6 +1609,7 @@ function InvestmentPortfolioContent() {
                   {filteredPositions.map((position) => {
                     const metrics = positionReturnMetrics(position)
                     const isin = positionIsin(position)
+                    const positionAnalytics = positionAnalyticsById.get(position.id)
                     return (
                       <tr
                         key={position.id}
@@ -1628,9 +1635,10 @@ function InvestmentPortfolioContent() {
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums font-semibold text-slate-900">{formatEuro(position.precio_actual)}</td>
                         <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums font-semibold text-slate-900">{formatEuro(position.valor_actual)}</td>
-                        <td className={`whitespace-nowrap px-3 py-3 text-right tabular-nums font-semibold ${position.pnl === null ? 'text-slate-400' : position.pnl >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                          <p>{position.pnl === null ? '—' : `${position.pnl >= 0 ? '+' : ''}${formatEuro(position.pnl)}`}</p>
-                          <p className="mt-0.5 text-[9px] opacity-70">{formatPct(position.pnl_pct)}</p>
+                        <td className={`whitespace-nowrap px-3 py-3 text-right tabular-nums font-semibold ${positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'text-slate-400' : positionAnalytics.totalNetResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                          <p>{positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? '—' : `${positionAnalytics.totalNetResult >= 0 ? '+' : ''}${formatEuro(positionAnalytics.totalNetResult)}`}</p>
+                          <p className="mt-0.5 text-[9px] opacity-70">Total {formatPct(positionAnalytics?.totalReturnPct)}</p>
+                          <p className="mt-0.5 text-[9px] font-normal opacity-60">Abierta {position.pnl === null ? '—' : `${position.pnl >= 0 ? '+' : ''}${formatEuro(position.pnl)} · ${formatPct(position.pnl_pct)}`}</p>
                         </td>
                         <td className="px-3 py-3">
                           {position.fecha_apertura && metrics ? (

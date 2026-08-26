@@ -165,7 +165,8 @@ export function PositionDetailDialog({ position, analytics, operations, open, on
             {[
               { label: 'Valor actual', value: formatEuro(position.valor_actual), icon: CircleDollarSign },
               { label: 'Coste conocido', value: formatEuro(position.coste), icon: Wallet },
-              { label: 'P / L actual', value: formatEuro(position.pnl), helper: formatPct(position.pnl_pct), icon: TrendingUp },
+              { label: 'P / L abierta', value: formatEuro(position.pnl), helper: `${formatPct(position.pnl_pct)} sobre coste restante`, icon: TrendingUp },
+              { label: 'P / L total histórico', value: formatEuro(analytics?.totalNetResult), helper: `${formatPct(analytics?.totalReturnPct)} · incluye ventas y posición restante`, icon: TrendingUp },
               { label: 'Tiempo en cartera', value: daysActive === null ? 'Fecha pendiente' : `${daysActive} días`, helper: formatDate(position.fecha_apertura), icon: CalendarDays },
             ].map((item) => (
               <div key={item.label} className="rounded-xl border border-white/10 bg-[#171f2a] p-4">
