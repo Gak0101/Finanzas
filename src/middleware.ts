@@ -13,8 +13,11 @@ const authMiddleware = NextAuth(authConfig).auth as unknown as (
 export default function middleware(request: NextRequest, event: NextFetchEvent) {
   // n8n no tiene sesión de navegador: el endpoint de automatización valida
   // exclusivamente AUTOMATION_SECRET en su propia capa Node.js.
-  const automationPath = '/api/automatizaciones/inversiones/alertas'
-  if (request.nextUrl.pathname === automationPath || request.nextUrl.pathname === `${automationPath}/`) {
+  const automationPaths = [
+    '/api/automatizaciones/inversiones/alertas',
+    '/api/automatizaciones/inversiones/whatsapp',
+  ]
+  if (automationPaths.some((path) => request.nextUrl.pathname === path || request.nextUrl.pathname === `${path}/`)) {
     return NextResponse.next()
   }
   return authMiddleware(request, event)
