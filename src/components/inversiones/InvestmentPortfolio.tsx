@@ -9,6 +9,8 @@ import {
   ChevronDown,
   ChevronsUpDown,
   CircleDollarSign,
+  CircleAlert,
+  CheckCircle2,
   Clock3,
   Copy,
   Download,
@@ -335,6 +337,23 @@ function AnimatedEuro({ value, className }: { value: number | null | undefined; 
       <SlidingNumber number={value} decimalSeparator="," decimalPlaces={2} thousandSeparator="." />
       <span className="ml-1 text-[0.62em] font-medium">€</span>
     </span>
+  )
+}
+
+function PriceUpdateToast({ title, message, warning = false }: { title: string; message: string; warning?: boolean }) {
+  return (
+    <Shine enable enableOnHover enableOnTap asChild color={warning ? '#fbbf24' : '#c8f56a'} opacity={0.35} className="w-[min(100vw-2rem,390px)] rounded-2xl">
+      <div className={`flex items-start gap-3 rounded-2xl border px-4 py-3.5 shadow-[0_18px_45px_rgba(15,23,42,0.24)] ${warning ? 'border-amber-200 bg-[#fff8e6] text-amber-950' : 'border-emerald-200 bg-[#effff4] text-emerald-950'}`}>
+        <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full ${warning ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+          {warning ? <CircleAlert className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+        </span>
+        <span className="min-w-0">
+          <strong className="block text-sm font-semibold leading-tight">{title}</strong>
+          <span className="mt-1 block text-xs leading-relaxed opacity-80">{message}</span>
+          <span className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] opacity-60">Datos de mercado sincronizados</span>
+        </span>
+      </div>
+    </Shine>
   )
 }
 
@@ -1415,9 +1434,13 @@ function InvestmentPortfolioContent() {
 
         const updatedCount = payload?.updates?.length ?? 0
         const errorCount = payload?.errors?.length ?? 0
-        toast.success(errorCount > 0
-          ? `${updatedCount} precios actualizados · ${errorCount} pendientes`
-          : `${updatedCount} precios actualizados con referencia de mercado`)
+        toast.custom(() => (
+          <PriceUpdateToast
+            title={errorCount > 0 ? 'Actualización parcial' : 'Precios actualizados'}
+            message={errorCount > 0 ? `${updatedCount} precios listos · ${errorCount} pendientes` : `${updatedCount} precios actualizados con referencia de mercado`}
+            warning={errorCount > 0}
+          />
+        ), { duration: 5200, unstyled: true })
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'No se pudieron actualizar las referencias')
       } finally {
@@ -1437,9 +1460,11 @@ function InvestmentPortfolioContent() {
       const updated = typeof payload.updated === 'number' ? payload.updated : 0
       const errors = Array.isArray(payload.errors) ? payload.errors.filter((error: unknown): error is string => typeof error === 'string') : []
       if (errors.length > 0) {
-        toast.warning(`${updated} precios actualizados · ${errors.length} fuentes requieren revisión`)
+        toast.custom(() => <PriceUpdateToast title="Actualización parcial" message={`${updated} precios listos · ${errors.length} fuentes requieren revisión`} warning />, { duration: 5200, unstyled: true })
+      } else if (updated > 0) {
+        toast.custom(() => <PriceUpdateToast title="Precios actualizados" message={`${updated} precios · cripto CoinGecko + ETFs Yahoo/Xetra`} />, { duration: 5200, unstyled: true })
       } else {
-        toast.success(updated > 0 ? `${updated} precios actualizados · cripto CoinGecko + ETFs Yahoo/Xetra` : 'No hay precios nuevos que actualizar')
+        toast.info('No hay precios nuevos que actualizar')
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'No se pudieron actualizar los precios')
