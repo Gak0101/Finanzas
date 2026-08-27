@@ -157,13 +157,13 @@ export async function POST(req: Request) {
     ?? { precio_actual_nativo: null, divisa_nativa: null }
   const percentageBasePrice = input.alcance === 'activo'
     ? capturedPrice?.price ?? existing?.precio_actual ?? position?.precio_actual ?? null
-    : null
+    : portfolioValue
   const percentageBaseNative = input.alcance === 'activo'
     ? nativeQuote.precio_actual_nativo
     : null
   const currentPrice = input.alcance === 'cartera' ? portfolioValue : (capturedPrice?.price ?? existing?.precio_actual ?? position?.precio_actual ?? null)
   const percentageReturn = input.alcance === 'cartera'
-    ? portfolioValue !== null && referencePrice !== null && referencePrice > 0 ? (portfolioValue - referencePrice) / referencePrice : null
+    ? percentageBasePrice !== null && percentageBasePrice > 0 && currentPrice !== null ? (currentPrice - percentageBasePrice) / percentageBasePrice : null
     : percentageFromBase(
         currentPrice,
         nativeQuote.precio_actual_nativo,

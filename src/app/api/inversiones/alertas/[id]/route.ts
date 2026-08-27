@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { and, eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { inversiones_alertas } from '@/lib/db/schema'
+import { inversiones_alertas, inversiones_posiciones } from '@/lib/db/schema'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 import { AlertTargetResolutionError, resolveAlertTarget, targetFromInput } from '@/lib/inversiones/alertTarget'
 import { fetchAssetPrice } from '@/lib/inversiones/marketData'
@@ -85,6 +85,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     values.precio_base_porcentaje = rule.precio_actual
     values.precio_base_porcentaje_nativo = rule.precio_actual_nativo
     values.divisa_base_porcentaje = rule.divisa_nativa
+  }
+  if (rule.alcance === 'cartera' && (Object.hasOwn(input, 'umbral_subida_pct') || Object.hasOwn(input, 'umbral_caida_pct'))) {
+    const positions = await db.query.inversiones_posiciones.findMany({
+      where: and(
+        eq(inversiones_posiciones.usuario_id, auth.userId),
+        eq(inversiones_posiciones.incluido_resumen, true),
+      ),
+    })
+    values.precio_base_porcentaje = positions.reduce((sum, position) => sum + (position.valor_actual ?? 0), 0)
   }
 
   const [updated] = await db.update(inversiones_alertas)

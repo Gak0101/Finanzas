@@ -196,7 +196,10 @@ async function evaluateRule(
   if (rule.alcance === 'cartera') {
     currentPrice = portfolioValue(positions)
     if (referencePrice === null || referencePrice <= 0) referencePrice = portfolioCost(positions)
-    currentPct = referencePrice > 0 ? (currentPrice - referencePrice) / referencePrice : null
+    if (percentageBasePrice === null && currentPrice !== null) percentageBasePrice = currentPrice
+    currentPct = currentPrice !== null && percentageBasePrice !== null && percentageBasePrice > 0
+      ? (currentPrice - percentageBasePrice) / percentageBasePrice
+      : null
   } else if (position) {
     currentPrice = position.precio_actual
     currentNativePrice = position.precio_actual_nativo
