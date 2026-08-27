@@ -7,7 +7,7 @@ import { fetchAssetPrice } from '@/lib/inversiones/marketData'
 import { priceIdentifiers } from '@/lib/inversiones/priceIdentifiers'
 import { AlertTargetResolutionError, resolveAlertTarget, targetFromInput } from '@/lib/inversiones/alertTarget'
 import { inversionAlertaSchema } from '@/lib/validations/inversionAlerta'
-import { listInvestmentAlertRules } from '@/lib/inversiones/alertRules'
+import { listInvestmentAlertRules, percentageFromBase } from '@/lib/inversiones/alertRules'
 import { inferIsin, normalizeIsin } from '@/lib/inversiones/instrumentIdentity'
 
 export const dynamic = 'force-dynamic'
@@ -155,6 +155,23 @@ export async function POST(req: Request) {
     ?? completeNativeQuote(existing?.precio_actual_nativo, existing?.divisa_nativa)
     ?? completeNativeQuote(position?.precio_actual_nativo, position?.divisa_nativa)
     ?? { precio_actual_nativo: null, divisa_nativa: null }
+  const percentageBasePrice = input.alcance === 'activo'
+    ? capturedPrice?.price ?? existing?.precio_actual ?? position?.precio_actual ?? null
+    : null
+  const percentageBaseNative = input.alcance === 'activo'
+    ? nativeQuote.precio_actual_nativo
+    : null
+  const currentPrice = input.alcance === 'cartera' ? portfolioValue : (capturedPrice?.price ?? existing?.precio_actual ?? position?.precio_actual ?? null)
+  const percentageReturn = input.alcance === 'cartera'
+    ? portfolioValue !== null && referencePrice !== null && referencePrice > 0 ? (portfolioValue - referencePrice) / referencePrice : null
+    : percentageFromBase(
+        currentPrice,
+        nativeQuote.precio_actual_nativo,
+        nativeQuote.divisa_nativa,
+        percentageBasePrice,
+        percentageBaseNative,
+        nativeQuote.divisa_nativa,
+      )
 
   const values = {
     usuario_id: auth.userId,
@@ -169,13 +186,12 @@ export async function POST(req: Request) {
     isin,
     precio_referencia: referencePrice,
     ...resolvedTarget,
-    precio_actual: input.alcance === 'cartera' ? portfolioValue : (capturedPrice?.price ?? existing?.precio_actual ?? position?.precio_actual ?? null),
+    precio_actual: currentPrice,
     ...nativeQuote,
-    rendimiento_pct: input.alcance === 'cartera'
-      ? portfolioValue !== null && referencePrice !== null && referencePrice > 0 ? (portfolioValue - referencePrice) / referencePrice : null
-      : capturedPrice !== null
-        ? referencePrice && referencePrice > 0 ? (capturedPrice.price - referencePrice) / referencePrice : null
-        : existing?.rendimiento_pct ?? position?.pnl_pct ?? null,
+    precio_base_porcentaje: percentageBasePrice,
+    precio_base_porcentaje_nativo: percentageBaseNative,
+    divisa_base_porcentaje: input.alcance === 'activo' ? nativeQuote.divisa_nativa : null,
+    rendimiento_pct: percentageReturn,
     umbral_subida_pct: input.umbral_subida_pct,
     umbral_caida_pct: input.umbral_caida_pct,
     rearmar_pct: input.rearmar_pct,

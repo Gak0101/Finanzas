@@ -77,6 +77,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     values.ultimo_error = null
   }
 
+  // Al reconfigurar los porcentajes de una alerta de activo, la base debe ser
+  // el precio actual guardado, no el precio de referencia usado para el
+  // objetivo absoluto. Los campos se mantienen separados para que un
+  // objetivo como 81 USD no altere el cálculo de +/-3%.
+  if (rule.alcance === 'activo' && (Object.hasOwn(input, 'umbral_subida_pct') || Object.hasOwn(input, 'umbral_caida_pct'))) {
+    values.precio_base_porcentaje = rule.precio_actual
+    values.precio_base_porcentaje_nativo = rule.precio_actual_nativo
+    values.divisa_base_porcentaje = rule.divisa_nativa
+  }
+
   const [updated] = await db.update(inversiones_alertas)
     .set(values)
     .where(and(eq(inversiones_alertas.id, id), eq(inversiones_alertas.usuario_id, auth.userId)))

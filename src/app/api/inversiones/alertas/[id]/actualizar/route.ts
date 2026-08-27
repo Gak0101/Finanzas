@@ -4,6 +4,7 @@ import { db } from '@/lib/db'
 import { inversiones_alertas, inversiones_posiciones } from '@/lib/db/schema'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 import { fetchAssetPrice, refreshInvestmentPrices } from '@/lib/inversiones/marketData'
+import { percentageFromBase } from '@/lib/inversiones/alertRules'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -34,12 +35,25 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       }
 
       const referencePrice = rule.precio_referencia ?? (position.coste !== null && position.cantidad > 0 ? position.coste / position.cantidad : position.precio_actual)
-      const rendimientoPct = position.pnl_pct ?? (referencePrice > 0 ? (position.precio_actual - referencePrice) / referencePrice : null)
+      const percentageBasePrice = rule.precio_base_porcentaje ?? position.precio_actual
+      const percentageBaseNativePrice = rule.precio_base_porcentaje_nativo ?? position.precio_actual_nativo
+      const percentageBaseCurrency = rule.divisa_base_porcentaje ?? position.divisa_nativa
+      const rendimientoPct = percentageFromBase(
+        position.precio_actual,
+        position.precio_actual_nativo,
+        position.divisa_nativa,
+        percentageBasePrice,
+        percentageBaseNativePrice,
+        percentageBaseCurrency,
+      )
       const [updated] = await db.update(inversiones_alertas).set({
         precio_referencia: rule.precio_referencia ?? referencePrice,
         precio_actual: position.precio_actual,
         precio_actual_nativo: position.precio_actual_nativo,
         divisa_nativa: position.divisa_nativa,
+        precio_base_porcentaje: percentageBasePrice,
+        precio_base_porcentaje_nativo: percentageBaseNativePrice,
+        divisa_base_porcentaje: percentageBaseCurrency,
         rendimiento_pct: rendimientoPct,
         ultima_comprobacion_at: checkedAt,
         ultimo_error: null,
@@ -55,12 +69,25 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       marketSymbol: rule.market_symbol,
     })
     const referencePrice = rule.precio_referencia ?? price.price
-    const rendimientoPct = referencePrice > 0 ? (price.price - referencePrice) / referencePrice : null
+    const percentageBasePrice = rule.precio_base_porcentaje ?? price.price
+    const percentageBaseNativePrice = rule.precio_base_porcentaje_nativo ?? (price.nativeCurrency ? price.nativePrice : null)
+    const percentageBaseCurrency = rule.divisa_base_porcentaje ?? price.nativeCurrency ?? null
+    const rendimientoPct = percentageFromBase(
+      price.price,
+      price.nativeCurrency ? price.nativePrice : null,
+      price.nativeCurrency ?? null,
+      percentageBasePrice,
+      percentageBaseNativePrice,
+      percentageBaseCurrency,
+    )
     const [updated] = await db.update(inversiones_alertas).set({
       precio_referencia: referencePrice,
       precio_actual: price.price,
       precio_actual_nativo: price.nativeCurrency ? price.nativePrice : null,
       divisa_nativa: price.nativeCurrency ?? null,
+      precio_base_porcentaje: percentageBasePrice,
+      precio_base_porcentaje_nativo: percentageBaseNativePrice,
+      divisa_base_porcentaje: percentageBaseCurrency,
       rendimiento_pct: rendimientoPct,
       ultima_comprobacion_at: checkedAt,
       ultimo_error: null,

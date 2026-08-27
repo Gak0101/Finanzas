@@ -222,6 +222,11 @@ export const inversiones_alertas = sqliteTable(
     precio_actual: real('precio_actual'),
     precio_actual_nativo: real('precio_actual_nativo'),
     divisa_nativa: text('divisa_nativa'),
+    // Base capturada al configurar la alerta para calcular los umbrales
+    // porcentuales sin mezclarla con el precio de referencia/objetivo.
+    precio_base_porcentaje: real('precio_base_porcentaje'),
+    precio_base_porcentaje_nativo: real('precio_base_porcentaje_nativo'),
+    divisa_base_porcentaje: text('divisa_base_porcentaje'),
     rendimiento_pct: real('rendimiento_pct'),
     umbral_subida_pct: real('umbral_subida_pct'),
     umbral_caida_pct: real('umbral_caida_pct'),

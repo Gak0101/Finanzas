@@ -77,12 +77,32 @@ function percentageSignal(rule: InversionAlerta, value: number): AlertSignal {
   return 'normal'
 }
 
+export function percentageFromBase(
+  currentPrice: number | null,
+  currentNativePrice: number | null,
+  nativeCurrency: string | null,
+  basePrice: number | null,
+  baseNativePrice: number | null,
+  baseCurrency: string | null,
+) {
+  const normalizedCurrency = nativeCurrency?.trim().toUpperCase()
+  const normalizedBaseCurrency = baseCurrency?.trim().toUpperCase()
+  if (positive(currentNativePrice) && positive(baseNativePrice) && normalizedCurrency && normalizedCurrency === normalizedBaseCurrency) {
+    return (currentNativePrice - baseNativePrice) / baseNativePrice
+  }
+  if (positive(currentPrice) && positive(basePrice)) return (currentPrice - basePrice) / basePrice
+  return null
+}
+
 function comparableTarget(
   rule: InversionAlerta,
   currentPrice: number | null,
   currentNativePrice: number | null,
   nativeCurrency: string | null,
   referencePrice: number | null,
+  percentageBasePrice: number | null,
+  percentageBaseNativePrice: number | null,
+  percentageBaseCurrency: string | null,
 ): ComparableTarget | null {
   const hasOriginalTarget = positive(rule.precio_objetivo_importe) && Boolean(rule.divisa_objetivo)
   const configuredAmount = hasOriginalTarget ? rule.precio_objetivo_importe : rule.precio_objetivo
@@ -91,7 +111,7 @@ function comparableTarget(
 
   if (configuredCurrency === 'EUR') {
     if (!positive(currentPrice)) return null
-    const reference = positive(referencePrice) ? referencePrice : currentPrice
+    const reference = positive(percentageBasePrice) ? percentageBasePrice : (positive(referencePrice) ? referencePrice : currentPrice)
     return {
       target: configuredAmount,
       current: currentPrice,
@@ -105,7 +125,9 @@ function comparableTarget(
   }
   const eurPerNative = currentPrice / currentNativePrice
   if (!positive(eurPerNative)) return null
-  const reference = positive(referencePrice) ? referencePrice / eurPerNative : currentNativePrice
+  const reference = positive(percentageBaseNativePrice) && percentageBaseCurrency && normalizeTargetCurrency(percentageBaseCurrency) === configuredCurrency
+    ? percentageBaseNativePrice
+    : positive(referencePrice) ? referencePrice / eurPerNative : currentNativePrice
   if (!positive(reference)) return null
 
   return {
@@ -167,6 +189,9 @@ async function evaluateRule(
   let currentNativePrice: number | null = null
   let nativeCurrency: string | null = null
   let referencePrice = rule.precio_referencia
+  let percentageBasePrice = rule.precio_base_porcentaje
+  let percentageBaseNativePrice = rule.precio_base_porcentaje_nativo
+  let percentageBaseCurrency = rule.divisa_base_porcentaje
 
   if (rule.alcance === 'cartera') {
     currentPrice = portfolioValue(positions)
@@ -180,11 +205,17 @@ async function evaluateRule(
       referencePrice = position.coste / position.cantidad
     }
     if (rule.precio_objetivo !== null && rule.precio_objetivo !== undefined && referencePrice === null) referencePrice = position.precio_compra ?? currentPrice
-    if (position.pnl_pct !== null) {
-      currentPct = position.pnl_pct
-    } else if (referencePrice !== null && currentPrice !== null && referencePrice > 0) {
-      currentPct = (currentPrice - referencePrice) / referencePrice
-    }
+    if (percentageBasePrice === null && currentPrice !== null) percentageBasePrice = currentPrice
+    if (percentageBaseNativePrice === null && currentNativePrice !== null) percentageBaseNativePrice = currentNativePrice
+    if (percentageBaseCurrency === null) percentageBaseCurrency = nativeCurrency
+    currentPct = percentageFromBase(
+      currentPrice,
+      currentNativePrice,
+      nativeCurrency,
+      percentageBasePrice,
+      percentageBaseNativePrice,
+      percentageBaseCurrency,
+    )
   } else {
     const price = await fetchAssetPrice({
       tipoActivo: rule.tipo_activo || 'Acción',
@@ -196,10 +227,29 @@ async function evaluateRule(
     currentNativePrice = price.nativeCurrency ? price.nativePrice : null
     nativeCurrency = price.nativeCurrency ?? null
     if (referencePrice === null || referencePrice <= 0) referencePrice = price.price
-    currentPct = referencePrice > 0 ? (price.price - referencePrice) / referencePrice : null
+    if (percentageBasePrice === null) percentageBasePrice = price.price
+    if (percentageBaseNativePrice === null && currentNativePrice !== null) percentageBaseNativePrice = currentNativePrice
+    if (percentageBaseCurrency === null) percentageBaseCurrency = nativeCurrency
+    currentPct = percentageFromBase(
+      currentPrice,
+      currentNativePrice,
+      nativeCurrency,
+      percentageBasePrice,
+      percentageBaseNativePrice,
+      percentageBaseCurrency,
+    )
   }
 
-  const target = comparableTarget(rule, currentPrice, currentNativePrice, nativeCurrency, referencePrice)
+  const target = comparableTarget(
+    rule,
+    currentPrice,
+    currentNativePrice,
+    nativeCurrency,
+    referencePrice,
+    percentageBasePrice,
+    percentageBaseNativePrice,
+    percentageBaseCurrency,
+  )
   if ((currentPct === null || !Number.isFinite(currentPct)) && target === null) {
     await db.update(inversiones_alertas).set({
       ultima_comprobacion_at: checkedAt,
@@ -224,6 +274,9 @@ async function evaluateRule(
     precio_actual: currentPrice,
     precio_actual_nativo: currentNativePrice,
     divisa_nativa: nativeCurrency,
+    precio_base_porcentaje: percentageBasePrice,
+    precio_base_porcentaje_nativo: percentageBaseNativePrice,
+    divisa_base_porcentaje: percentageBaseCurrency,
     rendimiento_pct: currentPct,
     estado: nextState,
     ultima_comprobacion_at: checkedAt,
