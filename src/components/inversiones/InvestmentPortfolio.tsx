@@ -1630,29 +1630,33 @@ function InvestmentPortfolioContent() {
                 const isin = positionIsin(position)
                 const positionAnalytics = positionAnalyticsById.get(position.id)
                 return <Slide key={position.id} inView inViewOnce delay={Math.min(index * 45, 360)} className="w-full">
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`Abrir detalle de ${assetLabel(position)}`}
-                    onClick={() => abrirDetallePosition(position.id)}
-                    onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); abrirDetallePosition(position.id) } }}
-                    className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-2xl border border-slate-200 bg-[#eeece5] p-4 text-left shadow-[0_5px_16px_rgba(15,23,42,0.05)] transition duration-200 hover:-translate-y-0.5 hover:border-slate-400 hover:shadow-[0_8px_20px_rgba(15,23,42,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#90b85f]"
-                  >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold text-slate-900">{assetLabel(position)}</span>
-                    <span className="mt-1 block truncate text-[11px] text-slate-500">{position.price_ticker || position.ticker} · {position.tipo} · {position.custodia}</span>
-                    {isin ? <span className="mt-1 inline-flex max-w-full items-center gap-1 text-[10px] text-slate-500"><span className="truncate">ISIN {isin}</span><button type="button" title="Copiar ISIN" aria-label={`Copiar ISIN ${isin}`} className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-white hover:text-slate-800" onClick={(event) => { event.stopPropagation(); void copiarIsin(isin) }}><Copy className="h-3 w-3" /></button></span> : <span className="mt-1 block text-[10px] text-slate-400">ISIN pendiente</span>}
-                    <span className="mt-2 block text-[11px] text-slate-400">{position.fecha_apertura ? `Desde ${formatDate(position.fecha_apertura)}` : 'Fecha de compra pendiente'}</span>
-                  </span>
-                  <span className="min-w-[116px] text-right">
-                    <span className="block text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Valor actual</span>
-                    <strong className="mt-1 block text-sm tabular-nums text-slate-900">{formatEuro(position.valor_actual)}</strong>
-                    <span className="mt-2 block text-[10px] font-medium text-slate-500">Precio actual</span>
-                    <span className="mt-0.5 block text-[11px] font-semibold tabular-nums text-slate-700">{formatEuro(position.precio_actual)}</span>
-                    <span className={`mt-2 block text-[11px] font-semibold tabular-nums ${positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'text-slate-400' : positionAnalytics.totalNetResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'Resultado total pendiente' : `Resultado total: ${formatEuro(positionAnalytics.totalNetResult)} · ${formatPct(positionAnalytics.totalReturnPct)}`}</span>
-                    <span className={`mt-0.5 block text-[10px] tabular-nums ${position.pnl === null ? 'text-slate-400' : position.pnl >= 0 ? 'text-emerald-700/80' : 'text-red-600/80'}`}>{position.pnl === null ? 'Resultado abierto pendiente' : `Resultado abierto: ${formatEuro(position.pnl)} · ${formatPct(position.pnl_pct)}`}</span>
-                  </span>
-                  </div>
+                  <Tilt maxTilt={4} perspective={900} className="w-full">
+                    <Shine asChild enableOnHover enableOnTap color="#c8f56a" opacity={0.22} className="rounded-2xl">
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Abrir detalle de ${assetLabel(position)}`}
+                        onClick={() => abrirDetallePosition(position.id)}
+                        onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); abrirDetallePosition(position.id) } }}
+                        className="relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-[#eeece5] p-4 text-left shadow-[0_8px_24px_rgba(15,23,42,0.07)] transition duration-300 hover:-translate-y-0.5 hover:border-[#90b85f] hover:shadow-[0_14px_30px_rgba(15,23,42,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#90b85f]"
+                      >
+                        <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: TYPE_COLORS[position.tipo] ?? TYPE_COLORS.Otro }} />
+                        <div className="flex items-start justify-between gap-3 pl-1">
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-semibold tracking-[-0.02em] text-slate-900">{assetLabel(position)}</span>
+                            <span className="mt-1 block truncate text-[11px] text-slate-500">{position.price_ticker || position.ticker} · {position.tipo} · {position.custodia}</span>
+                            {isin ? <span className="mt-1 inline-flex max-w-full items-center gap-1 text-[10px] text-slate-500"><span className="truncate">ISIN {isin}</span><button type="button" title="Copiar ISIN" aria-label={`Copiar ISIN ${isin}`} className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-white hover:text-slate-800" onClick={(event) => { event.stopPropagation(); void copiarIsin(isin) }}><Copy className="h-3 w-3" /></button></span> : <span className="mt-1 block text-[10px] text-slate-400">ISIN pendiente</span>}
+                          </span>
+                          <span className="shrink-0 text-right"><span className="block text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Valor actual</span><strong className="mt-1 block text-base tabular-nums text-slate-900">{formatEuro(position.valor_actual)}</strong></span>
+                        </div>
+                        <div className="mt-4 grid grid-cols-2 gap-2 border-y border-slate-200/80 py-3 pl-1">
+                          <span className="min-w-0"><span className="block text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Precio actual</span><span className="mt-1 block truncate text-[11px] font-semibold tabular-nums text-slate-700">{formatEuro(position.precio_actual)}</span></span>
+                          <span className="min-w-0 text-right"><span className="block text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Resultado total</span><span className={`mt-1 block truncate text-[11px] font-semibold tabular-nums ${positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'text-slate-400' : positionAnalytics.totalNetResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'Pendiente' : `${formatEuro(positionAnalytics.totalNetResult)} · ${formatPct(positionAnalytics.totalReturnPct)}`}</span></span>
+                        </div>
+                        <div className="flex items-end justify-between gap-3 pl-1 pt-3"><span className="text-[10px] text-slate-400">{position.fecha_apertura ? `Desde ${formatDate(position.fecha_apertura)}` : 'Fecha de compra pendiente'}</span><span className={`text-right text-[10px] tabular-nums ${position.pnl === null ? 'text-slate-400' : position.pnl >= 0 ? 'text-emerald-700/80' : 'text-red-600/80'}`}>{position.pnl === null ? 'Resultado abierto pendiente' : `Resultado abierto: ${formatEuro(position.pnl)} · ${formatPct(position.pnl_pct)}`}</span></div>
+                      </div>
+                    </Shine>
+                  </Tilt>
                 </Slide>
               })}
               {filteredPositions.length === 0 ? (
