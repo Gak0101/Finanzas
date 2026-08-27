@@ -52,6 +52,8 @@ import { Fade } from '@/components/animate-ui/primitives/effects/fade'
 import { RippleButton, RippleButtonRipples } from '@/components/animate-ui/components/buttons/ripple'
 import { Magnetic } from '@/components/animate-ui/primitives/effects/magnetic'
 import { SlidingNumber } from '@/components/animate-ui/primitives/texts/sliding-number'
+import { Shine } from '@/components/animate-ui/primitives/effects/shine'
+import { Tilt, TiltContent } from '@/components/animate-ui/primitives/effects/tilt'
 import { inferIsin } from '@/lib/inversiones/instrumentIdentity'
 import {
   buildDemoPortfolioData,
@@ -1526,10 +1528,34 @@ function InvestmentPortfolioContent() {
         <MarketHoursPanel positions={positions} compact />
 
         <Fade inView inViewOnce className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label="Resumen del portfolio">
-          <div className="rounded-xl bg-[#c8f56a] p-5 text-[#172016] shadow-[0_12px_30px_rgba(0,0,0,.14)] md:col-span-2 xl:col-span-1"><div className="flex items-center justify-between text-xs font-semibold text-[#536a38]"><span>Valor actual</span><CircleDollarSign className="h-5 w-5" /></div><p className="mt-5 text-4xl font-semibold tracking-[-0.06em] tabular-nums"><AnimatedEuro value={analytics?.performance.totalValue ?? summary.totalValue} /></p><p className="mt-4 text-[10px] text-[#617946]">{positions.length} posiciones · valoración en EUR</p></div>
-          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-500"><span>Efectivo disponible</span><div className="flex items-center gap-2">{!isDemoPortfolio && <Button type="button" variant="outline" size="sm" className="h-7 border-slate-300 bg-transparent px-2 text-[10px] text-slate-700 hover:bg-slate-100" onClick={abrirAjusteEfectivo}>Ajustar saldo</Button>}<Wallet className="h-4 w-4" /></div></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{isDemoPortfolio ? '—' : <AnimatedEuro value={cash?.totalEur ?? 0} />}</p><p className="mt-4 text-[10px] leading-relaxed text-slate-400">{isDemoPortfolio ? 'Escenario local · sin ledger persistido' : cashSummary || 'Sin movimientos de efectivo registrados'}</p></div>
-          <div className="rounded-xl bg-[#e5edde] p-5 text-slate-900 shadow-[0_12px_30px_rgba(15,23,42,0.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado cartera abierta</span><span className={(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}><AnimatedEuro value={analytics?.performance.unrealisedPnl ?? summary.knownPnl} /></p><p className="mt-4 text-[10px] text-slate-500">Solo posiciones actuales · {formatPct(analytics?.performance.currentReturnPct ?? summary.knownReturn)}</p></div>
-          <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-500"><span>Resultado realizado</span><span className={(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}><AnimatedEuro value={analytics?.performance.historicalNetResult ?? 0} /></p><p className="mt-4 text-[10px] text-slate-400">Ventas realizadas + ingresos − comisiones e impuestos</p></div>
+          <Tilt maxTilt={6} perspective={1000} className="h-full">
+            <TiltContent className="h-full">
+              <Shine asChild enableOnHover enableOnTap color="#ffffff" opacity={0.3} className="h-full rounded-xl">
+                <div className="h-full rounded-xl bg-[#c8f56a] p-5 text-[#172016] shadow-[0_16px_34px_rgba(0,0,0,.18)] md:col-span-2 xl:col-span-1"><div className="flex items-center justify-between text-xs font-semibold text-[#536a38]"><span>Valor actual</span><CircleDollarSign className="h-5 w-5" /></div><p className="mt-5 text-4xl font-semibold tracking-[-0.06em] tabular-nums"><AnimatedEuro value={analytics?.performance.totalValue ?? summary.totalValue} /></p><p className="mt-4 text-[10px] text-[#617946]">{positions.length} posiciones · valoración en EUR</p></div>
+              </Shine>
+            </TiltContent>
+          </Tilt>
+          <Tilt maxTilt={6} perspective={1000} className="h-full">
+            <TiltContent className="h-full">
+              <Shine asChild enableOnHover enableOnTap color="#c8f56a" opacity={0.25} className="h-full rounded-xl">
+                <div className="h-full rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_16px_34px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-500"><span>Efectivo disponible</span><div className="flex items-center gap-2">{!isDemoPortfolio && <Button type="button" variant="outline" size="sm" className="h-7 border-slate-300 bg-transparent px-2 text-[10px] text-slate-700 hover:bg-slate-100" onClick={abrirAjusteEfectivo}>Ajustar saldo</Button>}<Wallet className="h-4 w-4" /></div></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{isDemoPortfolio ? '—' : <AnimatedEuro value={cash?.totalEur ?? 0} />}</p><p className="mt-4 text-[10px] leading-relaxed text-slate-400">{isDemoPortfolio ? 'Escenario local · sin ledger persistido' : cashSummary || 'Sin movimientos de efectivo registrados'}</p></div>
+              </Shine>
+            </TiltContent>
+          </Tilt>
+          <Tilt maxTilt={6} perspective={1000} className="h-full">
+            <TiltContent className="h-full">
+              <Shine asChild enableOnHover enableOnTap color="#c8f56a" opacity={0.25} className="h-full rounded-xl">
+                <div className="h-full rounded-xl bg-[#e5edde] p-5 text-slate-900 shadow-[0_16px_34px_rgba(15,23,42,0.16)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado cartera abierta</span><span className={(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}><AnimatedEuro value={analytics?.performance.unrealisedPnl ?? summary.knownPnl} /></p><p className="mt-4 text-[10px] text-slate-500">Solo posiciones actuales · {formatPct(analytics?.performance.currentReturnPct ?? summary.knownReturn)}</p></div>
+              </Shine>
+            </TiltContent>
+          </Tilt>
+          <Tilt maxTilt={6} perspective={1000} className="h-full">
+            <TiltContent className="h-full">
+              <Shine asChild enableOnHover enableOnTap color="#c8f56a" opacity={0.25} className="h-full rounded-xl">
+                <div className="h-full rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_16px_34px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-500"><span>Resultado realizado</span><span className={(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}><AnimatedEuro value={analytics?.performance.historicalNetResult ?? 0} /></p><p className="mt-4 text-[10px] text-slate-400">Ventas realizadas + ingresos − comisiones e impuestos</p></div>
+              </Shine>
+            </TiltContent>
+          </Tilt>
         </Fade>
 
         <InvestmentNotificationAlerts
