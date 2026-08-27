@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { RippleButton, RippleButtonRipples } from '@/components/animate-ui/components/buttons/ripple'
 import {
   Dialog,
   DialogContent,
@@ -737,7 +738,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
           <h2 className="text-base font-semibold tracking-[-0.04em]">Telegram, email y WhatsApp</h2>
           <p className="mt-1.5 max-w-2xl text-[10px] leading-relaxed text-slate-500">{scenarioMode ? 'Prueba local; no modifica n8n ni tu cartera principal.' : 'n8n envía los avisos.'}</p>
         </div>
-        <Button type="button" size="sm" className="bg-slate-900 text-white hover:bg-slate-700" onClick={() => openAssetRule(null, 'position')}><Plus />Nueva alerta de posición</Button>
+        <RippleButton type="button" size="sm" className="bg-slate-900 text-white hover:bg-slate-700" onClick={() => openAssetRule(null, 'position')}><Plus />Nueva alerta de posición<RippleButtonRipples color="#c8f56a" /></RippleButton>
       </div>
 
       <div className="mt-4 grid gap-2 lg:grid-cols-2">
@@ -753,7 +754,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
         <div className="rounded-lg border border-slate-200 bg-white p-3">
           <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400">Activos vigilados</p><p className="mt-1 text-[13px] font-semibold">Posiciones y watchlist</p></div><span className="text-2xl font-semibold tracking-[-0.05em] tabular-nums">{assetRules.length}</span></div>
           <p className="mt-2 text-[10px] leading-relaxed text-slate-500">Posiciones de tu cartera o activos que todavía no tienes.</p>
-          <div className="mt-3 flex items-center justify-between gap-3"><span className="flex items-center gap-1.5 text-[10px] text-slate-500"><MessageCircle className="h-3.5 w-3.5 text-[#5d8236]" />Telegram · email · WhatsApp</span><Button type="button" size="sm" variant="outline" className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => openAssetRule(null, 'watchlist')}><Plus />Añadir seguimiento</Button></div>
+          <div className="mt-3 flex items-center justify-between gap-3"><span className="flex items-center gap-1.5 text-[10px] text-slate-500"><MessageCircle className="h-3.5 w-3.5 text-[#5d8236]" />Telegram · email · WhatsApp</span><RippleButton type="button" size="sm" variant="outline" className="border-slate-200 bg-transparent text-slate-700 hover:bg-slate-50" onClick={() => openAssetRule(null, 'watchlist')}><Plus />Añadir seguimiento<RippleButtonRipples color="#5d8236" /></RippleButton></div>
         </div>
       </div>
 

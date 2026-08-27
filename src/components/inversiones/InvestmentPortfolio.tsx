@@ -48,6 +48,8 @@ import { InvestmentNotificationAlerts } from '@/components/inversiones/Investmen
 import { PositionDetailDialog, type PositionMetadataChanges } from '@/components/inversiones/PositionDetailDialog'
 import { InvestmentPrivacyProvider, useInvestmentPrivacy } from '@/components/inversiones/InvestmentPrivacy'
 import { Slide } from '@/components/animate-ui/primitives/effects/slide'
+import { Fade } from '@/components/animate-ui/primitives/effects/fade'
+import { RippleButton, RippleButtonRipples } from '@/components/animate-ui/components/buttons/ripple'
 import { inferIsin } from '@/lib/inversiones/instrumentIdentity'
 import {
   buildDemoPortfolioData,
@@ -1503,20 +1505,20 @@ function InvestmentPortfolioContent() {
           <div className="flex flex-col gap-4 lg:items-end">
               <div className="text-left lg:text-right"><p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Última actualización</p><p className="mt-1 text-xs font-medium text-slate-200">{formatDateTime(isDemoPortfolio ? portfolioLastUpdated : lastPriceUpdate ?? portfolioLastUpdated)}</p><p className="mt-1 text-[10px] text-slate-500">{isDemoPortfolio ? 'Precios de referencia: Yahoo Finance · último cierre disponible' : lastPriceUpdate ? 'CoinGecko + Yahoo/Xetra' : 'Precios y posiciones guardados en la app'}</p>{lastPriceUpdate && !isDemoPortfolio && <p className="mt-1 text-[10px] text-slate-500">ETFs: último cierre de mercado como referencia gratuita.</p>}</div>
             <div className="flex flex-wrap gap-2">
-              <Button variant="outline" size="sm" className="border-white/20 bg-transparent text-slate-100 hover:bg-white/10 hover:text-white" onClick={() => void actualizarPrecios()} disabled={updatingPrices}><RefreshCw className={updatingPrices ? 'animate-spin' : ''} />{updatingPrices ? 'Actualizando…' : 'Actualizar precios'}</Button>
-              <Button size="sm" className="bg-[#c8f56a] text-[#172016] hover:bg-[#d8fb83]" onClick={abrirDialog}><Plus />Registrar operación</Button>
+              <RippleButton variant="outline" size="sm" className="border-white/20 bg-transparent text-slate-100 hover:bg-white/10 hover:text-white" onClick={() => void actualizarPrecios()} disabled={updatingPrices}><RefreshCw className={updatingPrices ? 'animate-spin' : ''} />{updatingPrices ? 'Actualizando…' : 'Actualizar precios'}<RippleButtonRipples color="#c8f56a" /></RippleButton>
+              <RippleButton size="sm" className="bg-[#c8f56a] text-[#172016] hover:bg-[#d8fb83]" onClick={abrirDialog}><Plus />Registrar operación<RippleButtonRipples color="#172016" /></RippleButton>
             </div>
           </div>
         </section>
 
         <MarketHoursPanel positions={positions} compact />
 
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label="Resumen del portfolio">
+        <Fade inView inViewOnce className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label="Resumen del portfolio">
           <div className="rounded-xl bg-[#c8f56a] p-5 text-[#172016] shadow-[0_12px_30px_rgba(0,0,0,.14)] md:col-span-2 xl:col-span-1"><div className="flex items-center justify-between text-xs font-semibold text-[#536a38]"><span>Valor actual</span><CircleDollarSign className="h-5 w-5" /></div><p className="mt-5 text-4xl font-semibold tracking-[-0.06em] tabular-nums">{formatEuro(analytics?.performance.totalValue ?? summary.totalValue)}</p><p className="mt-4 text-[10px] text-[#617946]">{positions.length} posiciones · valoración en EUR</p></div>
           <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-500"><span>Efectivo disponible</span><div className="flex items-center gap-2">{!isDemoPortfolio && <Button type="button" variant="outline" size="sm" className="h-7 border-slate-300 bg-transparent px-2 text-[10px] text-slate-700 hover:bg-slate-100" onClick={abrirAjusteEfectivo}>Ajustar saldo</Button>}<Wallet className="h-4 w-4" /></div></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{isDemoPortfolio ? '—' : formatEuro(cash?.totalEur ?? 0)}</p><p className="mt-4 text-[10px] leading-relaxed text-slate-400">{isDemoPortfolio ? 'Escenario local · sin ledger persistido' : cashSummary || 'Sin movimientos de efectivo registrados'}</p></div>
           <div className="rounded-xl bg-[#e5edde] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado cartera abierta</span><span className={(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.unrealisedPnl ?? summary.knownPnl)}</p><p className="mt-4 text-[10px] text-slate-500">Solo posiciones actuales · {formatPct(analytics?.performance.currentReturnPct ?? summary.knownReturn)}</p></div>
           <div className="rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado realizado</span><span className={(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{formatEuro(analytics?.performance.historicalNetResult ?? 0)}</p><p className="mt-4 text-[10px] text-slate-400">Ventas realizadas + ingresos − comisiones e impuestos</p></div>
-        </section>
+        </Fade>
 
         <InvestmentNotificationAlerts
           rules={notificationAlerts}
