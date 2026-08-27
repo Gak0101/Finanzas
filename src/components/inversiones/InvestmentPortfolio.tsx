@@ -47,6 +47,7 @@ import { MarketHoursPanel } from '@/components/inversiones/MarketHoursPanel'
 import { InvestmentNotificationAlerts } from '@/components/inversiones/InvestmentNotificationAlerts'
 import { PositionDetailDialog, type PositionMetadataChanges } from '@/components/inversiones/PositionDetailDialog'
 import { InvestmentPrivacyProvider, useInvestmentPrivacy } from '@/components/inversiones/InvestmentPrivacy'
+import { Slide } from '@/components/animate-ui/primitives/effects/slide'
 import { inferIsin } from '@/lib/inversiones/instrumentIdentity'
 import {
   buildDemoPortfolioData,
@@ -1560,30 +1561,34 @@ function InvestmentPortfolioContent() {
               </div>
             </div>
             <div className="grid gap-2 p-4 lg:hidden">
-              {filteredPositions.map((position) => {
+              {filteredPositions.map((position, index) => {
                 const isin = positionIsin(position)
                 const positionAnalytics = positionAnalyticsById.get(position.id)
-                return <div
-                  key={position.id}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`Abrir detalle de ${assetLabel(position)}`}
-                  onClick={() => abrirDetallePosition(position.id)}
-                  onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); abrirDetallePosition(position.id) } }}
-                  className="grid cursor-pointer grid-cols-[1fr_auto] gap-3 rounded-lg border border-slate-200 bg-[#eeece5] p-4 text-left transition hover:border-slate-400"
-                >
+                return <Slide key={position.id} inView inViewOnce delay={Math.min(index * 45, 360)} className="w-full">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Abrir detalle de ${assetLabel(position)}`}
+                    onClick={() => abrirDetallePosition(position.id)}
+                    onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); abrirDetallePosition(position.id) } }}
+                    className="grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] gap-3 rounded-2xl border border-slate-200 bg-[#eeece5] p-4 text-left shadow-[0_5px_16px_rgba(15,23,42,0.05)] transition duration-200 hover:-translate-y-0.5 hover:border-slate-400 hover:shadow-[0_8px_20px_rgba(15,23,42,0.08)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#90b85f]"
+                  >
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-semibold text-slate-900">{assetLabel(position)}</span>
                     <span className="mt-1 block truncate text-[11px] text-slate-500">{position.price_ticker || position.ticker} · {position.tipo} · {position.custodia}</span>
                     {isin ? <span className="mt-1 inline-flex max-w-full items-center gap-1 text-[10px] text-slate-500"><span className="truncate">ISIN {isin}</span><button type="button" title="Copiar ISIN" aria-label={`Copiar ISIN ${isin}`} className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-white hover:text-slate-800" onClick={(event) => { event.stopPropagation(); void copiarIsin(isin) }}><Copy className="h-3 w-3" /></button></span> : <span className="mt-1 block text-[10px] text-slate-400">ISIN pendiente</span>}
                     <span className="mt-2 block text-[11px] text-slate-400">{position.fecha_apertura ? `Desde ${formatDate(position.fecha_apertura)}` : 'Fecha de compra pendiente'}</span>
                   </span>
-                  <span className="text-right">
-                    <strong className="block text-sm tabular-nums text-slate-900">{formatEuro(position.valor_actual)}</strong>
-                    <span className={`mt-1 block text-[11px] font-semibold tabular-nums ${positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'text-slate-400' : positionAnalytics.totalNetResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'Total histórico pendiente' : `Total histórico: ${formatEuro(positionAnalytics.totalNetResult)} · ${formatPct(positionAnalytics.totalReturnPct)}`}</span>
-                    <span className={`mt-0.5 block text-[10px] tabular-nums ${position.pnl === null ? 'text-slate-400' : position.pnl >= 0 ? 'text-emerald-700/80' : 'text-red-600/80'}`}>{position.pnl === null ? 'Abierta: pendiente' : `Abierta: ${formatEuro(position.pnl)} · ${formatPct(position.pnl_pct)}`}</span>
+                  <span className="min-w-[116px] text-right">
+                    <span className="block text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Valor actual</span>
+                    <strong className="mt-1 block text-sm tabular-nums text-slate-900">{formatEuro(position.valor_actual)}</strong>
+                    <span className="mt-2 block text-[10px] font-medium text-slate-500">Precio actual</span>
+                    <span className="mt-0.5 block text-[11px] font-semibold tabular-nums text-slate-700">{formatEuro(position.precio_actual)}</span>
+                    <span className={`mt-2 block text-[11px] font-semibold tabular-nums ${positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'text-slate-400' : positionAnalytics.totalNetResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'Resultado total pendiente' : `Resultado total: ${formatEuro(positionAnalytics.totalNetResult)} · ${formatPct(positionAnalytics.totalReturnPct)}`}</span>
+                    <span className={`mt-0.5 block text-[10px] tabular-nums ${position.pnl === null ? 'text-slate-400' : position.pnl >= 0 ? 'text-emerald-700/80' : 'text-red-600/80'}`}>{position.pnl === null ? 'Resultado abierto pendiente' : `Resultado abierto: ${formatEuro(position.pnl)} · ${formatPct(position.pnl_pct)}`}</span>
                   </span>
-                </div>
+                  </div>
+                </Slide>
               })}
               {filteredPositions.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-slate-300 p-5 text-center text-[11px] text-slate-500">
