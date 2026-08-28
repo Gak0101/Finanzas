@@ -1560,13 +1560,7 @@ function InvestmentPortfolioContent() {
               </Shine>
             </TiltContent>
           </Tilt>
-          <Tilt maxTilt={6} perspective={1000} className="h-full">
-            <TiltContent className="h-full">
-              <Shine asChild enableOnHover enableOnTap color="#c8f56a" opacity={0.25} className="h-full rounded-xl">
-                <div className="h-full rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_16px_34px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-500"><span>Efectivo disponible</span><div className="relative z-20 flex items-center gap-2">{!isDemoPortfolio && <RippleButton type="button" variant="outline" size="sm" className="h-7 border-slate-300 bg-transparent px-2 text-[10px] text-slate-700 hover:bg-slate-100" onClick={(event) => { event.stopPropagation(); abrirAjusteEfectivo() }} aria-haspopup="dialog">Ajustar saldo<RippleButtonRipples color="#90b85f" /></RippleButton>}<Wallet className="h-4 w-4" /></div></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{isDemoPortfolio ? '—' : <AnimatedEuro value={cash?.totalEur ?? 0} />}</p><p className="mt-4 text-[10px] leading-relaxed text-slate-400">{isDemoPortfolio ? 'Escenario local · sin ledger persistido' : cashSummary || 'Sin movimientos de efectivo registrados'}</p></div>
-              </Shine>
-            </TiltContent>
-          </Tilt>
+          <div className="h-full rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_16px_34px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-500"><span>Efectivo disponible</span><div className="flex items-center gap-2">{!isDemoPortfolio && <Button type="button" variant="outline" size="sm" className="h-7 border-slate-300 bg-transparent px-2 text-[10px] text-slate-700 hover:bg-slate-100" onClick={abrirAjusteEfectivo} aria-haspopup="dialog">Ajustar saldo</Button>}<Wallet className="h-4 w-4" /></div></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{isDemoPortfolio ? '—' : <AnimatedEuro value={cash?.totalEur ?? 0} />}</p><p className="mt-4 text-[10px] leading-relaxed text-slate-400">{isDemoPortfolio ? 'Escenario local · sin ledger persistido' : cashSummary || 'Sin movimientos de efectivo registrados'}</p></div>
           <Tilt maxTilt={6} perspective={1000} className="h-full">
             <TiltContent className="h-full">
               <Shine asChild enableOnHover enableOnTap color="#c8f56a" opacity={0.25} className="h-full rounded-xl">
