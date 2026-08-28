@@ -9,6 +9,7 @@ import { AlertTargetResolutionError, resolveAlertTarget, targetFromInput } from 
 import { inversionAlertaSchema } from '@/lib/validations/inversionAlerta'
 import { listInvestmentAlertRules, percentageFromBase } from '@/lib/inversiones/alertRules'
 import { inferIsin, normalizeIsin } from '@/lib/inversiones/instrumentIdentity'
+import { getInvestmentCashSnapshot } from '@/lib/inversiones/cash'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -115,7 +116,7 @@ export async function POST(req: Request) {
         eq(inversiones_posiciones.incluido_resumen, true)
       ),
     })
-    portfolioValue = portfolioPositions.reduce((sum, item) => sum + (item.valor_actual ?? 0), 0)
+    portfolioValue = portfolioPositions.reduce((sum, item) => sum + (item.valor_actual ?? 0), getInvestmentCashSnapshot(auth.userId).totalEur)
     if (referencePrice === null && portfolioValue > 0) referencePrice = portfolioValue
     if (referencePrice === null || referencePrice <= 0) {
       return NextResponse.json({ error: 'Indica un valor base de cartera válido' }, { status: 400 })

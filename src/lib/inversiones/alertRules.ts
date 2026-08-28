@@ -3,6 +3,7 @@ import { db } from '@/lib/db'
 import { inversiones_alertas, inversiones_posiciones, type InversionAlerta, type InversionPosicion } from '@/lib/db/schema'
 import { fetchAssetPrice, refreshInvestmentPrices, type RefreshPricesResult } from '@/lib/inversiones/marketData'
 import { normalizeTargetCurrency } from '@/lib/inversiones/alertTarget'
+import { getInvestmentCashSnapshot } from '@/lib/inversiones/cash'
 
 export type AlertSignal = 'normal' | 'subida' | 'caida'
 export type AlertTriggerReason = 'porcentaje' | 'precio_objetivo'
@@ -48,8 +49,8 @@ function positive(value: number | null | undefined): value is number {
   return value !== null && value !== undefined && Number.isFinite(value) && value > 0
 }
 
-function portfolioValue(positions: InversionPosicion[]) {
-  return positions.reduce((sum, position) => sum + (position.valor_actual ?? 0), 0)
+function portfolioValue(positions: InversionPosicion[], cashEur = 0) {
+  return positions.reduce((sum, position) => sum + (position.valor_actual ?? 0), cashEur)
 }
 
 function portfolioCost(positions: InversionPosicion[]) {
@@ -181,6 +182,7 @@ function ruleLabel(rule: InversionAlerta, position: InversionPosicion | undefine
 async function evaluateRule(
   rule: InversionAlerta,
   positions: InversionPosicion[],
+  cashEur: number,
   checkedAt: string
 ) {
   const position = rule.posicion_id === null ? undefined : positions.find((item) => item.id === rule.posicion_id)
@@ -194,7 +196,7 @@ async function evaluateRule(
   let percentageBaseCurrency = rule.divisa_base_porcentaje
 
   if (rule.alcance === 'cartera') {
-    currentPrice = portfolioValue(positions)
+    currentPrice = portfolioValue(positions, cashEur)
     if (referencePrice === null || referencePrice <= 0) referencePrice = portfolioCost(positions)
     if (percentageBasePrice === null && currentPrice !== null) percentageBasePrice = currentPrice
     currentPct = currentPrice !== null && percentageBasePrice !== null && percentageBasePrice > 0
@@ -316,6 +318,7 @@ async function evaluateRule(
 
 export async function checkInvestmentAlerts(userId: number): Promise<InvestmentAlertCheckResult> {
   const refresh = await refreshInvestmentPrices(userId)
+  const cash = getInvestmentCashSnapshot(userId)
   const [positions, rules] = await Promise.all([
     db.query.inversiones_posiciones.findMany({
       where: and(
@@ -335,7 +338,7 @@ export async function checkInvestmentAlerts(userId: number): Promise<InvestmentA
 
   for (const rule of rules) {
     try {
-      const result = await evaluateRule(rule, positions, checkedAt)
+      const result = await evaluateRule(rule, positions, cash.totalEur, checkedAt)
       if (result.skipped) skippedRules += 1
       if (result.triggered) alerts.push(result.triggered)
     } catch (error) {

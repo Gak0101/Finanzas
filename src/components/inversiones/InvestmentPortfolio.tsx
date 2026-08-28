@@ -1581,6 +1581,7 @@ function InvestmentPortfolioContent() {
           rules={notificationAlerts}
           positions={positions}
           portfolioReturnPct={analytics?.performance.currentReturnPct ?? summary.knownReturn}
+          portfolioCashEur={cash?.totalEur ?? 0}
           scenarioMode={isDemoPortfolio}
           onScenarioPriceRefresh={isDemoPortfolio ? async (positionId, update) => aplicarPreciosEscenario([{ id: positionId, ...update }]) : undefined}
           onScenarioRulesChange={isDemoPortfolio ? async (nextRules) => {
