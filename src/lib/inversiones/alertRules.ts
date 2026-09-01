@@ -27,6 +27,7 @@ export type TriggeredInvestmentAlert = {
   canal_telegram: boolean
   canal_email: boolean
   canal_whatsapp: boolean
+  solo_whatsapp?: boolean
   checked_at: string
 }
 
@@ -266,7 +267,15 @@ async function evaluateRule(
 
   const evaluation = signalWithRearm(rule, currentPct ?? 0, target)
   const nextState = evaluation.signal
-  const triggered = nextState !== 'normal' && nextState !== (rule.estado as AlertSignal)
+  const stateChanged = nextState !== 'normal' && nextState !== (rule.estado as AlertSignal)
+  // La detección de una caída no confirma que WhatsApp haya aceptado el
+  // mensaje. Mientras no exista confirmación, devolvemos solo este canal en
+  // cada revisión para que n8n pueda reintentarlo sin duplicar Telegram/email.
+  const whatsappDeliveryPending = nextState !== 'normal'
+    && rule.canal_whatsapp
+    && !rule.ultima_entrega_whatsapp_at
+  const triggered = stateChanged || whatsappDeliveryPending
+  const whatsappRetryOnly = whatsappDeliveryPending && !stateChanged
   const label = ruleLabel(rule, position)
   const threshold = evaluation.reason === 'precio_objetivo'
     ? null
@@ -285,7 +294,9 @@ async function evaluateRule(
     rendimiento_pct: currentPct,
     estado: nextState,
     ultima_comprobacion_at: checkedAt,
-    ultima_alerta_at: triggered ? checkedAt : rule.ultima_alerta_at,
+    ultima_alerta_at: stateChanged ? checkedAt : rule.ultima_alerta_at,
+    ultima_entrega_whatsapp_at: nextState === 'normal' || stateChanged ? null : rule.ultima_entrega_whatsapp_at,
+    ultimo_error_whatsapp: nextState === 'normal' || stateChanged ? null : rule.ultimo_error_whatsapp,
     ultimo_error: null,
     updated_at: checkedAt,
   }).where(eq(inversiones_alertas.id, rule.id))
@@ -308,9 +319,10 @@ async function evaluateRule(
       precio_objetivo: rule.precio_objetivo ?? null,
       precio_objetivo_importe: rule.precio_objetivo_importe ?? null,
       divisa_objetivo: rule.divisa_objetivo ?? null,
-      canal_telegram: rule.canal_telegram,
-      canal_email: rule.canal_email,
+      canal_telegram: whatsappRetryOnly ? false : rule.canal_telegram,
+      canal_email: whatsappRetryOnly ? false : rule.canal_email,
       canal_whatsapp: rule.canal_whatsapp,
+      solo_whatsapp: whatsappRetryOnly,
       checked_at: checkedAt,
     } satisfies TriggeredInvestmentAlert : null,
   }

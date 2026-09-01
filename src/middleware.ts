@@ -15,6 +15,7 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
   // exclusivamente AUTOMATION_SECRET en su propia capa Node.js.
   const automationPaths = [
     '/api/automatizaciones/inversiones/alertas',
+    '/api/automatizaciones/inversiones/alertas/confirmar',
     '/api/automatizaciones/inversiones/whatsapp',
   ]
   if (automationPaths.some((path) => request.nextUrl.pathname === path || request.nextUrl.pathname === `${path}/`)) {

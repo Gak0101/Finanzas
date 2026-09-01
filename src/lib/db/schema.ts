@@ -238,6 +238,11 @@ export const inversiones_alertas = sqliteTable(
     activa: integer('activa', { mode: 'boolean' }).notNull().default(true),
     ultima_comprobacion_at: text('ultima_comprobacion_at'),
     ultima_alerta_at: text('ultima_alerta_at'),
+    // La detección y la entrega son estados distintos: mientras este campo
+    // sea NULL, el workflow debe reintentar el envío de WhatsApp.
+    ultima_entrega_whatsapp_at: text('ultima_entrega_whatsapp_at'),
+    whatsapp_message_id: text('whatsapp_message_id'),
+    ultimo_error_whatsapp: text('ultimo_error_whatsapp'),
     ultimo_error: text('ultimo_error'),
     created_at: text('created_at').default(sql`(datetime('now'))`),
     updated_at: text('updated_at').default(sql`(datetime('now'))`),

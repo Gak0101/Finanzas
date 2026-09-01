@@ -75,7 +75,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   if (Object.hasOwn(input, 'precio_referencia') || targetInput !== undefined || Object.hasOwn(input, 'umbral_subida_pct') || Object.hasOwn(input, 'umbral_caida_pct')) {
     values.estado = 'normal'
+    values.ultima_entrega_whatsapp_at = null
+    values.whatsapp_message_id = null
+    values.ultimo_error_whatsapp = null
     values.ultimo_error = null
+  }
+
+  if (Object.hasOwn(input, 'canal_whatsapp') && input.canal_whatsapp !== rule.canal_whatsapp) {
+    values.ultima_entrega_whatsapp_at = input.canal_whatsapp ? null : rule.ultima_entrega_whatsapp_at
+    values.whatsapp_message_id = input.canal_whatsapp ? null : rule.whatsapp_message_id
+    values.ultimo_error_whatsapp = null
   }
 
   // Al reconfigurar los porcentajes de una alerta de activo, la base debe ser
