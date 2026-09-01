@@ -241,6 +241,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
   const [selectedAsset, setSelectedAsset] = useState<AssetSearchResult | null>(null)
   const [searching, setSearching] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [testingWhatsApp, setTestingWhatsApp] = useState(false)
   const [busyRuleId, setBusyRuleId] = useState<number | null>(null)
   const [refreshingRuleId, setRefreshingRuleId] = useState<number | null>(null)
   const [rulePendingDeletion, setRulePendingDeletion] = useState<InversionAlerta | null>(null)
@@ -754,6 +755,27 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
     }
   }
 
+  async function testWhatsApp() {
+    if (scenarioMode) {
+      toast.error('El escenario local no puede enviar WhatsApp')
+      return
+    }
+
+    setTestingWhatsApp(true)
+    try {
+      const response = await fetch('/api/configuracion/whatsapp/test', { method: 'POST' })
+      const payload = await response.json().catch(() => null) as { ok?: boolean; warning?: string; error?: string } | null
+      if (!response.ok || !payload?.ok) throw new Error(payload?.error || 'No se pudo enviar la prueba de WhatsApp')
+      toast.success('Prueba aceptada por Meta', {
+        description: payload.warning || 'Revisa el teléfono configurado para confirmar que ha llegado.',
+      })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo enviar la prueba de WhatsApp')
+    } finally {
+      setTestingWhatsApp(false)
+    }
+  }
+
   return (
     <section className="rounded-xl bg-[#f7f5ef] p-4 text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)] sm:p-5" id="external-alerts">
       <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 sm:flex-row sm:items-start sm:justify-between">
@@ -762,7 +784,12 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
           <h2 className="text-base font-semibold tracking-[-0.04em]">Telegram, email y WhatsApp</h2>
           <p className="mt-1.5 max-w-2xl text-[10px] leading-relaxed text-slate-500">{scenarioMode ? 'Prueba local; no modifica n8n ni tu cartera principal.' : 'n8n comprueba cada 5 min y confirma WhatsApp; si falla, reintenta.'}</p>
         </div>
-        <RippleButton type="button" size="sm" className="bg-slate-900 text-white hover:bg-slate-700" onClick={() => openAssetRule(null, 'position')}><Plus />Nueva alerta de posición<RippleButtonRipples color="#c8f56a" /></RippleButton>
+        <div className="flex flex-wrap items-center gap-2">
+          <RippleButton type="button" size="sm" variant="outline" className="border-[#90b85f] bg-white text-[#31531d] hover:bg-[#e7f2d4]" onClick={() => void testWhatsApp()} disabled={testingWhatsApp || scenarioMode} title={scenarioMode ? 'No disponible en el escenario local' : 'Envía un mensaje real al número configurado'}>
+            {testingWhatsApp ? <Loader2 className="animate-spin" /> : <MessageCircle />} {testingWhatsApp ? 'Enviando…' : 'Probar WhatsApp'}<RippleButtonRipples color="#90b85f" />
+          </RippleButton>
+          <RippleButton type="button" size="sm" className="bg-slate-900 text-white hover:bg-slate-700" onClick={() => openAssetRule(null, 'position')}><Plus />Nueva alerta de posición<RippleButtonRipples color="#c8f56a" /></RippleButton>
+        </div>
       </div>
 
       <div className="mt-4 grid gap-2 lg:grid-cols-2">
