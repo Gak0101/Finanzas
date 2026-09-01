@@ -97,6 +97,10 @@ export async function sendWhatsAppMessage(
   }
 
   const graphUrl = `${settings.whatsapp_graph_url.replace(/\/$/, '')}/${settings.whatsapp_phone_number_id}/messages`
+  // Meta puede rechazar con #132018 los saltos de línea dentro de una variable
+  // de plantilla. Conservamos el formato original para texto libre, pero
+  // enviamos el parámetro de la plantilla en una sola línea.
+  const templateParameter = text.replace(/\s+/g, ' ').trim()
   const sendGraphMessage = async (body: Record<string, unknown>) => {
     const response = await fetch(graphUrl, {
       method: 'POST',
@@ -124,7 +128,7 @@ export async function sendWhatsAppMessage(
       language: { code: settings.whatsapp_template_language || 'es_ES' },
       components: [{
         type: 'body',
-        parameters: [{ type: 'text', text }],
+        parameters: [{ type: 'text', text: templateParameter }],
       }],
     },
   })
