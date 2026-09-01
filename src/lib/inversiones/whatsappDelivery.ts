@@ -14,6 +14,10 @@ export type WhatsAppDeliveryResult = {
   warning?: string
 }
 
+export type WhatsAppDeliveryOptions = {
+  allowTextFallback?: boolean
+}
+
 export class WhatsAppDeliveryError extends Error {
   constructor(message: string, readonly status = 502) {
     super(message)
@@ -61,7 +65,12 @@ async function failDelivery(userId: number, alertaId: number | undefined, messag
   throw new WhatsAppDeliveryError(message, status)
 }
 
-export async function sendWhatsAppMessage(userId: number, text: string, alertaId?: number): Promise<WhatsAppDeliveryResult> {
+export async function sendWhatsAppMessage(
+  userId: number,
+  text: string,
+  alertaId?: number,
+  options: WhatsAppDeliveryOptions = {},
+): Promise<WhatsAppDeliveryResult> {
   if (alertaId) {
     const alert = await db.query.inversiones_alertas.findFirst({
       where: and(
@@ -131,6 +140,14 @@ export async function sendWhatsAppMessage(userId: number, text: string, alertaId
   }
 
   const templateError = templateResult.payload?.error?.message || 'WhatsApp Cloud rechazó la plantilla'
+  if (options.allowTextFallback === false) {
+    return failDelivery(
+      userId,
+      alertaId,
+      `La plantilla de WhatsApp fue rechazada por Meta: ${templateError}. El test no usa texto libre porque WhatsApp solo lo permite durante las 24 horas posteriores a un mensaje del usuario.`,
+    )
+  }
+
   const textResult = await sendGraphMessage({
     type: 'text',
     text: {

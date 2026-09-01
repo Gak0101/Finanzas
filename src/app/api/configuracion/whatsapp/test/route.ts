@@ -24,7 +24,7 @@ export async function POST() {
   ].join('\n')
 
   try {
-    const result = await sendWhatsAppMessage(auth.userId, text)
+    const result = await sendWhatsAppMessage(auth.userId, text, undefined, { allowTextFallback: false })
     return NextResponse.json({ ok: true, ...result })
   } catch (error) {
     if (error instanceof WhatsAppDeliveryError) {
