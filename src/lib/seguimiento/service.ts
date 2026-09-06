@@ -1,5 +1,6 @@
 import { and, desc, eq } from 'drizzle-orm'
 import ExcelJS from 'exceljs'
+import JSZip from 'jszip'
 import { db } from '@/lib/db'
 import {
   inversiones_excel_filas,
@@ -13,8 +14,35 @@ import { madridSlot, safeUrl, triage } from '@/lib/seguimiento/policy'
 import type { Candidate, FollowupItem, FollowupReport, Source } from '@/lib/seguimiento/types'
 
 const MASTER_SHEET = 'Maestro_Lynch'
-const MAX_CANDIDATES = 80
+const MAX_CANDIDATES = 160
 const NEWSLETTER_URL = process.env.SVI_NEWSLETTER_URL?.trim() || 'https://svinvesting.substack.com/feed'
+
+async function loadWorkbook(buffer: Buffer) {
+  const workbook = new ExcelJS.Workbook()
+  try {
+    await workbook.xlsx.load(buffer as never)
+    return workbook
+  } catch {
+    // El Excel maestro generado por Artifact Tool usa el prefijo `x:` en XML.
+    // ExcelJS espera etiquetas sin ese prefijo; normalizamos solo la copia en
+    // memoria y conservamos intacto el archivo original.
+    const zip = await JSZip.loadAsync(buffer)
+    const xmlFiles = Object.keys(zip.files).filter(name => /(?:\.xml|\.rels)$/i.test(name))
+    await Promise.all(xmlFiles.map(async name => {
+      const entry = zip.file(name)
+      if (!entry) return
+      const xml = await entry.async('string')
+      zip.file(name, xml.replace(/(<\/?)(?:x:)/g, '$1')
+        // ExcelJS no puede reconciliar los comentarios de Artifact Tool con
+        // sus relaciones absolutas; el texto de las celdas se conserva.
+        .replace(/<Relationship\b[^>]*(?:comments|threadedComment|vmlDrawing)[^>]*\/>/gi, '')
+        .replace(/<legacyDrawing\b[^>]*\/>/gi, '')
+        .replace(/<tableParts\b[\s\S]*?<\/tableParts>/gi, ''))
+    }))
+    await workbook.xlsx.load(await zip.generateAsync({ type: 'nodebuffer' }) as never)
+    return workbook
+  }
+}
 
 function text(value: unknown) { return value === null || value === undefined ? '' : String(value).trim() }
 function number(value: unknown) {
@@ -44,10 +72,13 @@ function parseRow(row: Record<string, unknown>): Candidate | null {
   const ticker = text(row.ticker || row['Ticker / mercado'] || row['Ticker'])
   const name = text(row.empresa || row.Empresa || row.company || row.Empresa)
   if (!ticker || !name || /ticker|mercado|empresa/i.test(`${ticker} ${name}`)) return null
+  const rawSymbol = ticker.split('/')[0]?.trim() || ''
+  // Evita convertir títulos y notas de las secciones del Excel en candidatos.
+  if (!/^[A-Za-z0-9][A-Za-z0-9.-]{0,9}$/.test(rawSymbol)) return null
   const market = text(row.mercado || row['Ticker / mercado'] || ticker)
   const url = text(row['Fuente oficial'] || row['Fuente oficial / empresa'] || row['Fuente'] || row.url)
   return {
-    symbol: ticker.split('/')[0].trim().toUpperCase(),
+    symbol: rawSymbol.toUpperCase(),
     marketSymbol: marketTicker(ticker, market), name,
     held: false,
     rank: number(row.orden || row['Orden profundo'] || row.Posición || row.Posicion || row.position),
@@ -61,8 +92,7 @@ function parseRow(row: Record<string, unknown>): Candidate | null {
 }
 
 export async function importWorkbook(userId: number, buffer: Buffer) {
-  const workbook = new ExcelJS.Workbook()
-  await workbook.xlsx.load(buffer as never)
+  const workbook = await loadWorkbook(buffer)
   let count = 0
   const now = new Date().toISOString()
   for (const worksheet of workbook.worksheets) {
@@ -71,22 +101,25 @@ export async function importWorkbook(userId: number, buffer: Buffer) {
     worksheet.eachRow((row, rowNumber) => {
       const values = Array.isArray(row.values) ? row.values.slice(1) : []
       const normalized = values.map(value => text(value))
-      if (normalized.some(value => /ticker|empresa|company/i.test(value)) && normalized.filter(Boolean).length >= 2) {
+      const headerValues = normalized.map(value => value.toLowerCase())
+      const looksLikeHeader = headerValues.some(value => ['ticker', 'ticker / mercado', 'empresa', 'company'].includes(value))
+      if (looksLikeHeader && normalized.filter(Boolean).length >= 2) {
         headers = normalized
         return
       }
       if (headers.length > 0 && normalized.some(Boolean)) {
         const record: Record<string, unknown> = { __row: rowNumber }
         headers.forEach((header, index) => { if (header) record[header] = values[index] })
-        const candidate = parseRow(record)
-        if (candidate) rows.push(record)
+        // Conservamos también las filas de contexto, notas y próximos hitos.
+        // Solo las filas identificables como empresa/ticker entran después en
+        // el universo de candidatos del informe.
+        rows.push(record)
       }
     })
     for (const record of rows) {
       const candidate = parseRow(record)
-      if (!candidate) continue
       const rowNumber = Number(record.__row)
-      const tipo = rowNumber >= 869 ? 'deep' : 'watchlist'
+      const tipo = candidate ? (rowNumber >= 869 ? 'deep' : 'watchlist') : 'context'
       await db.insert(inversiones_excel_filas).values({
         usuario_id: userId, hoja: worksheet.name, fila: rowNumber, tipo,
         datos: JSON.stringify(record), imported_at: now,

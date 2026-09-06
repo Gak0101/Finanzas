@@ -24,6 +24,7 @@ const runSchema = z.object({
 })
 const payloadSchema = z.object({
   runs: z.array(runSchema), watchlistCount: z.number(), portfolioCount: z.number(),
+  contextCount: z.number(),
   newsletter: z.object({ configured: z.boolean() }),
   scheduler: z.object({ enabled: z.boolean(), lastHeartbeat: z.string().nullable(), schedule: z.string() }),
   aiConfigured: z.boolean(),
@@ -149,7 +150,7 @@ export function InvestmentFollowup() {
       {notice && <p role="status" className="text-sm text-slate-300">{notice}</p>}
       {running && <div className={`${panel} border-amber-300/30`}><p role="status">{activeRun ? `Ejecución #${activeRun.id} en curso` : `Esperando confirmación de #${pendingId}`} {elapsed !== null && Number.isFinite(elapsed) ? `· ${Math.floor(elapsed / 60)} min ${elapsed % 60} s` : ''}</p><p className="mt-2 text-sm text-slate-400">Consulta cada 3 segundos. El trabajo se ejecuta en el servidor; cerrar esta vista no lo cancela.</p></div>}
       {data && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <div className={panel}><h2 className="font-medium">Universo</h2><p className="mt-2 text-sm">Cartera: {data.portfolioCount} · Watchlist: {data.watchlistCount}</p></div>
+        <div className={panel}><h2 className="font-medium">Universo</h2><p className="mt-2 text-sm">Cartera: {data.portfolioCount} · Watchlist: {data.watchlistCount}</p><p className="mt-2 text-xs text-slate-400">Contexto persistente: {data.contextCount ? 'cargado' : 'pendiente'}</p></div>
         <div className={panel}><h2 className="font-medium">IA</h2><p className="mt-2 text-sm">{data.aiConfigured ? 'Configurada' : 'Sin configurar: el análisis puede ser parcial.'}</p></div>
         <div className={panel}><h2 className="font-medium">Newsletter</h2><p className="mt-2 text-sm">{data.newsletter.configured ? 'Configurada; recepción no confirmada por configuración.' : 'Sin configurar'}</p></div>
         <div className={`${panel} break-words`}><h2 className="font-medium">Programador</h2><p className="mt-2 text-sm">{!data.scheduler.enabled ? 'Deshabilitado' : freshHeartbeat ? 'Habilitado · señal reciente' : 'Habilitado · actividad no confirmada'}</p><p className="mt-2 text-xs text-slate-400">Última señal: {date(data.scheduler.lastHeartbeat)}<br />Horario configurado: {data.scheduler.schedule || 'No disponible'}<br />Señal reciente: últimos 5 minutos. No confirma ejecuciones futuras.</p></div>
