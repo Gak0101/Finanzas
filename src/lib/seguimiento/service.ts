@@ -141,6 +141,26 @@ async function readNewsletter() {
   } catch { return { subject: null, date: null, status: 'SVI RSS no accesible desde el VPS.' } }
 }
 
+type NewsItem = { title: string; url: string; date: string }
+
+function xmlValue(block: string, tag: string) {
+  return text(block.match(new RegExp(`<${tag}(?:[^>]*)>([\\s\\S]*?)<\\/${tag}>`, 'i'))?.[1])
+    .replace(/<!\[CDATA\[|\]\]>/g, '')
+    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+}
+
+async function readGeneralNews(symbol: string): Promise<NewsItem[]> {
+  const feedUrl = `https://feeds.finance.yahoo.com/rss/2.0/headline?s=${encodeURIComponent(symbol)}&region=US&lang=en-US`
+  try {
+    const response = await fetch(feedUrl, { cache: 'no-store', headers: { Accept: 'application/rss+xml,application/xml,text/xml' } })
+    if (!response.ok) return []
+    const xml = await response.text()
+    return [...xml.matchAll(/<item[\s\S]*?<\/item>/gi)].slice(0, 3).map(match => match[0]).map(block => ({
+      title: xmlValue(block, 'title'), url: safeUrl(xmlValue(block, 'link')) || '', date: xmlValue(block, 'pubDate'),
+    })).filter(item => item.title && item.url)
+  } catch { return [] }
+}
+
 function currentMarket() {
   const market = getMarketById('nasdaq-nyse')
   const snap = market ? getMarketSnapshot(market, new Date()) : null
@@ -149,6 +169,10 @@ function currentMarket() {
 
 async function buildReport(userId: number): Promise<FollowupReport> {
   const [candidates, newsletter] = await Promise.all([loadCandidates(userId), readNewsletter()])
+  // El precio se consulta para todo el universo; las noticias se limitan a las
+  // primeras 30 fichas ordenadas para mantener el worker ligero en el VPS.
+  const newsEntries = await Promise.all(candidates.slice(0, 30).map(async candidate => [candidate.symbol, await readGeneralNews(candidate.marketSymbol || candidate.symbol)] as const))
+  const newsBySymbol = new Map(newsEntries)
   const warnings: string[] = []
   if (candidates.length === 0) warnings.push('No hay filas de watchlist importadas ni posiciones para analizar. Importa el Excel maestro.')
   if (!newsletter.subject) warnings.push(newsletter.status)
@@ -165,13 +189,15 @@ async function buildReport(userId: number): Promise<FollowupReport> {
     // `price` es la conversión EUR que devuelve fetchYahooClose.
     const decision = triage(candidate.held, quote?.price ?? null, candidate.targetEur, stale)
     const primary = source(candidate.source.startsWith('http') ? '[OFICIAL EXTERNA]' : '[EXTERNA]', candidate.source, 'periodo del Excel no actualizado')
+    const news = newsBySymbol.get(candidate.symbol) || []
+    const newsSources = news.map(item => source('[EXTERNA] Noticias Yahoo', item.url)).filter(Boolean) as Source[]
     return {
       symbol: candidate.symbol, name: candidate.name, held: candidate.held, decision: decision.decision,
       reason: decision.reason, price: quote?.nativePrice ?? null, currency: quote?.nativeCurrency || null,
       priceEur: quote?.price ?? null, quoteAt: quote?.asOf || null, change: null,
-      nextReview: candidate.nextReview, sources: [primary, source('[EXTERNA] Cotización', quote?.sourceUrl || '')].filter(Boolean) as Source[],
+      nextReview: candidate.nextReview, sources: [primary, source('[EXTERNA] Cotización', quote?.sourceUrl || ''), ...newsSources].filter(Boolean) as Source[],
       rank: candidate.rank, rating: candidate.rating, thesis: candidate.thesis, risks: candidate.risks,
-      news: [], metrics: [],
+      news, metrics: [],
     } satisfies FollowupItem
   }))
   const complete = items.filter(item => item.price !== null).length

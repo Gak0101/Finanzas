@@ -11,6 +11,8 @@ const reportSchema = z.object({
     price: z.number().nullable(), currency: z.string().nullable(), priceEur: z.number().nullable(),
     quoteAt: z.string().nullable(), change: z.string().nullable(), nextReview: z.string().nullable(),
     sources: z.array(z.object({ label: z.string(), url: z.string(), period: z.string().optional() })),
+    rank: z.number().nullable(), rating: z.number().nullable(),
+    news: z.array(z.object({ title: z.string(), url: z.string(), date: z.string() })),
   })),
   warnings: z.array(z.string()),
   newsletter: z.object({ subject: z.string().nullable(), date: z.string().nullable(), status: z.string() }),
@@ -168,8 +170,9 @@ export function InvestmentFollowup() {
             {items.map((item, index) => <article key={`${item.symbol}-${index}`} className={`${panel} min-w-0 break-words`}>
               <div className="flex flex-wrap justify-between gap-2"><h3 className="font-semibold">{item.symbol} · {item.name}</h3><span className="text-xs text-slate-400">{item.held ? 'Cartera' : 'Watchlist'}</span></div>
               <p className="mt-3 font-medium text-[#c8f56a]">Decisión del informe: {item.decision || 'No disponible'}</p><p className="mt-2 whitespace-pre-wrap text-sm">{item.reason || 'Sin justificación disponible.'}</p>
-              <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-slate-400">Precio en origen</dt><dd>{price(item.price, item.currency)}</dd></div><div><dt className="text-slate-400">Precio EUR</dt><dd>{price(item.priceEur, 'EUR')}</dd></div><div><dt className="text-slate-400">Fecha de cotización</dt><dd>{date(item.quoteAt)}</dd></div><div><dt className="text-slate-400">Cambio comunicado</dt><dd>{item.change ?? 'No disponible'}</dd></div><div><dt className="text-slate-400">Próxima revisión / catalizador</dt><dd>{item.nextReview ?? 'No disponible'}</dd></div></dl>
+              <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-slate-400">Precio en origen</dt><dd>{price(item.price, item.currency)}</dd></div><div><dt className="text-slate-400">Precio EUR</dt><dd>{price(item.priceEur, 'EUR')}</dd></div><div><dt className="text-slate-400">Fecha de cotización</dt><dd>{date(item.quoteAt)}</dd></div><div><dt className="text-slate-400">Rating / orden del Excel</dt><dd>{item.rating ?? 'No disponible'} · {item.rank ?? 'No disponible'}</dd></div><div><dt className="text-slate-400">Cambio comunicado</dt><dd>{item.change ?? 'No disponible'}</dd></div><div><dt className="text-slate-400">Próxima revisión / catalizador</dt><dd>{item.nextReview ?? 'No disponible'}</dd></div></dl>
               <h4 className="mt-4 text-sm font-medium">Fuentes del informe</h4>{item.sources.length === 0 ? <p className="mt-1 text-xs text-amber-200">Sin fuentes aportadas.</p> : <ul className="mt-2 space-y-2 text-xs">{item.sources.map((source, sourceIndex) => { const href = safeUrl(source.url); return <li key={sourceIndex}>{href ? <a href={href} target="_blank" rel="noopener noreferrer" className="text-sky-300 underline underline-offset-4">{source.label || href}</a> : <span>{source.label || 'Fuente'} · enlace no seguro omitido</span>}{source.period ? ` · Periodo: ${source.period}` : ' · Periodo no indicado'}</li> })}</ul>}
+              {item.news.length > 0 && <><h4 className="mt-4 text-sm font-medium">Noticias recientes</h4><ul className="mt-2 space-y-2 text-xs">{item.news.map((news, newsIndex) => <li key={newsIndex}><a href={safeUrl(news.url) || '#'} target="_blank" rel="noopener noreferrer" className="text-sky-300 underline underline-offset-4">{news.title}</a>{news.date ? ` · ${news.date}` : ''}</li>)}</ul></>}
             </article>)}
             {report.analysis && <details className={panel}><summary className="cursor-pointer font-medium">Análisis completo</summary><p className="mt-4 whitespace-pre-wrap break-words text-sm leading-relaxed">{report.analysis}</p></details>}
           </>}
