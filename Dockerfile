@@ -57,6 +57,8 @@ COPY --from=builder --chown=nextjs:nodejs /app/src/lib/buscador-acciones/lynch-b
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/migrate.mjs ./scripts/migrate.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/seed.mjs ./scripts/seed.mjs
 COPY --from=builder --chown=nextjs:nodejs /app/scripts/start.sh ./scripts/start.sh
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/start-services.mjs ./scripts/start-services.mjs
+COPY --from=builder --chown=nextjs:nodejs /app/scripts/followup-scheduler.mjs ./scripts/followup-scheduler.mjs
 
 # migrate.mjs y seed.mjs necesitan Drizzle, better-sqlite3 y bcryptjs. Se copia
 # el árbol instalado para que el arranque y el servidor compartan las mismas

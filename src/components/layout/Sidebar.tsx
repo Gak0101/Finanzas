@@ -12,7 +12,7 @@ import {
   LogOut,
   PiggyBank,
   Settings,
-  Sparkles,
+  Clock3,
   Tag,
   TrendingUp,
   type LucideIcon,
@@ -36,7 +36,7 @@ const navItems: NavItem[] = [
     href: '/inversiones',
     label: 'Inversiones',
     icon: TrendingUp,
-    children: [{ href: '/inversiones?tab=buscador', label: 'Buscador IA', icon: Sparkles }],
+    children: [{ href: '/inversiones?tab=seguimiento', label: 'Seguimiento Lynch', icon: Clock3 }],
   },
   { href: '/ingresos', label: 'Ingresos', icon: DollarSign },
   { href: '/categorias', label: 'Categorías', icon: Tag },
@@ -52,7 +52,7 @@ function isPathActive(pathname: string, href: string) {
 export function Sidebar() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const finderActive = pathname === '/inversiones' && searchParams.get('tab') === 'buscador'
+  const finderActive = pathname === '/inversiones' && ['buscador', 'seguimiento'].includes(searchParams.get('tab') || '')
   const investmentsSectionActive = isPathActive(pathname, '/inversiones') || isPathActive(pathname, '/buscador-acciones')
 
   return (
@@ -99,7 +99,7 @@ export function Sidebar() {
                 <div className="ml-5 mt-1 border-l border-sidebar-border pl-3">
                   {item.children.map((child) => {
                     const ChildIcon = child.icon
-                    const childActive = child.href.includes('tab=buscador')
+                    const childActive = child.href.includes('tab=seguimiento')
                       ? finderActive || isPathActive(pathname, '/buscador-acciones')
                       : isPathActive(pathname, child.href)
                     return (

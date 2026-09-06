@@ -352,6 +352,23 @@ export const inversiones_movimientos_efectivo = sqliteTable(
 )
 
 // ─── RELACIONES ──────────────────────────────────────────────────────────────
+export const inversiones_seguimiento_runs = sqliteTable('inversiones_seguimiento_runs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  usuario_id: integer('usuario_id').notNull().references(() => usuarios.id),
+  run_key: text('run_key').notNull(),
+  slot: text('slot').notNull(),
+  status: text('status').notNull(),
+  started_at: text('started_at').notNull(),
+  finished_at: text('finished_at'),
+  report: text('report'),
+  error: text('error'),
+}, (t) => [uniqueIndex('unique_seguimiento_run').on(t.usuario_id, t.run_key)])
+
+export const inversiones_seguimiento_estado = sqliteTable('inversiones_seguimiento_estado', {
+  usuario_id: integer('usuario_id').primaryKey().references(() => usuarios.id),
+  heartbeat_at: text('heartbeat_at').notNull(),
+})
+
 export const usuariosRelations = relations(usuarios, ({ many, one }) => ({
   categorias: many(categorias),
   registros_mensuales: many(registros_mensuales),

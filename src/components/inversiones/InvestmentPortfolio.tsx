@@ -43,7 +43,7 @@ import type { ClosedInvestmentPosition } from '@/lib/inversiones/history'
 import { calculateClosedInvestmentPositions } from '@/lib/inversiones/history'
 import { calculateInvestmentAnalytics, type InvestmentAnalytics } from '@/lib/inversiones/analytics'
 import type { InvestmentCashSnapshot } from '@/lib/inversiones/cash'
-import { StockFinder } from '@/components/buscador-acciones/StockFinder'
+import { InvestmentFollowup } from '@/components/inversiones/InvestmentFollowup'
 import { InvestmentAnalyticsPanel } from '@/components/inversiones/InvestmentAnalyticsPanel'
 import { MarketHoursPanel } from '@/components/inversiones/MarketHoursPanel'
 import { InvestmentNotificationAlerts } from '@/components/inversiones/InvestmentNotificationAlerts'
@@ -77,7 +77,7 @@ type PortfolioData = {
 type OperationType = 'Compra' | 'Venta' | 'Dividendo' | 'Aportación' | 'Traspaso'
 type InvestmentFundingSource = 'saldo_existente' | 'capital_nuevo'
 type ActivityFilter = 'all' | 'Venta' | 'Compra' | 'income'
-type InvestmentTab = 'portfolio' | 'buscador'
+type InvestmentTab = 'portfolio' | 'seguimiento'
 type OperationAssetSearchResult = {
   key: string
   activo: string
@@ -267,11 +267,11 @@ function InvestmentTabs({ activeTab, onChange }: { activeTab: InvestmentTab; onC
       <button
         type="button"
         role="tab"
-        aria-selected={activeTab === 'buscador'}
-        onClick={() => onChange('buscador')}
-        className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition ${activeTab === 'buscador' ? 'bg-[#c8f56a] text-[#172016] shadow-[0_8px_20px_rgba(200,245,106,.12)]' : 'text-slate-400 hover:bg-white/10 hover:text-slate-100'}`}
+        aria-selected={activeTab === 'seguimiento'}
+        onClick={() => onChange('seguimiento')}
+        className={`inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-xs font-semibold transition ${activeTab === 'seguimiento' ? 'bg-[#c8f56a] text-[#172016] shadow-[0_8px_20px_rgba(200,245,106,.12)]' : 'text-slate-400 hover:bg-white/10 hover:text-slate-100'}`}
       >
-        <Search className="h-3.5 w-3.5" /> Buscar acciones IA
+        <Clock3 className="h-3.5 w-3.5" /> Seguimiento Lynch
       </button>
     </nav>
   )
@@ -296,7 +296,7 @@ function InvestmentFrame({
         <header className="flex flex-col gap-5 border-b border-white/10 pb-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <span>Finanzas</span><span className="text-slate-600">/</span><span>Inversiones</span>
-            {activeTab === 'buscador' && <><span className="text-slate-600">/</span><span className="font-medium text-slate-100">Buscar acciones</span></>}
+            {activeTab === 'seguimiento' && <><span className="text-slate-600">/</span><span className="font-medium text-slate-100">Seguimiento Lynch</span></>}
           </div>
           <div className="flex items-center gap-3 text-xs text-slate-400">
             <span className="hidden items-center gap-2 sm:inline-flex"><span className="h-1.5 w-1.5 rounded-full bg-[#c8f56a]" />{statusLabel}</span>
@@ -672,10 +672,10 @@ function InvestmentPortfolioContent() {
   const [impuesto, setImpuesto] = useState('')
   const [operationCurrency, setOperationCurrency] = useState('EUR')
   const [detailPositionId, setDetailPositionId] = useState<number | null>(null)
-  const activeTab: InvestmentTab = searchParams.get('tab') === 'buscador' ? 'buscador' : 'portfolio'
+  const activeTab: InvestmentTab = ['buscador', 'seguimiento'].includes(searchParams.get('tab') || '') ? 'seguimiento' : 'portfolio'
 
   function cambiarPestana(tab: InvestmentTab) {
-    router.replace(tab === 'buscador' ? '/inversiones?tab=buscador' : '/inversiones', { scroll: true })
+    router.replace(tab === 'seguimiento' ? '/inversiones?tab=seguimiento' : '/inversiones', { scroll: true })
   }
 
   function crearDemoPortfolio() {
@@ -1484,10 +1484,10 @@ function InvestmentPortfolioContent() {
     toast.success('Historial exportado')
   }
 
-  if (activeTab === 'buscador') {
+  if (activeTab === 'seguimiento') {
     return (
       <InvestmentFrame activeTab={activeTab} onChange={cambiarPestana} statusLabel="Investigación integrada">
-        <StockFinder embedded />
+        <InvestmentFollowup />
       </InvestmentFrame>
     )
   }

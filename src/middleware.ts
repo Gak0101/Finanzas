@@ -17,6 +17,7 @@ export default function middleware(request: NextRequest, event: NextFetchEvent) 
     '/api/automatizaciones/inversiones/alertas',
     '/api/automatizaciones/inversiones/alertas/confirmar',
     '/api/automatizaciones/inversiones/whatsapp',
+    '/api/automatizaciones/inversiones/seguimiento',
   ]
   if (automationPaths.some((path) => request.nextUrl.pathname === path || request.nextUrl.pathname === `${path}/`)) {
     return NextResponse.next()

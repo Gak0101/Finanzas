@@ -206,6 +206,34 @@ El arranque crea el directorio si hace falta, corrige sus permisos para el usuar
 de la aplicación y ejecuta las migraciones antes de iniciar Next.js. Esto preserva
 la base de datos SQLite entre reinicios/redeploys y permite hacer backups desde Coolify.
 
+### Seguimiento Lynch en VPS
+
+La pestaña **Seguimiento Lynch** sustituye al antiguo buscador de acciones para
+el flujo diario. Permite importar el Excel maestro, conserva los informes en
+SQLite y muestra el último precio disponible, decisión de seguimiento, fuentes,
+riesgos y siguiente revisión. Las cifras del Excel se tratan como contexto: los
+precios que deciden el umbral se vuelven a consultar y se muestran en EUR cuando
+es posible.
+
+Para activar el worker dentro del contenedor de Coolify configura además:
+
+| Variable | Valor |
+|----------|-------|
+| `SEGUIMIENTO_ENABLED` | `true` |
+| `AUTOMATION_SECRET` | Secreto largo y aleatorio, solo en variables privadas |
+| `AUTOMATION_USER_ID` | ID del usuario propietario de la cartera |
+| `SVI_NEWSLETTER_URL` | Feed RSS de la newsletter que quieras vigilar |
+
+El worker envía un heartbeat local cada 30 segundos y el backend decide las
+ventanas de las 08:00 y las 14:00 en `Europe/Madrid`, con deduplicación por día y
+ventana. El feed RSS de SVI es una fuente secundaria; no equivale a leer Gmail.
+Las fuentes externas y las limitaciones quedan visibles en cada informe.
+
+Después del despliegue, abre `/inversiones?tab=seguimiento`, importa el Excel
+maestro y ejecuta un informe manual para comprobar la persistencia. El volumen
+`/app/data` es obligatorio para conservar tanto la cartera como el historial de
+seguimiento.
+
 Configura el puerto de la aplicación en Coolify como `3000`. El proxy de Coolify
 debe apuntar al puerto interno del contenedor.
 

@@ -8,7 +8,7 @@ import {
   LayoutDashboard,
   PiggyBank,
   Settings,
-  Sparkles,
+  Clock3,
   Tag,
   TrendingUp,
   type LucideIcon,
@@ -38,7 +38,7 @@ function isPathActive(pathname: string, href: string) {
 export function MobileNav() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const finderActive = pathname === '/inversiones' && searchParams.get('tab') === 'buscador'
+  const finderActive = pathname === '/inversiones' && ['buscador', 'seguimiento'].includes(searchParams.get('tab') || '')
   const investmentsSectionActive = isPathActive(pathname, '/inversiones') || isPathActive(pathname, '/buscador-acciones')
 
   return (
@@ -73,15 +73,15 @@ export function MobileNav() {
         {investmentsSectionActive && (
           <div className="border-t border-sidebar-border/70 py-1.5">
             <Link
-              href="/inversiones?tab=buscador"
+              href="/inversiones?tab=seguimiento"
               aria-current={finderActive || isPathActive(pathname, '/buscador-acciones') ? 'page' : undefined}
               className={cn(
                 'mx-auto flex w-fit items-center gap-2 rounded-md px-3 py-1.5 text-[11px] font-semibold transition-colors focus-visible:outline-none',
                 finderActive || isPathActive(pathname, '/buscador-acciones') ? 'bg-secondary text-primary' : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground'
               )}
             >
-              <Sparkles className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
-              Buscador IA de acciones
+              <Clock3 className="size-3.5" strokeWidth={1.8} aria-hidden="true" />
+              Seguimiento Lynch
             </Link>
           </div>
         )}

@@ -37,4 +37,4 @@ if [ -n "${ADMIN_USER:-}" ] || [ -n "${ADMIN_PASSWORD:-}" ]; then
 fi
 
 echo "Starting Next.js server..."
-exec su-exec nextjs node /app/server.js
+exec su-exec nextjs node /app/scripts/start-services.mjs
