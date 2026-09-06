@@ -14,6 +14,11 @@ services:
       NEXT_TELEMETRY_DISABLED: "1"
       ADMIN_USER: ${ADMIN_USER:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      SEGUIMIENTO_ENABLED: ${SEGUIMIENTO_ENABLED:-false}
+      SEGUIMIENTO_WHATSAPP_ENABLED: ${SEGUIMIENTO_WHATSAPP_ENABLED:-false}
+      AUTOMATION_SECRET: ${AUTOMATION_SECRET:-}
+      AUTOMATION_USER_ID: ${AUTOMATION_USER_ID:-}
+      SVI_NEWSLETTER_URL: ${SVI_NEWSLETTER_URL:-https://svinvesting.substack.com/feed}
     volumes:
       # CRÍTICO: persiste SQLite entre reinicios y redeploys.
       - finanzas_data:/app/data

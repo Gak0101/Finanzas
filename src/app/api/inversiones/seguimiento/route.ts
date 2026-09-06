@@ -22,9 +22,11 @@ export async function GET() {
   return NextResponse.json({ runs, watchlistCount: candidates.filter(candidate => !candidate.held).length, portfolioCount: positions.length, contextCount: context.length ? 1 : 0, newsletter: { configured: true }, scheduler, aiConfigured: Boolean(ai) })
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   const auth = await getAuthenticatedUserId()
   if (isNextResponse(auth)) return auth
+  const body = await request.json().catch(() => null) as { command?: unknown } | null
+  const command = typeof body?.command === 'string' ? body.command.trim().slice(0, 160) : null
   const run = await createRun(auth.userId)
-  return NextResponse.json({ runId: run.id, status: run.status }, { status: 202 })
+  return NextResponse.json({ runId: run.id, status: run.status, command }, { status: 202 })
 }

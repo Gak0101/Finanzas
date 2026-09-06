@@ -17,5 +17,6 @@ export type FollowupReport = {
   summary: string; items: FollowupItem[]; warnings: string[];
   newsletter: { subject: string | null; date: string | null; status: string };
   lynchContext: { mode: 'indexed' | 'fallback'; pages: number[]; source: string };
+  whatsapp?: { enabled: boolean; status: 'sent' | 'skipped' | 'failed'; messageId?: string | null; warning?: string };
   analysis: string | null;
 }

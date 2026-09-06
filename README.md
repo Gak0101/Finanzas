@@ -227,6 +227,7 @@ Para activar el worker dentro del contenedor de Coolify configura además:
 | Variable | Valor |
 |----------|-------|
 | `SEGUIMIENTO_ENABLED` | `true` |
+| `SEGUIMIENTO_WHATSAPP_ENABLED` | `true` para enviar el resumen de cada seguimiento al WhatsApp ya configurado en Finanzas |
 | `AUTOMATION_SECRET` | Secreto largo y aleatorio, solo en variables privadas |
 | `AUTOMATION_USER_ID` | ID del usuario propietario de la cartera |
 | `SVI_NEWSLETTER_URL` | Feed RSS de la newsletter que quieras vigilar |

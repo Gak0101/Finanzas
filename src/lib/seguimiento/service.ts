@@ -13,6 +13,7 @@ import { getMarketById, getMarketSnapshot } from '@/lib/mercados/horarios'
 import { getAiCredentials } from '@/lib/ai/provider-config'
 import { buildOpenRouterModelChain, normalizeOpenRouterFreeModel } from '@/lib/ai/model-routing'
 import { getLynchBookContext } from '@/lib/buscador-acciones/lynchBook'
+import { sendWhatsAppMessage, WhatsAppDeliveryError } from '@/lib/inversiones/whatsappDelivery'
 import { madridSlot, safeUrl, triage } from '@/lib/seguimiento/policy'
 import type { Candidate, FollowupItem, FollowupReport, Source } from '@/lib/seguimiento/types'
 
@@ -330,6 +331,29 @@ async function buildReport(userId: number): Promise<FollowupReport> {
   }
 }
 
+function followupWhatsAppEnabled() {
+  return process.env.SEGUIMIENTO_WHATSAPP_ENABLED === 'true'
+}
+
+function followupWhatsAppText(report: FollowupReport) {
+  const lines = [
+    '📊 Seguimiento Lynch · Finanzas',
+    `Corte: ${report.asOf}`,
+    report.market.status ? `Mercado: ${report.market.status}` : '',
+    report.summary,
+    '',
+    'Watchlist y cartera que requieren atención:',
+    ...report.items
+      .filter(item => item.decision === 'revisar-entrada' || item.decision === 'revisar-posicion')
+      .slice(0, 10)
+      .map(item => `${item.symbol} · ${item.decision} · ${item.priceEur === null ? 'precio no disponible' : `${item.priceEur.toFixed(2)} EUR`}`),
+    report.newsletter.subject ? `Newsletter SVI: ${report.newsletter.subject}` : 'Newsletter SVI: sin entrada legible',
+    '',
+    'Este aviso informa del seguimiento; no ejecuta órdenes. Verifica fuentes primarias antes de invertir.',
+  ].filter(Boolean)
+  return lines.join('\n').slice(0, 4000)
+}
+
 export async function createRun(userId: number, requestedSlot?: string) {
   const now = new Date()
   const slotInfo = madridSlot(now)
@@ -345,6 +369,19 @@ export async function createRun(userId: number, requestedSlot?: string) {
 export async function executeRun(runId: number, userId: number) {
   try {
     const report = await buildReport(userId)
+    if (followupWhatsAppEnabled()) {
+      try {
+        const delivery = await sendWhatsAppMessage(userId, followupWhatsAppText(report))
+        report.whatsapp = { enabled: true, status: 'sent', messageId: delivery.messageId, warning: delivery.warning }
+        if (delivery.warning) report.warnings.push(`WhatsApp: ${delivery.warning}`)
+      } catch (error) {
+        const message = error instanceof WhatsAppDeliveryError ? error.message : 'No se pudo enviar el aviso de WhatsApp.'
+        report.whatsapp = { enabled: true, status: 'failed', warning: message }
+        report.warnings.push(`WhatsApp no enviado: ${message}`)
+      }
+    } else {
+      report.whatsapp = { enabled: false, status: 'skipped', warning: 'Avisos de seguimiento por WhatsApp desactivados en el entorno.' }
+    }
     await db.update(inversiones_seguimiento_runs).set({ status: report.warnings.some(warning => /no disponible|no accesible|No hay/i.test(warning)) ? 'partial' : 'complete', finished_at: new Date().toISOString(), report: JSON.stringify(report), error: null }).where(and(eq(inversiones_seguimiento_runs.id, runId), eq(inversiones_seguimiento_runs.usuario_id, userId)))
   } catch (error) {
     await db.update(inversiones_seguimiento_runs).set({ status: 'failed', finished_at: new Date().toISOString(), error: error instanceof Error ? error.message : 'Error desconocido' }).where(and(eq(inversiones_seguimiento_runs.id, runId), eq(inversiones_seguimiento_runs.usuario_id, userId)))

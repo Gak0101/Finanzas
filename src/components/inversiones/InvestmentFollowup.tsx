@@ -17,6 +17,7 @@ const reportSchema = z.object({
   warnings: z.array(z.string()),
   newsletter: z.object({ subject: z.string().nullable(), date: z.string().nullable(), status: z.string() }),
   lynchContext: z.object({ mode: z.enum(['indexed', 'fallback']), pages: z.array(z.number()), source: z.string() }),
+  whatsapp: z.object({ enabled: z.boolean(), status: z.enum(['sent', 'skipped', 'failed']), messageId: z.string().nullable().optional(), warning: z.string().optional() }).optional(),
   analysis: z.string().nullable(),
 })
 const runSchema = z.object({
@@ -70,6 +71,7 @@ export function InvestmentFollowup() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [filter, setFilter] = useState('all')
   const [file, setFile] = useState<File | null>(null)
+  const [command, setCommand] = useState('')
   const [now, setNow] = useState(0)
   const busy = useRef(false)
   const controller = useRef<AbortController | null>(null)
@@ -104,7 +106,7 @@ export function InvestmentFollowup() {
     return () => clearInterval(timer)
   }, [])
 
-  async function execute(kind: 'run' | 'import') {
+  async function execute(kind: 'run' | 'import', requestedCommand?: string) {
     if (busy.current || running) return
     if (kind === 'import' && (!file || !/\.xlsx$/i.test(file.name))) {
       setActionError('Selecciona un archivo Excel .xlsx.'); return
@@ -113,10 +115,15 @@ export function InvestmentFollowup() {
     setAction(kind); setActionError(null); setNotice(null)
     try {
       if (kind === 'run') {
-        const result = z.object({ runId: z.number().int() }).safeParse(await request(endpoint, { method: 'POST' }))
+        const result = z.object({ runId: z.number().int() }).safeParse(await request(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: requestedCommand?.trim() || null }),
+        }))
         if (!result.success) throw new Error('Respuesta de ejecución inválida. Actualiza el estado antes de reintentar.')
         setPendingId(result.data.runId); setSelectedId(result.data.runId)
-        setNotice(`Ejecución #${result.data.runId} aceptada. Esperando estado del servidor.`)
+        setNotice(`${requestedCommand?.trim() ? `Orden recibida: «${requestedCommand.trim()}». ` : ''}Ejecución #${result.data.runId} aceptada. Esperando estado del servidor.`)
+        setCommand('')
       } else {
         const body = new FormData(); body.append('file', file!)
         const result = z.object({ count: z.number().int().nonnegative() }).safeParse(await request(`${endpoint}/import`, { method: 'POST', body }))
@@ -150,6 +157,11 @@ export function InvestmentFollowup() {
       {actionError && <p role="alert" className="text-sm text-red-200">{actionError}</p>}
       {notice && <p role="status" className="text-sm text-slate-300">{notice}</p>}
       {running && <div className={`${panel} border-amber-300/30`}><p role="status">{activeRun ? `Ejecución #${activeRun.id} en curso` : `Esperando confirmación de #${pendingId}`} {elapsed !== null && Number.isFinite(elapsed) ? `· ${Math.floor(elapsed / 60)} min ${elapsed % 60} s` : ''}</p><p className="mt-2 text-sm text-slate-400">Consulta cada 3 segundos. El trabajo se ejecuta en el servidor; cerrar esta vista no lo cancela.</p></div>}
+      <form className={`${panel} border-[#c8f56a]/30`} onSubmit={event => { event.preventDefault(); if (!command.trim()) { setActionError('Escribe una orden, por ejemplo: «actualizamos las noticias».'); return } void execute('run', command) }}>
+        <label htmlFor="lynch-command" className="font-medium">Orden rápida desde móvil</label>
+        <p className="mt-1 text-xs text-slate-400">Puedes escribirla en lenguaje natural. Solo inicia el seguimiento; no ejecuta compras ni ventas.</p>
+        <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center"><input id="lynch-command" value={command} onChange={event => { setCommand(event.target.value); setActionError(null) }} placeholder="actualizamos las noticias" disabled={action !== null || running || !data || Boolean(loadError)} className="min-h-11 min-w-0 flex-1 rounded-lg border border-white/20 bg-[#0f141d] px-3 text-sm text-white placeholder:text-slate-500 focus:border-[#c8f56a] focus:outline-none" /><button className={`${button} bg-[#c8f56a] text-[#172016] hover:bg-[#b8e55a]`} disabled={!command.trim() || action !== null || running || !data || Boolean(loadError)} type="submit">{action === 'run' ? 'Solicitando…' : 'Actualizar noticias'}</button></div>
+      </form>
       {data && <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className={panel}><h2 className="font-medium">Universo</h2><p className="mt-2 text-sm">Cartera: {data.portfolioCount} · Watchlist: {data.watchlistCount}</p><p className="mt-2 text-xs text-slate-400">Contexto persistente: {data.contextCount ? 'cargado' : 'pendiente'}</p></div>
         <div className={panel}><h2 className="font-medium">IA</h2><p className="mt-2 text-sm">{data.aiConfigured ? 'Configurada' : 'Sin configurar: el análisis puede ser parcial.'}</p></div>
@@ -165,7 +177,7 @@ export function InvestmentFollowup() {
         <div className="min-w-0 space-y-4">
           {!selected ? <p className={panel}>{pendingId ? 'Esperando que el servidor publique la ejecución solicitada.' : 'Ejecuta un seguimiento para consultar el primer informe.'}</p> : <div className={panel}><h2 className="font-semibold">Ejecución #{selected.id} · {statusLabels[selected.status]}</h2><p className="mt-2 text-xs text-slate-400">Inicio: {date(selected.startedAt)} · Fin: {date(selected.finishedAt)}</p>{selected.error && <p role="alert" className="mt-3 whitespace-pre-wrap break-words text-sm text-red-200">{selected.error}</p>}{selected.status === 'partial' && <p className="mt-3 text-sm text-amber-200">Informe parcial: revisa los avisos y los datos ausentes antes de tomar decisiones.</p>}{!report && <p className="mt-3 text-sm text-slate-400">{selected.status === 'running' ? 'El informe aún no está disponible.' : 'Esta ejecución no tiene informe.'}</p>}</div>}
           {report && <>
-            <div className={panel}><h2 className="font-semibold">Resumen · corte {date(report.asOf)}</h2><p className="mt-2 text-sm text-slate-400">Mercado: {report.market.status} · Próxima apertura: {date(report.market.nextOpen)}</p><p className="mt-3 whitespace-pre-wrap break-words text-sm">{report.summary || 'Sin resumen disponible.'}</p><p className="mt-3 text-xs text-slate-400">Newsletter: {report.newsletter.status} · {report.newsletter.subject || 'Sin asunto'} · {date(report.newsletter.date)}</p><p className="mt-2 text-xs text-slate-400">Contexto Lynch: {report.lynchContext.mode === 'indexed' ? `páginas ${report.lynchContext.pages.join(', ')}` : 'respaldo resumido'} · fuente local incluida en el despliegue.</p></div>
+            <div className={panel}><h2 className="font-semibold">Resumen · corte {date(report.asOf)}</h2><p className="mt-2 text-sm text-slate-400">Mercado: {report.market.status} · Próxima apertura: {date(report.market.nextOpen)}</p><p className="mt-3 whitespace-pre-wrap break-words text-sm">{report.summary || 'Sin resumen disponible.'}</p><p className="mt-3 text-xs text-slate-400">Newsletter: {report.newsletter.status} · {report.newsletter.subject || 'Sin asunto'} · {date(report.newsletter.date)}</p><p className="mt-2 text-xs text-slate-400">Contexto Lynch: {report.lynchContext.mode === 'indexed' ? `páginas ${report.lynchContext.pages.join(', ')}` : 'respaldo resumido'} · fuente local incluida en el despliegue.</p>{report.whatsapp && <p className={`mt-2 text-xs ${report.whatsapp.status === 'sent' ? 'text-emerald-300' : report.whatsapp.status === 'failed' ? 'text-red-300' : 'text-slate-400'}`}>WhatsApp: {report.whatsapp.status === 'sent' ? 'aviso aceptado' : report.whatsapp.status === 'failed' ? `no enviado · ${report.whatsapp.warning || 'revisar configuración'}` : report.whatsapp.warning || 'desactivado'}</p>}</div>
             {report.warnings.length > 0 && <div className={`${panel} border-amber-300/30 text-amber-100`}><h3 className="font-medium">Avisos del informe</h3><ul className="mt-2 list-disc space-y-2 pl-5 text-sm">{report.warnings.map((warning, index) => <li className="whitespace-pre-wrap break-words" key={index}>{warning}</li>)}</ul></div>}
             <div className="flex flex-wrap items-center justify-between gap-3"><label className="text-sm" htmlFor="lynch-filter">Mostrar <select id="lynch-filter" value={filter} onChange={event => setFilter(event.target.value)} className="ml-2 min-h-11 rounded-lg border border-white/20 bg-[#151b25] px-3"><option value="all">Todos</option><option value="portfolio">Cartera</option><option value="watchlist">Watchlist</option></select></label><span className="text-sm text-slate-400">{items.length} de {report.items.length} activos del informe</span></div>
             {items.length === 0 && <p className={panel}>No hay activos para este filtro en el informe.</p>}
