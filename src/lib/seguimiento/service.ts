@@ -10,6 +10,9 @@ import {
 } from '@/lib/db/schema'
 import { fetchYahooClose } from '@/lib/inversiones/marketData'
 import { getMarketById, getMarketSnapshot } from '@/lib/mercados/horarios'
+import { getAiCredentials } from '@/lib/ai/provider-config'
+import { buildOpenRouterModelChain, normalizeOpenRouterFreeModel } from '@/lib/ai/model-routing'
+import { getLynchBookContext } from '@/lib/buscador-acciones/lynchBook'
 import { madridSlot, safeUrl, triage } from '@/lib/seguimiento/policy'
 import type { Candidate, FollowupItem, FollowupReport, Source } from '@/lib/seguimiento/types'
 
@@ -200,8 +203,89 @@ function currentMarket() {
   return { status: snap?.statusLabel || 'No disponible', nextOpen: snap?.nextEventAt?.toISOString() || null }
 }
 
+function chatCompletionsUrl(configured: string, fallback: string) {
+  const base = (configured || fallback).replace(/\/+$/, '')
+  return base.endsWith('/v1') ? `${base}/chat/completions` : `${base}/v1/chat/completions`
+}
+
+function outputText(payload: unknown) {
+  if (!payload || typeof payload !== 'object') return null
+  const choices = (payload as { choices?: unknown }).choices
+  if (!Array.isArray(choices)) return null
+  for (const choice of choices) {
+    if (!choice || typeof choice !== 'object') continue
+    const content = (choice as { message?: { content?: unknown } }).message?.content
+    if (typeof content === 'string' && content.trim()) return content.trim()
+  }
+  return null
+}
+
+async function generateLynchAnalysis(
+  userId: number,
+  items: FollowupItem[],
+  newsletter: Awaited<ReturnType<typeof readNewsletter>>,
+  lynchContext: Awaited<ReturnType<typeof getLynchBookContext>>,
+) {
+  const credentials = await getAiCredentials(userId)
+  if (!credentials) return null
+
+  const configuredModel = credentials.provider === 'openrouter'
+    ? normalizeOpenRouterFreeModel(credentials.models.portfolioAnalysis)
+    : credentials.models.portfolioAnalysis
+  const models = credentials.provider === 'openrouter' ? buildOpenRouterModelChain(configuredModel) : [configuredModel]
+  const focusItems = items.slice(0, 30).map(item => ({
+    ticker: item.symbol, empresa: item.name, cartera: item.held, decision: item.decision,
+    precioOrigen: item.price, divisa: item.currency, precioEur: item.priceEur,
+    ratingExcel: item.rating, ordenExcel: item.rank, tesis: item.thesis, riesgos: item.risks,
+    siguienteRevision: item.nextReview, noticias: item.news,
+    fuentes: item.sources.map(itemSource => itemSource.url),
+  }))
+  const system = `Eres el analista diario de una cartera y watchlist siguiendo un marco inspirado en Peter Lynch.
+Usa el contexto interno indexado como criterio de razonamiento, pero no cites ni reproduzcas el libro literalmente.
+Los datos actuales solo pueden proceder del contexto JSON recibido: Excel, cotizaciones, SVI y fuentes externas.
+Separa hechos, cálculos e interpretación. Marca mentalmente las fuentes como [SVI], [OFICIAL EXTERNA], [EXTERNA] o [CALCULADO].
+No inventes resultados, fechas, múltiplos ni noticias. No emitas órdenes automáticas de compra o venta.
+Redacta en español y termina cada idea accionable con el dato que hay que revisar después.
+Devuelve texto breve con estas secciones: Lectura Lynch; Noticias y cambios; Cartera; Watchlist; Próximos controles.`
+  const user = JSON.stringify({
+    fecha: new Date().toISOString(), mercado: currentMarket(),
+    newsletter: { asunto: newsletter.subject, fecha: newsletter.date, estado: newsletter.status },
+    contextoLynch: { modo: lynchContext.mode, paginas: lynchContext.pages, extractos: lynchContext.text },
+    valores: focusItems,
+  })
+  const endpoint = chatCompletionsUrl(
+    credentials.provider === 'openrouter' ? process.env.OPENROUTER_BASE_URL ?? '' : process.env.OPENAI_BASE_URL ?? process.env.OPENAI_API_BASE ?? '',
+    credentials.provider === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://api.openai.com/v1',
+  )
+
+  for (const model of models) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${credentials.apiKey}`,
+          'Content-Type': 'application/json',
+          ...(credentials.provider === 'openrouter' ? {
+            'HTTP-Referer': process.env.OPENROUTER_SITE_URL ?? process.env.NEXTAUTH_URL ?? 'http://localhost:3000',
+            'X-OpenRouter-Title': process.env.OPENROUTER_APP_NAME ?? 'Finanzas · Seguimiento Lynch',
+          } : {}),
+        },
+        body: JSON.stringify({ model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], max_tokens: 2200 }),
+        cache: 'no-store', signal: AbortSignal.timeout(35_000),
+      })
+      if (!response.ok) continue
+      const text = outputText(await response.json().catch(() => null))
+      if (text) return { text, provider: `${credentials.provider} · ${model}` }
+    } catch {
+      // El informe determinista se conserva si el proveedor no responde.
+    }
+  }
+  return null
+}
+
 async function buildReport(userId: number): Promise<FollowupReport> {
   const [candidates, newsletter] = await Promise.all([loadCandidates(userId), readNewsletter()])
+  const lynchContext = await getLynchBookContext('seguimiento diario cartera beneficios ventas caja deuda flujo de caja valoracion PER vender noticias')
   // El precio se consulta para todo el universo; las noticias se limitan a las
   // primeras 30 fichas ordenadas para mantener el worker ligero en el VPS.
   const newsEntries = await Promise.all(candidates.slice(0, 30).map(async candidate => [candidate.symbol, await readGeneralNews(candidate.marketSymbol || candidate.symbol)] as const))
@@ -235,11 +319,14 @@ async function buildReport(userId: number): Promise<FollowupReport> {
   }))
   const complete = items.filter(item => item.price !== null).length
   if (complete < items.length) warnings.push(`${items.length - complete} activos no tienen cotización verificable. Lee los avisos antes de decidir.`)
+  const aiAnalysis = await generateLynchAnalysis(userId, items, newsletter, lynchContext)
+  if (!aiAnalysis) warnings.push('No se generó análisis LLM; se conserva el seguimiento determinista y el contexto Lynch indexado.')
   return {
     asOf: new Date().toISOString(), market: currentMarket(),
-    summary: `Seguimiento de ${items.length} activos: ${items.filter(item => item.decision === 'revisar-entrada').length} en umbral, ${items.filter(item => item.decision === 'revisar-posicion').length} posiciones y ${items.filter(item => item.decision === 'esperar').length} en espera. No es una orden de compra ni sustituye verificar la tesis con fuentes primarias.`,
+    summary: `Seguimiento de ${items.length} activos: ${items.filter(item => item.decision === 'revisar-entrada').length} en umbral, ${items.filter(item => item.decision === 'revisar-posicion').length} posiciones y ${items.filter(item => item.decision === 'esperar').length} en espera. Contexto Lynch ${lynchContext.mode === 'indexed' ? 'indexado' : 'de respaldo'}; no es una orden de compra ni sustituye verificar la tesis con fuentes primarias.`,
     items, warnings, newsletter: { subject: newsletter.subject, date: newsletter.date, status: newsletter.status },
-    analysis: `Corte ${new Date().toISOString()}. Fuente principal de precio: Yahoo Finance cuando devuelve cotización. Excel y SVI aportan contexto pendiente de contraste.`,
+    lynchContext: { mode: lynchContext.mode, pages: lynchContext.pages, source: 'src/lib/buscador-acciones/lynch-book.md + lynch-book-index.json' },
+    analysis: `${aiAnalysis ? `Modelo ${aiAnalysis.provider}:\n${aiAnalysis.text}\n\n` : ''}Corte ${new Date().toISOString()}. Fuente principal de precio: Yahoo Finance cuando devuelve cotización. Excel, SVI y noticias externas aportan contexto pendiente de contraste.`,
   }
 }
 

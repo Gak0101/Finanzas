@@ -16,5 +16,6 @@ export type FollowupReport = {
   asOf: string; market: { status: string; nextOpen: string | null };
   summary: string; items: FollowupItem[]; warnings: string[];
   newsletter: { subject: string | null; date: string | null; status: string };
+  lynchContext: { mode: 'indexed' | 'fallback'; pages: number[]; source: string };
   analysis: string | null;
 }

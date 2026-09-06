@@ -215,6 +215,13 @@ riesgos y siguiente revisión. Las cifras del Excel se tratan como contexto: los
 precios que deciden el umbral se vuelven a consultar y se muestran en EUR cuando
 es posible.
 
+El informe diario reutiliza `lynchBook.ts`, que valida y selecciona extractos de
+`lynch-book.md` mediante `lynch-book-index.json`. Si hay un proveedor IA
+configurado, esos extractos se envían junto con el Excel, la newsletter, las
+cotizaciones y las noticias para redactar la lectura diaria. Si el proveedor no
+responde, se conserva el informe determinista y se muestra el aviso; no se
+rellenan datos ausentes.
+
 Para activar el worker dentro del contenedor de Coolify configura además:
 
 | Variable | Valor |
