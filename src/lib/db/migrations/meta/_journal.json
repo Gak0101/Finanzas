@@ -169,6 +169,13 @@
       "when": 1788725412223,
       "tag": "0023_handy_the_professor",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1788731378077,
+      "tag": "0024_lazy_maverick",
+      "breakpoints": true
     }
   ]
 }

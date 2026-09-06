@@ -14,12 +14,22 @@ import { getAiCredentials } from '@/lib/ai/provider-config'
 import { buildOpenRouterModelChain, normalizeOpenRouterFreeModel } from '@/lib/ai/model-routing'
 import { getLynchBookContext } from '@/lib/buscador-acciones/lynchBook'
 import { sendWhatsAppMessage, WhatsAppDeliveryError } from '@/lib/inversiones/whatsappDelivery'
-import { madridSlot, safeUrl, triage } from '@/lib/seguimiento/policy'
-import type { Candidate, FollowupItem, FollowupReport, Source } from '@/lib/seguimiento/types'
+import { safeUrl, triage, configuredSlot, madridSlot } from '@/lib/seguimiento/policy'
+import type { Candidate, FollowupItem, FollowupReport, FollowupScheduleConfig, Source } from '@/lib/seguimiento/types'
 
 const MASTER_SHEET = 'Maestro_Lynch'
+const WATCHLIST_APP_SHEET = 'Watchlist_App'
 const MAX_CANDIDATES = 160
 const NEWSLETTER_URL = process.env.SVI_NEWSLETTER_URL?.trim() || 'https://svinvesting.substack.com/feed'
+const NEWSLETTER_PAGE_URL = 'https://svinvesting.substack.com/'
+const DEFAULT_FOLLOWUP_CONFIG: FollowupScheduleConfig = {
+  enabled: true, timezone: 'Europe/Madrid', weekdays: [1, 2, 3, 4, 5], slots: ['08:00', '14:00'],
+  maxNotificationsPerDay: 2, canalWhatsapp: true, canalTelegram: false,
+}
+
+export function newsletterMeta() {
+  return { name: 'Newsletter #1 · SVI Investing', pageUrl: NEWSLETTER_PAGE_URL, feedUrl: NEWSLETTER_URL }
+}
 
 async function loadWorkbook(buffer: Buffer) {
   const workbook = new ExcelJS.Workbook()
@@ -137,14 +147,99 @@ export async function importWorkbook(userId: number, buffer: Buffer) {
   return count
 }
 
+function candidateRow(row: typeof inversiones_excel_filas.$inferSelect) {
+  const datos = json(row.datos)
+  const candidate = parseRow(datos)
+  if (!candidate) return null
+  return {
+    id: row.id, hoja: row.hoja, fila: row.fila, tipo: row.tipo,
+    ticker: candidate.symbol, empresa: candidate.name, mercado: text(datos.mercado || datos['Ticker / mercado'] || candidate.marketSymbol || ''),
+    rating: candidate.rating, orden: candidate.rank, entradaEur: candidate.targetEur,
+    proximaRevision: candidate.nextReview, tesis: candidate.thesis, riesgos: candidate.risks,
+    fuente: candidate.source, notas: text(datos.notas || datos.Notas || ''), raw: datos,
+  }
+}
+
+export async function listWatchlistRows(userId: number) {
+  const rows = await db.query.inversiones_excel_filas.findMany({ where: eq(inversiones_excel_filas.usuario_id, userId), orderBy: [desc(inversiones_excel_filas.imported_at), desc(inversiones_excel_filas.fila)] })
+  return rows.filter(row => row.hoja === MASTER_SHEET || row.hoja === WATCHLIST_APP_SHEET).map(candidateRow).filter(Boolean)
+}
+
+type WatchlistInput = {
+  ticker: string; empresa: string; mercado?: string; rating?: number | null; orden?: number | null;
+  entradaEur?: number | null; proximaRevision?: string; tesis?: string; riesgos?: string; fuente?: string; notas?: string;
+}
+
+function watchlistDatos(input: WatchlistInput, previous: Record<string, unknown> = {}) {
+  const next = { ...previous }
+  next.ticker = input.ticker.trim().toUpperCase()
+  next.empresa = input.empresa.trim()
+  next.mercado = input.mercado?.trim() || next.mercado || next['Ticker / mercado'] || ''
+  next.rating = input.rating ?? null
+  next.orden = input.orden ?? null
+  next['Entrada EUR'] = input.entradaEur ?? null
+  next['Próxima revisión'] = input.proximaRevision?.trim() || ''
+  next.tesis = input.tesis?.trim() || ''
+  next.riesgos = input.riesgos?.trim() || ''
+  next['Fuente oficial'] = input.fuente?.trim() || ''
+  next.notas = input.notas?.trim() || ''
+  return next
+}
+
+export async function saveWatchlistRow(userId: number, input: WatchlistInput, id?: number) {
+  const now = new Date().toISOString()
+  if (id) {
+    const current = await db.query.inversiones_excel_filas.findFirst({ where: and(eq(inversiones_excel_filas.id, id), eq(inversiones_excel_filas.usuario_id, userId)) })
+    if (!current) throw new Error('Registro de watchlist no encontrado.')
+    const currentData = json(current.datos)
+    const datos = watchlistDatos(input, currentData)
+    const [updated] = await db.update(inversiones_excel_filas).set({ datos: JSON.stringify(datos), tipo: 'watchlist', imported_at: now }).where(and(eq(inversiones_excel_filas.id, id), eq(inversiones_excel_filas.usuario_id, userId))).returning()
+    return candidateRow(updated)
+  }
+  const appRows = await db.query.inversiones_excel_filas.findMany({ where: and(eq(inversiones_excel_filas.usuario_id, userId), eq(inversiones_excel_filas.hoja, WATCHLIST_APP_SHEET)) })
+  const fila = Math.min(0, ...appRows.map(row => row.fila)) - 1
+  const [created] = await db.insert(inversiones_excel_filas).values({ usuario_id: userId, hoja: WATCHLIST_APP_SHEET, fila, tipo: 'watchlist', datos: JSON.stringify(watchlistDatos(input)), imported_at: now }).returning()
+  return candidateRow(created)
+}
+
+export async function deleteWatchlistRow(userId: number, id: number) {
+  const current = await db.query.inversiones_excel_filas.findFirst({ where: and(eq(inversiones_excel_filas.id, id), eq(inversiones_excel_filas.usuario_id, userId)) })
+  if (!current) throw new Error('Registro de watchlist no encontrado.')
+  if (current.hoja !== WATCHLIST_APP_SHEET) throw new Error('Las filas importadas del Excel se conservan; edítalas o vuelve a exportar el maestro.')
+  await db.delete(inversiones_excel_filas).where(and(eq(inversiones_excel_filas.id, id), eq(inversiones_excel_filas.usuario_id, userId)))
+}
+
+export async function exportWorkbook(userId: number) {
+  const rows = await db.query.inversiones_excel_filas.findMany({ where: eq(inversiones_excel_filas.usuario_id, userId), orderBy: [desc(inversiones_excel_filas.hoja), desc(inversiones_excel_filas.fila)] })
+  const workbook = new ExcelJS.Workbook()
+  const grouped = new Map<string, Array<Record<string, unknown>>>()
+  for (const row of rows) {
+    const list = grouped.get(row.hoja) || []
+    list.push(json(row.datos))
+    grouped.set(row.hoja, list)
+  }
+  for (const [sheetName, records] of grouped) {
+    const worksheet = workbook.addWorksheet(sheetName.slice(0, 31))
+    const columns = [...new Set(records.flatMap(record => Object.keys(record).filter(key => key !== '__row')))]
+    worksheet.addRow(columns)
+    for (const record of records) worksheet.addRow(columns.map(column => record[column] ?? ''))
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }]
+    worksheet.getRow(1).font = { bold: true }
+    worksheet.columns.forEach(column => { column.width = Math.min(42, Math.max(12, String(column.header || '').length + 4)) })
+  }
+  if (workbook.worksheets.length === 0) workbook.addWorksheet(MASTER_SHEET).addRow(['ticker', 'empresa'])
+  return Buffer.from(await workbook.xlsx.writeBuffer())
+}
+
 async function loadCandidates(userId: number) {
   const [positions, excelRows] = await Promise.all([
     db.query.inversiones_posiciones.findMany({ where: eq(inversiones_posiciones.usuario_id, userId) }),
     db.query.inversiones_excel_filas.findMany({ where: eq(inversiones_excel_filas.usuario_id, userId), orderBy: [desc(inversiones_excel_filas.imported_at), desc(inversiones_excel_filas.fila)] }),
   ])
   const bySymbol = new Map<string, Candidate>()
+  const hasMaster = excelRows.some(item => item.hoja === MASTER_SHEET)
   for (const row of excelRows) {
-    if (row.hoja !== MASTER_SHEET && excelRows.some(item => item.hoja === MASTER_SHEET)) continue
+    if (row.hoja !== MASTER_SHEET && row.hoja !== WATCHLIST_APP_SHEET && hasMaster) continue
     const candidate = parseRow(json(row.datos))
     if (candidate && !bySymbol.has(candidate.symbol)) bySymbol.set(candidate.symbol, candidate)
   }
@@ -167,15 +262,15 @@ async function loadCandidates(userId: number) {
 async function readNewsletter() {
   try {
     const response = await fetch(NEWSLETTER_URL, { cache: 'no-store', headers: { Accept: 'application/xml,text/xml,text/plain' } })
-    if (!response.ok) return { subject: null, date: null, status: `SVI no disponible (HTTP ${response.status})` }
+    if (!response.ok) return { name: 'Newsletter #1 · SVI Investing', subject: null, date: null, status: `SVI no disponible (HTTP ${response.status})`, pageUrl: NEWSLETTER_PAGE_URL, feedUrl: NEWSLETTER_URL }
     const xml = await response.text()
     const item = xml.match(/<item[\s\S]*?<\/item>/i)?.[0] || xml.match(/<entry[\s\S]*?<\/entry>/i)?.[0] || ''
     const pick = (tag: string) => text(item.match(new RegExp(`<${tag}(?:[^>]*)>([\\s\\S]*?)<\\/${tag}>`, 'i'))?.[1]).replace(/<!\[CDATA\[|\]\]>/g, '')
     const subject = pick('title') || null
     const date = pick('pubDate') || pick('published') || pick('updated') || null
     const link = pick('link') || NEWSLETTER_URL
-    return { subject, date, status: subject ? 'SVI RSS leído; no es la bandeja de Gmail.' : 'SVI RSS sin entrada legible.', link }
-  } catch { return { subject: null, date: null, status: 'SVI RSS no accesible desde el VPS.' } }
+    return { name: 'Newsletter #1 · SVI Investing', subject, date, status: subject ? 'SVI RSS leído; no es la bandeja de Gmail.' : 'SVI RSS sin entrada legible.', pageUrl: link || NEWSLETTER_PAGE_URL, feedUrl: NEWSLETTER_URL }
+  } catch { return { name: 'Newsletter #1 · SVI Investing', subject: null, date: null, status: 'SVI RSS no accesible desde el VPS.', pageUrl: NEWSLETTER_PAGE_URL, feedUrl: NEWSLETTER_URL } }
 }
 
 type NewsItem = { title: string; url: string; date: string }
@@ -325,7 +420,7 @@ async function buildReport(userId: number): Promise<FollowupReport> {
   return {
     asOf: new Date().toISOString(), market: currentMarket(),
     summary: `Seguimiento de ${items.length} activos: ${items.filter(item => item.decision === 'revisar-entrada').length} en umbral, ${items.filter(item => item.decision === 'revisar-posicion').length} posiciones y ${items.filter(item => item.decision === 'esperar').length} en espera. Contexto Lynch ${lynchContext.mode === 'indexed' ? 'indexado' : 'de respaldo'}; no es una orden de compra ni sustituye verificar la tesis con fuentes primarias.`,
-    items, warnings, newsletter: { subject: newsletter.subject, date: newsletter.date, status: newsletter.status },
+    items, warnings, newsletter: { name: newsletter.name, subject: newsletter.subject, date: newsletter.date, status: newsletter.status, pageUrl: newsletter.pageUrl, feedUrl: newsletter.feedUrl },
     lynchContext: { mode: lynchContext.mode, pages: lynchContext.pages, source: 'src/lib/buscador-acciones/lynch-book.md + lynch-book-index.json' },
     analysis: `${aiAnalysis ? `Modelo ${aiAnalysis.provider}:\n${aiAnalysis.text}\n\n` : ''}Corte ${new Date().toISOString()}. Fuente principal de precio: Yahoo Finance cuando devuelve cotización. Excel, SVI y noticias externas aportan contexto pendiente de contraste.`,
   }
@@ -369,7 +464,8 @@ export async function createRun(userId: number, requestedSlot?: string) {
 export async function executeRun(runId: number, userId: number) {
   try {
     const report = await buildReport(userId)
-    if (followupWhatsAppEnabled()) {
+    const config = await getFollowupConfig(userId)
+    if (followupWhatsAppEnabled() && config.canalWhatsapp) {
       try {
         const delivery = await sendWhatsAppMessage(userId, followupWhatsAppText(report))
         report.whatsapp = { enabled: true, status: 'sent', messageId: delivery.messageId, warning: delivery.warning }
@@ -380,7 +476,10 @@ export async function executeRun(runId: number, userId: number) {
         report.warnings.push(`WhatsApp no enviado: ${message}`)
       }
     } else {
-      report.whatsapp = { enabled: false, status: 'skipped', warning: 'Avisos de seguimiento por WhatsApp desactivados en el entorno.' }
+      report.whatsapp = { enabled: false, status: 'skipped', warning: followupWhatsAppEnabled() ? 'WhatsApp desactivado en la configuración del seguimiento.' : 'Avisos de seguimiento por WhatsApp desactivados en el entorno.' }
+    }
+    if (config.canalTelegram) {
+      report.warnings.push('Telegram está seleccionado, pero el envío de este resumen sigue delegado al workflow de n8n; el selector no crea una conexión nueva.')
     }
     await db.update(inversiones_seguimiento_runs).set({ status: report.warnings.some(warning => /no disponible|no accesible|No hay/i.test(warning)) ? 'partial' : 'complete', finished_at: new Date().toISOString(), report: JSON.stringify(report), error: null }).where(and(eq(inversiones_seguimiento_runs.id, runId), eq(inversiones_seguimiento_runs.usuario_id, userId)))
   } catch (error) {
@@ -391,15 +490,73 @@ export async function listRuns(userId: number) {
   const rows = await db.query.inversiones_seguimiento_runs.findMany({ where: eq(inversiones_seguimiento_runs.usuario_id, userId), orderBy: [desc(inversiones_seguimiento_runs.started_at)], limit: 30 })
   return rows.map(row => ({ id: row.id, status: row.status, slot: row.slot, startedAt: row.started_at, finishedAt: row.finished_at, error: row.error, report: row.report ? JSON.parse(row.report) : null }))
 }
-export async function schedulerState(userId: number) {
+function parseScheduleArray(value: string | null | undefined, fallback: string[]) {
+  try {
+    const parsed = JSON.parse(value || '')
+    return Array.isArray(parsed) ? parsed.map(item => String(item)).filter(Boolean) : fallback
+  } catch { return fallback }
+}
+
+function parseWeekdays(value: string | null | undefined) {
+  try {
+    const parsed = JSON.parse(value || '')
+    const result = Array.isArray(parsed) ? parsed.map(item => Number(item)).filter(item => Number.isInteger(item) && item >= 1 && item <= 7) : []
+    return result.length ? [...new Set(result)].sort((a, b) => a - b) : DEFAULT_FOLLOWUP_CONFIG.weekdays
+  } catch { return DEFAULT_FOLLOWUP_CONFIG.weekdays }
+}
+
+function followupConfigFromState(state: typeof inversiones_seguimiento_estado.$inferSelect | undefined): FollowupScheduleConfig {
+  return {
+    enabled: state?.enabled ?? DEFAULT_FOLLOWUP_CONFIG.enabled,
+    timezone: state?.timezone || DEFAULT_FOLLOWUP_CONFIG.timezone,
+    weekdays: parseWeekdays(state?.weekdays),
+    slots: parseScheduleArray(state?.slots, DEFAULT_FOLLOWUP_CONFIG.slots).filter(slot => /^([01]\d|2[0-3]):[0-5]\d$/.test(slot)).sort(),
+    maxNotificationsPerDay: Math.max(1, Math.min(10, state?.max_notifications_per_day ?? DEFAULT_FOLLOWUP_CONFIG.maxNotificationsPerDay)),
+    canalWhatsapp: state?.canal_whatsapp ?? DEFAULT_FOLLOWUP_CONFIG.canalWhatsapp,
+    canalTelegram: state?.canal_telegram ?? DEFAULT_FOLLOWUP_CONFIG.canalTelegram,
+  }
+}
+
+export async function getFollowupConfig(userId: number) {
   const state = await db.query.inversiones_seguimiento_estado.findFirst({ where: eq(inversiones_seguimiento_estado.usuario_id, userId) })
-  return { enabled: process.env.SEGUIMIENTO_ENABLED === 'true', lastHeartbeat: state?.heartbeat_at || null, schedule: '08:00 y 14:00 · Europe/Madrid' }
+  return followupConfigFromState(state)
+}
+
+export async function updateFollowupConfig(userId: number, input: FollowupScheduleConfig) {
+  const current = await db.query.inversiones_seguimiento_estado.findFirst({ where: eq(inversiones_seguimiento_estado.usuario_id, userId) })
+  const values = {
+    usuario_id: userId,
+    heartbeat_at: current?.heartbeat_at || new Date().toISOString(),
+    enabled: input.enabled,
+    timezone: input.timezone || 'Europe/Madrid',
+    weekdays: JSON.stringify([...new Set(input.weekdays)].sort((a, b) => a - b)),
+    slots: JSON.stringify([...new Set(input.slots)].sort()),
+    max_notifications_per_day: input.maxNotificationsPerDay,
+    canal_whatsapp: input.canalWhatsapp,
+    canal_telegram: input.canalTelegram,
+    updated_at: new Date().toISOString(),
+  }
+  await db.insert(inversiones_seguimiento_estado).values(values).onConflictDoUpdate({ target: inversiones_seguimiento_estado.usuario_id, set: values })
+  return getFollowupConfig(userId)
+}
+
+export async function schedulerState(userId: number) {
+  const config = await getFollowupConfig(userId)
+  const state = await db.query.inversiones_seguimiento_estado.findFirst({ where: eq(inversiones_seguimiento_estado.usuario_id, userId) })
+  const enabled = process.env.SEGUIMIENTO_ENABLED === 'true' && config.enabled
+  return { enabled, lastHeartbeat: state?.heartbeat_at || null, config, schedule: config.slots.join(' · ') + ` · ${config.timezone}` }
 }
 export async function heartbeat(userId: number) {
   const now = new Date().toISOString()
   await db.insert(inversiones_seguimiento_estado).values({ usuario_id: userId, heartbeat_at: now }).onConflictDoUpdate({ target: inversiones_seguimiento_estado.usuario_id, set: { heartbeat_at: now } })
-  const slot = madridSlot(new Date())
+  const config = await getFollowupConfig(userId)
+  if (process.env.SEGUIMIENTO_ENABLED !== 'true' || !config.enabled) return { triggered: false, slot: null, disabled: true }
+  const slot = configuredSlot(new Date(), config)
   if (!slot) return { triggered: false, slot: null }
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: config.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+  const scheduledRuns = await db.query.inversiones_seguimiento_runs.findMany({ where: eq(inversiones_seguimiento_runs.usuario_id, userId), orderBy: [desc(inversiones_seguimiento_runs.started_at)], limit: 30 })
+  const notificationsToday = scheduledRuns.filter(run => run.slot.startsWith('schedule-') && run.started_at.startsWith(today)).length
+  if (notificationsToday >= config.maxNotificationsPerDay) return { triggered: false, slot: slot.slot, limited: true }
   const run = await createRun(userId, slot.slot)
   return { triggered: true, slot: slot.slot, runId: run.id }
 }

@@ -367,6 +367,14 @@ export const inversiones_seguimiento_runs = sqliteTable('inversiones_seguimiento
 export const inversiones_seguimiento_estado = sqliteTable('inversiones_seguimiento_estado', {
   usuario_id: integer('usuario_id').primaryKey().references(() => usuarios.id),
   heartbeat_at: text('heartbeat_at').notNull(),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  timezone: text('timezone').notNull().default('Europe/Madrid'),
+  weekdays: text('weekdays').notNull().default('[1,2,3,4,5]'),
+  slots: text('slots').notNull().default('["08:00","14:00"]'),
+  max_notifications_per_day: integer('max_notifications_per_day').notNull().default(2),
+  canal_whatsapp: integer('canal_whatsapp', { mode: 'boolean' }).notNull().default(true),
+  canal_telegram: integer('canal_telegram', { mode: 'boolean' }).notNull().default(false),
+  updated_at: text('updated_at').notNull().default(''),
 })
 
 export const usuariosRelations = relations(usuarios, ({ many, one }) => ({

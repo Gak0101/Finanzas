@@ -15,8 +15,18 @@ export type FollowupItem = {
 export type FollowupReport = {
   asOf: string; market: { status: string; nextOpen: string | null };
   summary: string; items: FollowupItem[]; warnings: string[];
-  newsletter: { subject: string | null; date: string | null; status: string };
+  newsletter: { name: string; subject: string | null; date: string | null; status: string; pageUrl: string; feedUrl: string };
   lynchContext: { mode: 'indexed' | 'fallback'; pages: number[]; source: string };
   whatsapp?: { enabled: boolean; status: 'sent' | 'skipped' | 'failed'; messageId?: string | null; warning?: string };
   analysis: string | null;
+}
+
+export type FollowupScheduleConfig = {
+  enabled: boolean
+  timezone: string
+  weekdays: number[]
+  slots: string[]
+  maxNotificationsPerDay: number
+  canalWhatsapp: boolean
+  canalTelegram: boolean
 }

@@ -4,7 +4,7 @@ import { db } from '@/lib/db'
 import { inversiones_excel_filas, inversiones_posiciones } from '@/lib/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { getAiCredentials } from '@/lib/ai/provider-config'
-import { createRun, listRuns, loadCandidates, schedulerState } from '@/lib/seguimiento/service'
+import { createRun, listRuns, loadCandidates, newsletterMeta, schedulerState } from '@/lib/seguimiento/service'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -19,7 +19,7 @@ export async function GET() {
     db.query.inversiones_posiciones.findMany({ where: eq(inversiones_posiciones.usuario_id, auth.userId), columns: { id: true } }),
     db.query.inversiones_excel_filas.findMany({ where: and(eq(inversiones_excel_filas.usuario_id, auth.userId), eq(inversiones_excel_filas.tipo, 'context')), columns: { id: true }, limit: 1 }),
   ])
-  return NextResponse.json({ runs, watchlistCount: candidates.filter(candidate => !candidate.held).length, portfolioCount: positions.length, contextCount: context.length ? 1 : 0, newsletter: { configured: true }, scheduler, aiConfigured: Boolean(ai) })
+  return NextResponse.json({ runs, watchlistCount: candidates.filter(candidate => !candidate.held).length, portfolioCount: positions.length, contextCount: context.length ? 1 : 0, newsletter: { configured: true, ...newsletterMeta() }, scheduler, aiConfigured: Boolean(ai) })
 }
 
 export async function POST(request: Request) {

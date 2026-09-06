@@ -209,11 +209,12 @@ la base de datos SQLite entre reinicios/redeploys y permite hacer backups desde 
 ### Seguimiento Lynch en VPS
 
 La pestaña **Seguimiento Lynch** sustituye al antiguo buscador de acciones para
-el flujo diario. Permite importar el Excel maestro, conserva los informes en
-SQLite y muestra el último precio disponible, decisión de seguimiento, fuentes,
-riesgos y siguiente revisión. Las cifras del Excel se tratan como contexto: los
-precios que deciden el umbral se vuelven a consultar y se muestran en EUR cuando
-es posible.
+el flujo diario. Conserva los informes en SQLite y muestra el último precio
+disponible, decisión de seguimiento, fuentes, riesgos y siguiente revisión. La
+watchlist se edita desde una tabla persistente: permite añadir tickers nuevos,
+modificar candidatos importados y exportar de nuevo el maestro en `.xlsx`. Las
+cifras del Excel se tratan como contexto: los precios que deciden el umbral se
+vuelven a consultar y se muestran en EUR cuando es posible.
 
 El informe diario reutiliza `lynchBook.ts`, que valida y selecciona extractos de
 `lynch-book.md` mediante `lynch-book-index.json`. Si hay un proveedor IA
@@ -232,13 +233,22 @@ Para activar el worker dentro del contenedor de Coolify configura además:
 | `AUTOMATION_USER_ID` | ID del usuario propietario de la cartera |
 | `SVI_NEWSLETTER_URL` | Feed RSS de la newsletter que quieras vigilar |
 
-El worker envía un heartbeat local cada 30 segundos y el backend decide las
-ventanas de las 08:00 y las 14:00 en `Europe/Madrid`, con deduplicación por día y
-ventana. El feed RSS de SVI es una fuente secundaria; no equivale a leer Gmail.
-Las fuentes externas y las limitaciones quedan visibles en cada informe.
+El worker envía un heartbeat local cada 30 segundos. Desde **Configuración del
+seguimiento** se eligen los días, las horas, el máximo de avisos diarios y los
+canales. La configuración se guarda en SQLite y el backend aplica las ventanas
+en `Europe/Madrid`, con deduplicación y límite diario. WhatsApp se envía desde
+Finanzas cuando está configurado; Telegram continúa dependiendo del workflow de
+n8n existente. El feed RSS de SVI es una fuente secundaria; no equivale a leer
+Gmail. Las fuentes externas y las limitaciones quedan visibles en cada informe.
 
-Después del despliegue, abre `/inversiones?tab=seguimiento`, importa el Excel
-maestro y ejecuta un informe manual para comprobar la persistencia. El volumen
+La pestaña también permite copiar el contexto del último informe y abrir
+ChatGPT. Esto usa la suscripción desde ChatGPT en el móvil; no intenta convertir
+la sesión de ChatGPT en una API ni guarda sus credenciales en Finanzas.
+
+Después del despliegue, abre `/inversiones?tab=seguimiento`, comprueba el maestro
+persistido y ejecuta un informe manual para comprobar la persistencia. La carga
+inicial del `.xlsx` puede hacerse mediante el endpoint de importación; el uso
+normal continúa desde la tabla de watchlist y su exportación. El volumen
 `/app/data` es obligatorio para conservar tanto la cartera como el historial de
 seguimiento.
 
