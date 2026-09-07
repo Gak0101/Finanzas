@@ -40,7 +40,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const values: Record<string, unknown> = { updated_at: new Date().toISOString() }
-  for (const key of ['isin', 'precio_referencia', 'umbral_subida_pct', 'umbral_caida_pct', 'rearmar_pct', 'canal_telegram', 'canal_email', 'canal_whatsapp', 'activa']) {
+  for (const key of ['isin', 'precio_referencia', 'nota', 'fecha_objetivo', 'umbral_subida_pct', 'umbral_caida_pct', 'rearmar_pct', 'canal_telegram', 'canal_email', 'canal_whatsapp', 'activa']) {
     if (Object.hasOwn(input, key)) {
       values[key] = key === 'isin' ? normalizeIsin(input.isin) : input[key as keyof typeof input]
     }
@@ -79,6 +79,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     values.whatsapp_message_id = null
     values.ultimo_error_whatsapp = null
     values.ultimo_error = null
+  }
+
+  if (Object.hasOwn(input, 'fecha_objetivo') && input.fecha_objetivo !== rule.fecha_objetivo) {
+    values.fecha_objetivo_notificada_at = null
   }
 
   if (Object.hasOwn(input, 'canal_whatsapp') && input.canal_whatsapp !== rule.canal_whatsapp) {

@@ -187,6 +187,8 @@ export async function POST(req: Request) {
     isin,
     precio_referencia: referencePrice,
     ...resolvedTarget,
+    nota: input.nota ?? null,
+    fecha_objetivo: input.fecha_objetivo ?? null,
     precio_actual: currentPrice,
     ...nativeQuote,
     precio_base_porcentaje: percentageBasePrice,
@@ -201,6 +203,7 @@ export async function POST(req: Request) {
     canal_email: input.canal_email,
     canal_whatsapp: input.canal_whatsapp,
     activa: input.activa,
+    fecha_objetivo_notificada_at: existing && (existing.fecha_objetivo ?? null) === (input.fecha_objetivo ?? null) ? existing.fecha_objetivo_notificada_at : null,
     ultimo_error: null,
     updated_at: now,
   }

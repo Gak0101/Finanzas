@@ -6,7 +6,7 @@ import { normalizeTargetCurrency } from '@/lib/inversiones/alertTarget'
 import { getInvestmentCashSnapshot } from '@/lib/inversiones/cash'
 
 export type AlertSignal = 'normal' | 'subida' | 'caida'
-export type AlertTriggerReason = 'porcentaje' | 'precio_objetivo'
+export type AlertTriggerReason = 'porcentaje' | 'precio_objetivo' | 'fecha_objetivo'
 
 export type TriggeredInvestmentAlert = {
   id: number
@@ -24,6 +24,8 @@ export type TriggeredInvestmentAlert = {
   precio_objetivo: number | null
   precio_objetivo_importe: number | null
   divisa_objetivo: string | null
+  nota: string | null
+  fecha_objetivo: string | null
   canal_telegram: boolean
   canal_email: boolean
   canal_whatsapp: boolean
@@ -48,6 +50,15 @@ export async function listInvestmentAlertRules(userId: number) {
 
 function positive(value: number | null | undefined): value is number {
   return value !== null && value !== undefined && Number.isFinite(value) && value > 0
+}
+
+function madridDate(isoDate: string) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Madrid',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(isoDate))
 }
 
 function portfolioValue(positions: InversionPosicion[], cashEur = 0) {
@@ -256,7 +267,12 @@ async function evaluateRule(
     percentageBaseNativePrice,
     percentageBaseCurrency,
   )
-  if ((currentPct === null || !Number.isFinite(currentPct)) && target === null) {
+  const dateReached = Boolean(
+    rule.fecha_objetivo
+      && madridDate(checkedAt) >= rule.fecha_objetivo
+      && !rule.fecha_objetivo_notificada_at,
+  )
+  if ((currentPct === null || !Number.isFinite(currentPct)) && target === null && !dateReached) {
     await db.update(inversiones_alertas).set({
       ultima_comprobacion_at: checkedAt,
       ultimo_error: 'No hay suficiente cotización comparable para calcular la alerta.',
@@ -274,10 +290,10 @@ async function evaluateRule(
   const whatsappDeliveryPending = nextState !== 'normal'
     && rule.canal_whatsapp
     && !rule.ultima_entrega_whatsapp_at
-  const triggered = stateChanged || whatsappDeliveryPending
+  const triggered = stateChanged || whatsappDeliveryPending || dateReached
   const whatsappRetryOnly = whatsappDeliveryPending && !stateChanged
   const label = ruleLabel(rule, position)
-  const threshold = evaluation.reason === 'precio_objetivo'
+  const threshold = evaluation.reason !== 'porcentaje'
     ? null
     : nextState === 'subida'
       ? Math.abs(rule.umbral_subida_pct ?? 0)
@@ -294,7 +310,8 @@ async function evaluateRule(
     rendimiento_pct: currentPct,
     estado: nextState,
     ultima_comprobacion_at: checkedAt,
-    ultima_alerta_at: stateChanged ? checkedAt : rule.ultima_alerta_at,
+    ultima_alerta_at: stateChanged || dateReached ? checkedAt : rule.ultima_alerta_at,
+    fecha_objetivo_notificada_at: dateReached ? checkedAt : rule.fecha_objetivo_notificada_at,
     ultima_entrega_whatsapp_at: nextState === 'normal' || stateChanged ? null : rule.ultima_entrega_whatsapp_at,
     ultimo_error_whatsapp: nextState === 'normal' || stateChanged ? null : rule.ultimo_error_whatsapp,
     ultimo_error: null,
@@ -308,8 +325,8 @@ async function evaluateRule(
       alcance: rule.alcance as 'cartera' | 'activo',
       ticker: label.ticker,
       activo: label.activo,
-      tipo: nextState as 'subida' | 'caida',
-      razon: evaluation.reason,
+      tipo: (nextState === 'caida' || (nextState === 'normal' && (currentPct ?? 0) < 0) ? 'caida' : 'subida') as 'subida' | 'caida',
+      razon: dateReached ? 'fecha_objetivo' : evaluation.reason,
       rendimiento_pct: currentPct,
       umbral_pct: threshold,
       precio_actual: currentPrice,
@@ -319,6 +336,8 @@ async function evaluateRule(
       precio_objetivo: rule.precio_objetivo ?? null,
       precio_objetivo_importe: rule.precio_objetivo_importe ?? null,
       divisa_objetivo: rule.divisa_objetivo ?? null,
+      nota: rule.nota ?? null,
+      fecha_objetivo: rule.fecha_objetivo ?? null,
       canal_telegram: whatsappRetryOnly ? false : rule.canal_telegram,
       canal_email: whatsappRetryOnly ? false : rule.canal_email,
       canal_whatsapp: rule.canal_whatsapp,

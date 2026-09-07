@@ -219,6 +219,8 @@ export const inversiones_alertas = sqliteTable(
     precio_objetivo: real('precio_objetivo'),
     precio_objetivo_importe: real('precio_objetivo_importe'),
     divisa_objetivo: text('divisa_objetivo'),
+    nota: text('nota'),
+    fecha_objetivo: text('fecha_objetivo'),
     precio_actual: real('precio_actual'),
     precio_actual_nativo: real('precio_actual_nativo'),
     divisa_nativa: text('divisa_nativa'),
@@ -241,6 +243,7 @@ export const inversiones_alertas = sqliteTable(
     // La detección y la entrega son estados distintos: mientras este campo
     // sea NULL, el workflow debe reintentar el envío de WhatsApp.
     ultima_entrega_whatsapp_at: text('ultima_entrega_whatsapp_at'),
+    fecha_objetivo_notificada_at: text('fecha_objetivo_notificada_at'),
     whatsapp_message_id: text('whatsapp_message_id'),
     ultimo_error_whatsapp: text('ultimo_error_whatsapp'),
     ultimo_error: text('ultimo_error'),

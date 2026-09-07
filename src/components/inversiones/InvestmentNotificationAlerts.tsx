@@ -187,6 +187,13 @@ function formatAssetDate(value: string | null | undefined) {
   return new Intl.DateTimeFormat('es-ES', { dateStyle: 'short', timeStyle: 'short' }).format(date)
 }
 
+function formatTargetDate(value: string | null | undefined) {
+  if (!value) return null
+  const date = new Date(`${value}T12:00:00`)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('es-ES', { dateStyle: 'long' }).format(date)
+}
+
 async function copiarIsin(isin: string) {
   try {
     if (!navigator.clipboard) throw new Error('Portapapeles no disponible')
@@ -235,6 +242,8 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
   const [referencePrice, setReferencePrice] = useState('')
   const [targetPrice, setTargetPrice] = useState('')
   const [targetCurrency, setTargetCurrency] = useState('EUR')
+  const [note, setNote] = useState('')
+  const [targetDate, setTargetDate] = useState('')
   const [isin, setIsin] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<AssetSearchResult[]>([])
@@ -361,6 +370,8 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
     setReferencePrice('')
     setTargetPrice('')
     setTargetCurrency('EUR')
+    setNote('')
+    setTargetDate('')
     setIsin('')
     setSearchQuery('')
     setSearchResults([])
@@ -381,6 +392,8 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
       setEmail(rule.canal_email)
       setWhatsapp(rule.canal_whatsapp)
       setActive(rule.activa)
+      setNote(rule.nota ?? '')
+      setTargetDate(rule.fecha_objetivo ?? '')
     }
     setDialogOpen(true)
   }
@@ -400,6 +413,8 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
       setEmail(rule.canal_email)
       setWhatsapp(rule.canal_whatsapp)
       setActive(rule.activa)
+      setNote(rule.nota ?? '')
+      setTargetDate(rule.fecha_objetivo ?? '')
       setReferencePrice(rule.precio_referencia === null ? '' : String(rule.precio_referencia))
       const savedTarget = ruleTarget(rule)
       setTargetPrice(savedTarget ? String(savedTarget.price) : '')
@@ -469,8 +484,8 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
     const rearmPct = rearm.trim() === '' ? 0.01 : Number(rearm) / 100
     const targetPriceValue = targetPrice.trim() === '' ? null : Number(targetPrice)
     const referenceValue = referencePrice.trim() === '' ? null : Number(referencePrice)
-    if ((risePct === null && dropPct === null && targetPriceValue === null) || [risePct, dropPct, rearmPct, targetPriceValue].some((value) => value !== null && (!Number.isFinite(value) || value <= 0))) {
-      toast.error('Indica una alerta porcentual o un precio objetivo válido')
+    if ((risePct === null && dropPct === null && targetPriceValue === null && targetDate.trim() === '') || [risePct, dropPct, rearmPct, targetPriceValue].some((value) => value !== null && (!Number.isFinite(value) || value <= 0))) {
+      toast.error('Indica una alerta porcentual, un precio objetivo o una fecha válida')
       return
     }
     if (scope === 'cartera' && (referenceValue === null || !Number.isFinite(referenceValue) || referenceValue <= 0)) {
@@ -502,7 +517,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
     setSaving(true)
     try {
       const body = scope === 'cartera'
-        ? { alcance: 'cartera', precio_referencia: referenceValue, umbral_subida_pct: risePct, umbral_caida_pct: dropPct, rearmar_pct: rearmPct, canal_telegram: telegram, canal_email: email, canal_whatsapp: whatsapp, activa: active }
+        ? { alcance: 'cartera', precio_referencia: referenceValue, nota: note.trim() || null, fecha_objetivo: targetDate || null, umbral_subida_pct: risePct, umbral_caida_pct: dropPct, rearmar_pct: rearmPct, canal_telegram: telegram, canal_email: email, canal_whatsapp: whatsapp, activa: active }
         : {
             alcance: 'activo',
             posicion_id: selectedAsset?.posicion_id,
@@ -516,6 +531,8 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
              precio_referencia: referencePrice.trim() === '' ? undefined : Number(referencePrice),
              precio_objetivo_importe: targetPriceValue,
              divisa_objetivo: targetPriceValue === null ? null : normalizedTargetCurrency,
+            nota: note.trim() || null,
+            fecha_objetivo: targetDate || null,
             umbral_subida_pct: risePct,
             umbral_caida_pct: dropPct,
             rearmar_pct: rearmPct,
@@ -589,6 +606,8 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
             : null,
           precio_objetivo_importe: scope === 'activo' ? targetPriceValue : null,
           divisa_objetivo: scope === 'activo' && targetPriceValue !== null ? normalizedTargetCurrency : null,
+          nota: note.trim() || null,
+          fecha_objetivo: targetDate || null,
           precio_actual: currentPrice,
           precio_actual_nativo: currentNativePrice,
           divisa_nativa: nativeCurrency,
@@ -610,6 +629,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
           whatsapp_message_id: editingRule?.whatsapp_message_id ?? null,
           ultimo_error_whatsapp: null,
           ultimo_error: null,
+          fecha_objetivo_notificada_at: editingRule?.fecha_objetivo === targetDate ? editingRule?.fecha_objetivo_notificada_at ?? null : null,
           updated_at: now,
         }
         const localRule: InversionAlerta = editingRule
@@ -629,7 +649,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
         method: editingRule ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editingRule
-          ? { umbral_subida_pct: risePct, umbral_caida_pct: dropPct, rearmar_pct: rearmPct, canal_telegram: telegram, canal_email: email, canal_whatsapp: whatsapp, activa: active, ...(scope === 'cartera' ? { precio_referencia: referenceValue } : { isin: isin.trim() || null, precio_objetivo_importe: targetPriceValue, divisa_objetivo: targetPriceValue === null ? null : normalizedTargetCurrency }) }
+          ? { umbral_subida_pct: risePct, umbral_caida_pct: dropPct, rearmar_pct: rearmPct, canal_telegram: telegram, canal_email: email, canal_whatsapp: whatsapp, activa: active, nota: note.trim() || null, fecha_objetivo: targetDate || null, ...(scope === 'cartera' ? { precio_referencia: referenceValue } : { isin: isin.trim() || null, precio_objetivo_importe: targetPriceValue, divisa_objetivo: targetPriceValue === null ? null : normalizedTargetCurrency }) }
           : body),
       })
       const payload = await response.json().catch(() => null) as { error?: string } | null
@@ -799,7 +819,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
             <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${portfolioRule?.activa ? 'bg-[#e7f2d4] text-[#31531d]' : 'bg-slate-100 text-slate-500'}`}>{portfolioRule?.activa ? 'Activa' : 'Sin configurar'}</span>
           </div>
           <div className="mt-3 flex items-end justify-between gap-3"><div><p className={`text-2xl font-semibold tracking-[-0.05em] tabular-nums ${portfolioAlertReturnPct !== null && portfolioAlertReturnPct < 0 ? 'text-red-600' : 'text-emerald-700'}`}>{formatPercent(portfolioAlertReturnPct)}</p><p className={`mt-1 text-[10px] font-semibold ${portfolioAlertReturnPct !== null && portfolioAlertReturnPct < 0 ? 'text-red-700' : 'text-emerald-800'}`}>{formatPortfolioMovement(portfolioAlertReturnPct)}</p></div><Button type="button" size="sm" variant="outline" className="border-slate-200 bg-transparent text-slate-700 hover:bg-white" onClick={() => openPortfolioRule(portfolioRule)}><Pencil />{portfolioRule ? 'Editar' : 'Configurar'}</Button></div>
-          {portfolioRule ? <><p className="mt-4 flex items-center gap-1.5 text-[10px] text-slate-500"><Send className="h-3.5 w-3.5 text-[#5d8236]" />Avisar cuando suba {percentInput(portfolioRule.umbral_subida_pct) || '—'}% o baje {percentInput(portfolioRule.umbral_caida_pct) || '—'}% · {ruleChannels(portfolioRule)}</p><p className="mt-1 text-[10px] text-slate-400">{formatPortfolioAlertSummary(portfolioRule)}</p>{portfolioWhatsAppStatus ? <p className={`mt-2 flex items-center gap-1.5 text-[10px] font-medium ${portfolioWhatsAppStatus.tone === 'error' ? 'text-red-700' : portfolioWhatsAppStatus.tone === 'pending' ? 'text-amber-700' : 'text-emerald-700'}`}>{portfolioWhatsAppStatus.tone === 'error' ? <CircleAlert className="h-3.5 w-3.5" /> : portfolioWhatsAppStatus.tone === 'pending' ? <Clock3 className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}{portfolioWhatsAppStatus.text}</p> : null}</> : <p className="mt-4 text-[10px] text-slate-400">Configura cuándo quieres recibir el aviso.</p>}
+          {portfolioRule ? <><p className="mt-4 flex items-center gap-1.5 text-[10px] text-slate-500"><Send className="h-3.5 w-3.5 text-[#5d8236]" />Avisar cuando suba {percentInput(portfolioRule.umbral_subida_pct) || '—'}% o baje {percentInput(portfolioRule.umbral_caida_pct) || '—'}% · {ruleChannels(portfolioRule)}</p><p className="mt-1 text-[10px] text-slate-400">{formatPortfolioAlertSummary(portfolioRule)}</p>{portfolioRule.fecha_objetivo ? <p className="mt-1 text-[10px] font-medium text-amber-700">También avisar el {formatTargetDate(portfolioRule.fecha_objetivo)}</p> : null}{portfolioRule.nota ? <p className="mt-1 truncate text-[10px] text-slate-500" title={portfolioRule.nota}>Nota: {portfolioRule.nota}</p> : null}{portfolioWhatsAppStatus ? <p className={`mt-2 flex items-center gap-1.5 text-[10px] font-medium ${portfolioWhatsAppStatus.tone === 'error' ? 'text-red-700' : portfolioWhatsAppStatus.tone === 'pending' ? 'text-amber-700' : 'text-emerald-700'}`}>{portfolioWhatsAppStatus.tone === 'error' ? <CircleAlert className="h-3.5 w-3.5" /> : portfolioWhatsAppStatus.tone === 'pending' ? <Clock3 className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}{portfolioWhatsAppStatus.text}</p> : null}</> : <p className="mt-4 text-[10px] text-slate-400">Configura cuándo quieres recibir el aviso.</p>}
         </div>
 
         <div className="rounded-lg border border-slate-200 bg-white p-3">
@@ -849,14 +869,15 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
 
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm() }}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-[620px]">
-          <DialogHeader><DialogTitle>{editingRule ? scope === 'cartera' ? 'Editar alerta de cartera completa' : 'Editar alerta de activo' : scope === 'cartera' ? 'Alerta de cartera completa' : assetIntent === 'position' ? 'Nueva alerta de posición' : 'Nuevo seguimiento de activo'}</DialogTitle><DialogDescription>{scope === 'cartera' ? 'Configura un aviso desde el valor total de tu cartera: posiciones abiertas más efectivo disponible en EUR. Por defecto se propone el valor actual.' : assetIntent === 'position' ? 'Elige una posición que ya tengas en cartera. El aviso seguirá su rentabilidad.' : 'Busca un activo que todavía no tengas. Se guardará como seguimiento, sin crear una operación.'} Se avisa al cruzar el nivel y vuelve a quedar listo cuando recupera el margen indicado.{scenarioMode ? ' En este escenario, la regla se guarda solo localmente y no la recibe n8n.' : ''}</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editingRule ? scope === 'cartera' ? 'Editar alerta de cartera completa' : 'Editar alerta de activo' : scope === 'cartera' ? 'Alerta de cartera completa' : assetIntent === 'position' ? 'Nueva alerta de posición' : 'Nuevo seguimiento de activo'}</DialogTitle><DialogDescription>{scope === 'cartera' ? 'Configura un aviso desde el valor total de tu cartera: posiciones abiertas más efectivo disponible en EUR. Por defecto se propone el valor actual.' : assetIntent === 'position' ? 'Elige una posición que ya tengas en cartera. El aviso seguirá su rentabilidad.' : 'Busca un activo que todavía no tengas. Se guardará como seguimiento, sin crear una operación.'} Se avisará al cruzar un nivel o al llegar a la fecha objetivo. La nota se incluirá en el mensaje.{scenarioMode ? ' En este escenario, la regla se guarda solo localmente y no la recibe n8n.' : ''}</DialogDescription></DialogHeader>
           <form onSubmit={saveRule} className="grid gap-5 py-2">
             {scope === 'activo' ? <div className="grid gap-2"><Label htmlFor="alert-asset-search">{assetIntent === 'position' ? 'Posición de tu cartera' : 'Activo para seguir'}</Label>{selectedAsset ? <div className="rounded-md border border-[#90b85f] bg-[#e7f2d4] px-3 py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#31531d]">{selectedAsset.activo}</p><p className="text-[10px] text-[#52783a]">{selectedAsset.price_ticker} · {selectedAsset.poseido ? 'En cartera' : 'No poseído; se guardará como seguimiento'}</p></div>{!editingRule ? <Button type="button" size="sm" variant="outline" className="shrink-0 border-[#90b85f] bg-transparent text-[#31531d] hover:bg-[#dceec0]" onClick={() => { setSelectedAsset(null); setIsin(''); setReferencePrice(''); setTargetPrice(''); setTargetCurrency('EUR') }}>Cambiar</Button> : null}</div><div className="mt-3 grid gap-3 border-t border-[#c7dda7] pt-3 sm:grid-cols-2"><div><p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#52783a]">Precio actual</p><p className="mt-1 text-sm font-semibold tabular-nums text-[#31531d]">{formatAssetPrice(selectedAsset.precio_actual, selectedAsset.divisa)}</p><p className="mt-1 flex items-center gap-1 text-[10px] text-[#52783a]"><Clock3 className="h-3 w-3" />{formatAssetDate(selectedAsset.precio_actual_as_of) ? `Dato ${formatAssetDate(selectedAsset.precio_actual_as_of)}` : 'Último precio disponible'}</p></div><div><p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#52783a]">Mercado seleccionado</p><p className="mt-1 flex items-center gap-1 text-sm font-semibold text-[#31531d]"><MapPin className="h-3.5 w-3.5" />{selectedAsset.exchange || 'Mercado no identificado'}</p><p className="mt-1 text-[10px] text-[#52783a]">{selectedAsset.market_symbol || selectedAsset.price_ticker}</p></div></div></div> : <div className="relative"><Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-slate-400" /><Input id="alert-asset-search" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder={assetIntent === 'position' ? 'Busca una posición (SXR8, BTC, NVDA…)' : 'Busca un activo que no tengas (AAPL, BTC…)'} className="pl-9" autoFocus />{searching ? <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-slate-400" /> : null}{searchResults.length > 0 ? <div className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-slate-200 bg-white p-1 shadow-xl">{searchResults.map((result) => <button type="button" key={result.key} className="flex w-full items-start justify-between gap-3 rounded px-3 py-2 text-left hover:bg-slate-50" onClick={() => chooseAsset(result)}><span className="min-w-0"><span className="block truncate text-xs font-semibold text-slate-800">{result.activo}</span><span className="block text-[10px] text-slate-500">{result.price_ticker}{result.exchange ? ` · ${result.exchange}` : ' · Mercado no identificado'}</span><span className="block text-[10px] text-slate-400">{formatAssetPrice(result.precio_actual, result.divisa)} · ISIN {result.isin || 'no disponible'}</span></span><span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold ${result.poseido ? 'bg-[#e7f2d4] text-[#31531d]' : 'bg-slate-100 text-slate-500'}`}>{result.poseido ? 'En cartera' : 'No poseído'}</span></button>)}</div> : null}</div>} {selectedAsset ? <div className="grid gap-2 rounded-md border border-slate-200 bg-white p-3"><div className="flex items-center justify-between gap-2"><Label className="text-slate-700" htmlFor="alert-isin">ISIN para confirmar el instrumento (opcional)</Label>{isin ? <button type="button" title="Copiar ISIN" aria-label={`Copiar ISIN ${isin}`} className="inline-flex items-center gap-1 rounded px-1.5 py-1 text-[10px] font-semibold text-slate-500 hover:bg-slate-100 hover:text-slate-900" onClick={() => void copiarIsin(isin)}><Copy className="h-3 w-3" />Copiar</button> : null}</div><Input id="alert-isin" value={isin} onChange={(event) => setIsin(event.target.value.toUpperCase())} placeholder="Ej. CY0106002112" maxLength={12} className="text-slate-900 placeholder:text-slate-400" /><p className="text-[10px] text-slate-500">{isin ? 'Se guardará junto con el ticker y el mercado seleccionado.' : 'Si el proveedor no lo devuelve, puedes pegarlo aquí. La alerta seguirá ligada a esta cotización concreta.'}</p></div> : null} {!selectedAsset && !editingRule ? <p className="text-[10px] text-slate-500">{assetIntent === 'position' ? 'Elige una posición de tu cartera.' : 'Elige un activo que no esté en tu cartera.'}</p> : null}</div> : null}
            {scope === 'activo' && selectedAsset && !selectedAsset.poseido && !editingRule ? <div className="grid gap-2"><Label htmlFor="alert-reference-price">Precio de referencia en EUR (opcional)</Label><Input id="alert-reference-price" type="number" min="0.000001" step="any" value={referencePrice} onChange={(event) => setReferencePrice(event.target.value)} placeholder="Se consulta automáticamente si lo dejas vacío" /><p className="text-[10px] text-slate-500">{selectedAsset.divisa && selectedAsset.divisa !== 'EUR' ? 'El precio mostrado está en la divisa del mercado; si dejas esto vacío, la alerta se normalizará a EUR al guardar.' : 'La variación se medirá desde este precio. Si lo dejas vacío, Finanzas capturará la cotización al guardar.'}</p></div> : null}
             {scope === 'cartera' ? <div className="grid gap-2 rounded-md border border-emerald-200 bg-[#eef6e5] p-3"><Label htmlFor="alert-reference-price">Valor total actual de la cartera (€)</Label><Input id="alert-reference-price" type="number" min="0.01" step="any" value={referencePrice} readOnly aria-readonly="true" placeholder="Valor total de la cartera" /><p className="text-[10px] leading-relaxed text-slate-600">Incluye posiciones abiertas y efectivo disponible en EUR. Los porcentajes se calcularán desde este total al guardar la alerta.</p>{portfolioBaseValue !== null && (portfolioRiseLevel !== null || portfolioDropLevel !== null) ? <p className="rounded-md bg-white/70 px-2.5 py-2 text-[10px] font-medium leading-relaxed text-slate-700">Con base en {formatAssetPrice(portfolioBaseValue, 'EUR')}{portfolioRiseLevel !== null ? ` · +${rise}%: ${formatAssetPrice(portfolioRiseLevel, 'EUR')}` : ''}{portfolioDropLevel !== null ? ` · −${drop}%: ${formatAssetPrice(portfolioDropLevel, 'EUR')}` : ''}</p> : null}</div> : null}
            {scope === 'activo' && selectedAsset ? <div className="grid gap-2"><Label htmlFor="alert-target-price">Importe objetivo de alerta (opcional)</Label><div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_8rem]"><Input id="alert-target-price" aria-label={`Importe objetivo en ${targetCurrency}`} type="number" min="0.000001" step="any" value={targetPrice} onChange={(event) => setTargetPrice(event.target.value)} placeholder="Ej. 120,00" /><select id="alert-target-currency" aria-label="Divisa del objetivo de alerta" value={targetCurrency} onChange={(event) => setTargetCurrency(event.target.value)} className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-slate-500">{targetCurrencyOptions.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select></div><p className="text-[10px] leading-relaxed text-slate-500">La alerta comparará el objetivo en la divisa elegida. EUR usa la valoración normalizada; USD u otra divisa disponible usa la cotización del mercado.</p></div> : null}
-           {scope === 'activo' && selectedAsset ? <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] leading-relaxed text-slate-600">El precio objetivo es un nivel absoluto. Los porcentajes se calcularán desde el precio actual de este activo en el momento de guardar la alerta.</p> : null}
-            <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-2"><Label htmlFor="alert-rise">Avisar si sube (%)</Label><Input id="alert-rise" type="number" min="0.1" step="0.1" value={rise} onChange={(event) => setRise(event.target.value)} placeholder="Ej. 10" /></div><div className="grid gap-2"><Label htmlFor="alert-drop">Avisar si cae (%)</Label><Input id="alert-drop" type="number" min="0.1" step="0.1" value={drop} onChange={(event) => setDrop(event.target.value)} placeholder="Ej. 10" /></div></div>
+            {scope === 'activo' && selectedAsset ? <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[10px] leading-relaxed text-slate-600">El precio objetivo es un nivel absoluto. Los porcentajes se calcularán desde el precio actual de este activo en el momento de guardar la alerta.</p> : null}
+            <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-2"><Label htmlFor="alert-target-date">Fecha objetivo (opcional)</Label><Input id="alert-target-date" type="date" value={targetDate} onChange={(event) => setTargetDate(event.target.value)} /><p className="text-[10px] leading-relaxed text-slate-500">También enviará el aviso cuando llegue este día, aunque no se haya cruzado otro nivel.</p></div><div className="grid gap-2"><Label htmlFor="alert-note">Nota para la alerta (opcional)</Label><textarea id="alert-note" value={note} onChange={(event) => setNote(event.target.value)} maxLength={1000} rows={3} placeholder="Ej. Revisar resultados y decidir si mantengo la posición" className="min-h-[5rem] w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-500 focus:ring-1 focus:ring-slate-300" /><p className="text-[10px] leading-relaxed text-slate-500">Se incluirá junto al precio actual en Telegram, email y WhatsApp.</p></div></div>
+             <div className="grid gap-3 sm:grid-cols-2"><div className="grid gap-2"><Label htmlFor="alert-rise">Avisar si sube (%)</Label><Input id="alert-rise" type="number" min="0.1" step="0.1" value={rise} onChange={(event) => setRise(event.target.value)} placeholder="Ej. 10" /></div><div className="grid gap-2"><Label htmlFor="alert-drop">Avisar si cae (%)</Label><Input id="alert-drop" type="number" min="0.1" step="0.1" value={drop} onChange={(event) => setDrop(event.target.value)} placeholder="Ej. 10" /></div></div>
             <div className="grid gap-2"><Label htmlFor="alert-rearm">Recuperación para volver a avisar (%)</Label><Input id="alert-rearm" type="number" min="0.1" step="0.1" value={rearm} onChange={(event) => setRearm(event.target.value)} /><p className="text-[10px] leading-relaxed text-slate-500">No es el número de avisos: es cuánto debe recuperar la rentabilidad para rearmar la alerta. Ejemplo: si cae un 10% y pones 1%, volverá a avisar al recuperar hasta −9%.</p></div>
             <div className="grid gap-2"><Label>Canales</Label><div className="flex flex-wrap gap-2"><button type="button" aria-pressed={telegram} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${channelButtonClass(telegram)}`} onClick={() => setTelegram((value) => !value)}><Send className="h-3.5 w-3.5" />Telegram</button><button type="button" aria-pressed={email} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${channelButtonClass(email)}`} onClick={() => setEmail((value) => !value)}><Mail className="h-3.5 w-3.5" />Email</button><button type="button" aria-pressed={whatsapp} className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold ${channelButtonClass(whatsapp)}`} onClick={() => setWhatsapp((value) => !value)}><MessageCircle className="h-3.5 w-3.5" />WhatsApp</button></div><p className="text-[10px] text-slate-500">{scenarioMode ? 'Se guardan como preferencias locales; esta vista no envía mensajes.' : 'El workflow de n8n usa estas marcas para decidir a qué canal enviar cada cruce. WhatsApp se completa desde Configuración; Telegram y email no dependen de estos datos.'}</p></div>
             <div className="flex items-center justify-between rounded-md border border-slate-200 bg-[#eeece5] px-3 py-2"><div><p className="text-xs font-semibold text-slate-700">Regla activa</p><p className="text-[10px] text-slate-500">Pausarla conserva su configuración y estado.</p></div><button type="button" aria-pressed={active} className={`relative h-6 w-11 rounded-full transition ${active ? 'bg-[#739b43]' : 'bg-slate-300'}`} onClick={() => setActive((value) => !value)}><span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition ${active ? 'left-6' : 'left-1'}`} /></button></div>

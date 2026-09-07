@@ -18,6 +18,8 @@ const inversionAlertaBaseSchema = z.object({
   precio_objetivo: z.number().positive('El precio objetivo debe ser mayor que 0').nullable().optional(),
   precio_objetivo_importe: targetAmount,
   divisa_objetivo: targetCurrency,
+  nota: z.string().trim().max(1000, 'La nota no puede superar los 1000 caracteres').nullable().optional(),
+  fecha_objetivo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'La fecha objetivo no es válida').nullable().optional(),
   umbral_subida_pct: threshold,
   umbral_caida_pct: threshold,
   rearmar_pct: z.number().min(0).max(1).default(0.01),
@@ -33,6 +35,10 @@ function hasTargetConfiguration(value: AlertInputShape) {
   return value.precio_objetivo != null || value.precio_objetivo_importe != null || value.divisa_objetivo != null
 }
 
+function hasDateConfiguration(value: AlertInputShape) {
+  return value.fecha_objetivo != null
+}
+
 function validateTargetPair(value: AlertInputShape, context: z.RefinementCtx) {
   const hasAmount = Object.hasOwn(value, 'precio_objetivo_importe')
   const hasCurrency = Object.hasOwn(value, 'divisa_objetivo')
@@ -44,8 +50,8 @@ function validateTargetPair(value: AlertInputShape, context: z.RefinementCtx) {
 
 export const inversionAlertaSchema = inversionAlertaBaseSchema.superRefine((value, context) => {
   validateTargetPair(value, context)
-  if (value.umbral_subida_pct === null && value.umbral_caida_pct === null && !hasTargetConfiguration(value)) {
-    context.addIssue({ code: 'custom', message: 'Configura una alerta porcentual o un precio objetivo', path: ['umbral_subida_pct'] })
+  if (value.umbral_subida_pct === null && value.umbral_caida_pct === null && !hasTargetConfiguration(value) && !hasDateConfiguration(value)) {
+    context.addIssue({ code: 'custom', message: 'Configura una alerta porcentual, un precio objetivo o una fecha', path: ['umbral_subida_pct'] })
   }
   if (value.alcance === 'cartera' && hasTargetConfiguration(value)) {
     context.addIssue({ code: 'custom', message: 'El precio objetivo solo está disponible para activos', path: ['precio_objetivo'] })
