@@ -1944,14 +1944,14 @@ function InvestmentPortfolioContent() {
         />
 
       {!isDemoPortfolio && <Dialog open={cashAdjustmentDialogOpen} onOpenChange={setCashAdjustmentDialogOpen}>
-        <DialogContent className="border-slate-200 bg-[#f7f5ef] text-slate-900 sm:max-w-md">
+        <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-lg grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-slate-200 bg-[#f7f5ef] p-4 text-slate-900 sm:max-h-[90vh] sm:w-full sm:p-6">
           <DialogHeader>
             <DialogTitle className="tracking-[-0.04em]">Gestionar efectivo</DialogTitle>
             <DialogDescription>
               Añade o reconcilia saldo, o mueve efectivo entre cuentas y divisas sin crear operaciones de inversión.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={(event) => { event.preventDefault(); void guardarAjusteEfectivo() }} className="grid gap-4">
+          <form onSubmit={(event) => { event.preventDefault(); void guardarAjusteEfectivo() }} className="min-h-0 overflow-y-auto overscroll-contain pr-1 sm:pr-2">
           <div className="grid grid-cols-2 gap-1 rounded-lg bg-[#eeece5] p-1 text-xs">
             <button type="button" className={`rounded-md px-3 py-2 font-semibold transition ${cashMovementMode === 'ajuste' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`} onClick={() => setCashMovementMode('ajuste')}>Ajustar saldo</button>
             <button type="button" className={`rounded-md px-3 py-2 font-semibold transition ${cashMovementMode === 'traspaso' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`} onClick={() => setCashMovementMode('traspaso')}>Mover / convertir</button>
@@ -2004,7 +2004,7 @@ function InvestmentPortfolioContent() {
             </div>
             <div className="flex gap-2 rounded-md bg-[#eeece5] px-3 py-2.5 text-[10px] leading-relaxed text-slate-500"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>Solo se registra la diferencia necesaria en el libro de efectivo. Si no hay diferencia relevante, no se crea ningún movimiento.</span></div>
           </> : null}
-            <DialogFooter>
+            <DialogFooter className="sticky bottom-0 z-10 -mx-1 mt-1 border-t border-slate-200 bg-[#f7f5ef] px-1 pt-3 sm:static sm:mx-0 sm:mt-0 sm:border-0 sm:bg-transparent sm:px-0 sm:pt-0">
               <Button type="button" variant="outline" onClick={() => setCashAdjustmentDialogOpen(false)}>Cancelar</Button>
               <Button type="submit" className="bg-slate-900 text-white hover:bg-slate-700" disabled={savingCashAdjustment}>{savingCashAdjustment ? 'Guardando…' : cashMovementMode === 'traspaso' ? 'Guardar movimiento' : 'Guardar ajuste'}</Button>
             </DialogFooter>
