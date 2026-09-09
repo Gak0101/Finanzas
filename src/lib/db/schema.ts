@@ -316,8 +316,14 @@ export const inversiones_operaciones = sqliteTable(
     cantidad: real('cantidad').notNull(),
     precio_unitario: real('precio_unitario').notNull(),
     importe: real('importe').notNull(),
+    // Importe original en la divisa de liquidación. Los campos *_eur permiten
+    // agregar métricas de cartera sin mezclar EUR y USD.
+    importe_eur: real('importe_eur'),
     comision: real('comision').notNull().default(0),
+    comision_eur: real('comision_eur'),
     impuesto: real('impuesto').notNull().default(0),
+    impuesto_eur: real('impuesto_eur'),
+    tipo_cambio_eur: real('tipo_cambio_eur'),
     divisa: text('divisa').notNull().default('EUR'),
     fuente: text('fuente').notNull().default('App'),
     external_id: text('external_id'),

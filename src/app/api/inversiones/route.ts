@@ -112,6 +112,14 @@ export async function POST(req: Request) {
   const isin = input.isin?.trim() || inferIsin(input.ticker, selectedPriceTicker, marketSymbol)
   const divisa = input.divisa.trim().toUpperCase()
   const transactionCost = importe + input.comision + input.impuesto
+  const exchangeRateEur = divisa === 'EUR' ? 1 : input.tipo_cambio_eur
+  if (!exchangeRateEur || !Number.isFinite(exchangeRateEur) || exchangeRateEur <= 0) {
+    return NextResponse.json({ error: `Indica el tipo de cambio de ${divisa} a EUR para guardar esta operación` }, { status: 400 })
+  }
+  const importeEur = importe * exchangeRateEur
+  const comisionEur = input.comision * exchangeRateEur
+  const impuestoEur = input.impuesto * exchangeRateEur
+  const transactionCostEur = importeEur + comisionEur + impuestoEur
 
   class InsufficientCashError extends Error {
     constructor(readonly balance: number) {
@@ -175,8 +183,12 @@ export async function POST(req: Request) {
           cantidad: input.cantidad,
           precio_unitario: input.precio_unitario,
           importe,
+          importe_eur: importeEur,
           comision: input.comision,
+          comision_eur: comisionEur,
           impuesto: input.impuesto,
+          impuesto_eur: impuestoEur,
+          tipo_cambio_eur: exchangeRateEur,
           divisa,
           fuente: 'App',
           notas: input.notas,
@@ -211,8 +223,8 @@ export async function POST(req: Request) {
       } else if (input.tipo === 'Compra') {
         if (existing) {
           const newQuantity = existing.cantidad + input.cantidad
-          const newCost = (existing.coste ?? 0) + transactionCost
-          const currentPrice = existing.precio_actual ?? input.precio_unitario
+          const newCost = (existing.coste ?? 0) + transactionCostEur
+          const currentPrice = existing.precio_actual ?? input.precio_actual_eur ?? (divisa === 'EUR' ? input.precio_unitario : input.precio_unitario * exchangeRateEur)
           const newValue = newQuantity * currentPrice
 
           tx
@@ -239,7 +251,8 @@ export async function POST(req: Request) {
             .where(eq(inversiones_posiciones.id, existing.id))
             .run()
         } else {
-          const currentValue = importe
+          const currentPriceEur = input.precio_actual_eur ?? (divisa === 'EUR' ? input.precio_unitario : input.precio_unitario * exchangeRateEur)
+          const currentValue = input.cantidad * currentPriceEur
           tx.insert(inversiones_posiciones).values({
             usuario_id: auth.userId,
             custodia: input.custodia,
@@ -251,16 +264,18 @@ export async function POST(req: Request) {
             price_ticker: selectedPriceTicker,
             crypto_id: cryptoId,
             cantidad: input.cantidad,
-            precio_compra: transactionCost / input.cantidad,
-            coste: transactionCost,
-            precio_actual: input.precio_unitario,
+            precio_compra: transactionCostEur / input.cantidad,
+            coste: transactionCostEur,
+            precio_actual: currentPriceEur,
+            precio_actual_nativo: input.precio_actual_nativo ?? null,
+            divisa_nativa: input.divisa_nativa?.trim().toUpperCase() ?? null,
             valor_actual: currentValue,
-            pnl: currentValue - transactionCost,
-            pnl_pct: transactionCost > 0 ? (currentValue - transactionCost) / transactionCost : null,
+            pnl: currentValue - transactionCostEur,
+            pnl_pct: transactionCostEur > 0 ? (currentValue - transactionCostEur) / transactionCostEur : null,
             peso: 0,
             fuente: 'Manual · operación registrada',
             estado_fuente: 'MANUAL',
-            ultimo_valido: input.precio_unitario,
+            ultimo_valido: currentPriceEur,
             fallback_map: null,
             proveedor: 'Usuario',
             fuente_url: null,
@@ -270,7 +285,7 @@ export async function POST(req: Request) {
             hoja_origen: 'App',
             fila_origen: null,
             incluido_resumen: true,
-            divisa,
+            divisa: 'EUR',
             sector: input.tipo_activo,
             market_symbol: marketSymbol,
           }).run()

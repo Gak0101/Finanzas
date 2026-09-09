@@ -12,6 +12,8 @@ export const tiposMovimientoEfectivoInversion = [
   'DIVIDENDO',
   'APORTACION',
   'AJUSTE',
+  'TRASPASO_SALIDA',
+  'TRASPASO_ENTRADA',
 ] as const
 
 export type TipoMovimientoEfectivoInversion = typeof tiposMovimientoEfectivoInversion[number]
@@ -47,6 +49,23 @@ export const investmentCashAdjustmentSchema = z.object({
   saldo_objetivo: z.number().finite().nonnegative('El saldo objetivo no puede ser negativo'),
   descripcion: z.string().trim().max(500, 'La descripción no puede superar los 500 caracteres').optional(),
 })
+
+export const investmentCashTransferSchema = z.object({
+  custodia_origen: z.string().trim().min(1, 'La cuenta de origen es requerida').max(120),
+  divisa_origen: z.string().trim().regex(/^[A-Za-z]{3}$/, 'La divisa de origen debe tener tres letras').transform((value) => value.toUpperCase()),
+  importe_origen: z.number().finite().positive('El importe de origen debe ser mayor que cero'),
+  custodia_destino: z.string().trim().min(1, 'La cuenta de destino es requerida').max(120),
+  divisa_destino: z.string().trim().regex(/^[A-Za-z]{3}$/, 'La divisa de destino debe tener tres letras').transform((value) => value.toUpperCase()),
+  importe_destino: z.number().finite().positive('El importe de destino debe ser mayor que cero'),
+  fecha: z.string().refine(isCalendarDate, 'La fecha debe ser una fecha de calendario válida con formato YYYY-MM-DD'),
+  descripcion: z.string().trim().max(500, 'La descripción no puede superar los 500 caracteres').optional(),
+}).superRefine((value, context) => {
+  if (value.custodia_origen === value.custodia_destino && value.divisa_origen === value.divisa_destino) {
+    context.addIssue({ code: 'custom', path: ['custodia_destino'], message: 'La cuenta de destino debe ser distinta o usar otra divisa' })
+  }
+})
+
+export type InvestmentCashTransferInput = z.infer<typeof investmentCashTransferSchema>
 
 export type InvestmentCashAdjustmentInput = z.infer<typeof investmentCashAdjustmentSchema>
 
@@ -136,6 +155,77 @@ export function adjustInvestmentCash(userId: number, input: InvestmentCashAdjust
       saldoAnterior: adjustment.saldoAnterior,
       saldoObjetivo: input.saldo_objetivo,
       importe: adjustment.importe,
+    },
+  }
+}
+
+export type InvestmentCashTransferResult = {
+  cash: InvestmentCashSnapshot
+  detail: {
+    custodiaOrigen: string
+    divisaOrigen: string
+    importeOrigen: number
+    custodiaDestino: string
+    divisaDestino: string
+    importeDestino: number
+  }
+}
+
+export function transferInvestmentCash(userId: number, input: InvestmentCashTransferInput): InvestmentCashTransferResult {
+  db.transaction((tx) => {
+    const [currentRow] = tx
+      .select({
+        saldo: sql<number>`coalesce(sum(${inversiones_movimientos_efectivo.importe}), 0)`,
+      })
+      .from(inversiones_movimientos_efectivo)
+      .where(and(
+        eq(inversiones_movimientos_efectivo.usuario_id, userId),
+        eq(inversiones_movimientos_efectivo.custodia, input.custodia_origen),
+        eq(inversiones_movimientos_efectivo.divisa, input.divisa_origen),
+      ))
+      .all()
+
+    const saldoOrigen = Number(currentRow?.saldo ?? 0)
+    if (saldoOrigen + CASH_ADJUSTMENT_EPSILON < input.importe_origen) {
+      throw new Error(`INSUFFICIENT_CASH:${saldoOrigen}`)
+    }
+
+    const reference = randomUUID()
+    tx.insert(inversiones_movimientos_efectivo).values([
+      {
+        usuario_id: userId,
+        custodia: input.custodia_origen,
+        divisa: input.divisa_origen,
+        fecha: input.fecha,
+        importe: -input.importe_origen,
+        tipo: 'TRASPASO_SALIDA',
+        operacion_id: null,
+        referencia: `traspaso:${reference}:salida`,
+        descripcion: input.descripcion || `Salida hacia ${input.custodia_destino} · ${input.divisa_destino}`,
+      },
+      {
+        usuario_id: userId,
+        custodia: input.custodia_destino,
+        divisa: input.divisa_destino,
+        fecha: input.fecha,
+        importe: input.importe_destino,
+        tipo: 'TRASPASO_ENTRADA',
+        operacion_id: null,
+        referencia: `traspaso:${reference}:entrada`,
+        descripcion: input.descripcion || `Entrada desde ${input.custodia_origen} · ${input.divisa_origen}`,
+      },
+    ]).run()
+  })
+
+  return {
+    cash: getInvestmentCashSnapshot(userId),
+    detail: {
+      custodiaOrigen: input.custodia_origen,
+      divisaOrigen: input.divisa_origen,
+      importeOrigen: input.importe_origen,
+      custodiaDestino: input.custodia_destino,
+      divisaDestino: input.divisa_destino,
+      importeDestino: input.importe_destino,
     },
   }
 }

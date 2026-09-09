@@ -178,12 +178,20 @@ type ReplayState = {
 }
 
 function operationNetCash(operation: InversionOperacion) {
-  const fees = absolute(operation.comision) + absolute(operation.impuesto)
-  const amount = absolute(operation.importe)
+  const fees = operationFeesEur(operation)
+  const amount = operationAmountEur(operation)
   if (operation.tipo === 'Compra') return -(amount + fees)
   if (operation.tipo === 'Venta') return amount - fees
   if (operation.tipo === 'Dividendo' || operation.tipo === 'Bonificación' || operation.tipo === 'Aportación') return amount - fees
   return null
+}
+
+function operationAmountEur(operation: InversionOperacion) {
+  return absolute(operation.importe_eur ?? operation.importe)
+}
+
+function operationFeesEur(operation: InversionOperacion) {
+  return absolute(operation.comision_eur ?? operation.comision) + absolute(operation.impuesto_eur ?? operation.impuesto)
 }
 
 function absolute(value: number | null | undefined) {
@@ -248,8 +256,8 @@ function xirr(flows: ReturnCashFlow[]) {
 }
 
 function operationCashFlow(operation: InversionOperacion): ReturnCashFlow | null {
-  const fees = absolute(operation.comision) + absolute(operation.impuesto)
-  const amount = absolute(operation.importe)
+  const fees = operationFeesEur(operation)
+  const amount = operationAmountEur(operation)
   if (operation.tipo === 'Compra') return { date: operation.fecha, amount: -(amount + fees) }
   if (operation.tipo === 'Venta') return { date: operation.fecha, amount: amount - fees }
   if (operation.tipo === 'Dividendo' || operation.tipo === 'Bonificación') return { date: operation.fecha, amount: amount - fees }
@@ -490,15 +498,15 @@ function replayOperations(operations: InversionOperacion[], resolveKey: Investme
 
     const year = Number(operation.fecha.slice(0, 4))
     const yearSummary = Number.isInteger(year) ? fiscalYear(fiscal, year) : null
-    const fee = absolute(operation.comision)
-    const tax = absolute(operation.impuesto)
+    const fee = absolute(operation.comision_eur ?? operation.comision)
+    const tax = absolute(operation.impuesto_eur ?? operation.impuesto)
     const operationMetric: InvestmentOperationAnalytics = {
       operationId: operation.id,
       tipo: operation.tipo,
       activo: operation.activo,
       ticker: operation.ticker,
       fecha: operation.fecha,
-      importe: absolute(operation.importe),
+      importe: operationAmountEur(operation),
       netCash: operationNetCash(operation),
       matchedQuantity: null,
       unmatchedQuantity: null,
@@ -519,7 +527,7 @@ function replayOperations(operations: InversionOperacion[], resolveKey: Investme
 
     if (operation.tipo === 'Compra') {
       const quantity = absolute(operation.cantidad)
-      const amount = absolute(operation.importe)
+      const amount = operationAmountEur(operation)
       state.quantity += quantity
       // Only purchases processed after cash accounting have a persisted source
       // of funds. Keep imported/historical replay unchanged while aligning new
@@ -534,7 +542,7 @@ function replayOperations(operations: InversionOperacion[], resolveKey: Investme
 
     if (operation.tipo === 'Venta') {
       const quantity = absolute(operation.cantidad)
-      const proceeds = absolute(operation.importe)
+      const proceeds = operationAmountEur(operation)
       const matchedQuantity = Math.min(quantity, Math.max(0, state.quantity))
       const averageCost = state.quantity > QUANTITY_EPSILON ? state.costBasis / state.quantity : 0
       const assignedCost = matchedQuantity * averageCost
@@ -575,7 +583,7 @@ function replayOperations(operations: InversionOperacion[], resolveKey: Investme
     }
 
     if (operation.tipo === 'Dividendo') {
-      const amount = absolute(operation.importe)
+      const amount = operationAmountEur(operation)
       state.dividends += amount
       dividends += amount
       if (yearSummary) yearSummary.dividends += amount
@@ -583,7 +591,7 @@ function replayOperations(operations: InversionOperacion[], resolveKey: Investme
     }
 
     if (operation.tipo === 'Bonificación') {
-      const amount = absolute(operation.importe)
+      const amount = operationAmountEur(operation)
       state.bonuses += amount
       bonuses += amount
       if (yearSummary) yearSummary.bonuses += amount

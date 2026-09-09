@@ -37,6 +37,11 @@ export const inversionOperacionSchema = z.object({
   cantidad: z.number().positive('La cantidad debe ser mayor que 0'),
   precio_unitario: z.number().nonnegative('El precio no puede ser negativo'),
   importe: z.number().nonnegative('El importe no puede ser negativo').optional(),
+  precio_actual_eur: z.number().positive('El precio actual en EUR debe ser mayor que 0').optional(),
+  precio_actual_nativo: z.number().positive('El precio actual nativo debe ser mayor que 0').optional(),
+  divisa_nativa: z.string().trim().min(3).max(10).optional(),
+  // 1 unidad de la divisa de liquidación expresada en EUR.
+  tipo_cambio_eur: z.number().positive('El tipo de cambio debe ser mayor que 0').optional(),
   comision: z.number().nonnegative('La comisión no puede ser negativa').default(0),
   impuesto: z.number().nonnegative('El impuesto no puede ser negativo').default(0),
   divisa: z.string().trim().min(3, 'La divisa no es válida').max(10).default('EUR'),

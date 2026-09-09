@@ -49,6 +49,14 @@ function absolute(value: number | null | undefined) {
   return Math.abs(value ?? 0)
 }
 
+function operationAmountEur(operation: InversionOperacion) {
+  return absolute(operation.importe_eur ?? operation.importe)
+}
+
+function operationFeeEur(operation: InversionOperacion, field: 'comision' | 'impuesto') {
+  return absolute(operation[`${field}_eur`] ?? operation[field])
+}
+
 function finaliseCycle(cycle: Cycle) {
   cycle.ticker = [...cycle.tickers].filter(Boolean).join(' / ') || '—'
   cycle.fuente = [...cycle.sources].filter(Boolean).join(' · ') || 'App'
@@ -125,18 +133,18 @@ export function calculateClosedInvestmentPositions(operations: InversionOperacio
         if (!active || active.balance <= QUANTITY_EPSILON) active = newCycle(operation)
         active.balance += quantity
         active.cantidad += quantity
-        active.importe_compras += absolute(operation.importe)
-        active.comisiones += absolute(operation.comision)
-        active.impuestos += absolute(operation.impuesto)
+        active.importe_compras += operationAmountEur(operation)
+        active.comisiones += operationFeeEur(operation, 'comision')
+        active.impuestos += operationFeeEur(operation, 'impuesto')
         addTrace(active, operation)
         continue
       }
 
       if (!active || active.balance <= QUANTITY_EPSILON) continue
       active.balance -= quantity
-      active.importe_ventas += absolute(operation.importe)
-      active.comisiones += absolute(operation.comision)
-      active.impuestos += absolute(operation.impuesto)
+      active.importe_ventas += operationAmountEur(operation)
+      active.comisiones += operationFeeEur(operation, 'comision')
+      active.impuestos += operationFeeEur(operation, 'impuesto')
       active.fecha_cierre = operation.fecha
       active.closingAt = operationTimestamp(operation)
       addTrace(active, operation)
@@ -166,10 +174,10 @@ export function calculateClosedInvestmentPositions(operations: InversionOperacio
       }
 
       if (!target) continue
-      if (operation.tipo === 'Dividendo') target.dividendos += absolute(operation.importe)
-      else target.bonificaciones += absolute(operation.importe)
-      target.comisiones += absolute(operation.comision)
-      target.impuestos += absolute(operation.impuesto)
+      if (operation.tipo === 'Dividendo') target.dividendos += operationAmountEur(operation)
+      else target.bonificaciones += operationAmountEur(operation)
+      target.comisiones += operationFeeEur(operation, 'comision')
+      target.impuestos += operationFeeEur(operation, 'impuesto')
       addTrace(target, operation)
     }
   }
