@@ -89,6 +89,7 @@ type OperationAssetSearchResult = {
   exchange: string | null
   isin: string | null
   precio_actual: number | null
+  precio_actual_eur: number | null
   divisa: string | null
   precio_actual_as_of: string | null
   poseido: boolean
@@ -358,6 +359,15 @@ function PriceUpdateToast({ title, message, warning = false }: { title: string; 
 }
 
 function formatCashAmount(value: number, currency: string) {
+  const safeCurrency = /^[A-Z]{3}$/.test(currency) ? currency : 'EUR'
+  return new Intl.NumberFormat('es-ES', {
+    style: 'currency',
+    currency: safeCurrency,
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
+function formatOperationAmount(value: number, currency: string) {
   const safeCurrency = /^[A-Z]{3}$/.test(currency) ? currency : 'EUR'
   return new Intl.NumberFormat('es-ES', {
     style: 'currency',
@@ -637,11 +647,18 @@ function InvestmentPortfolioContent() {
   const [savingOperation, setSavingOperation] = useState(false)
   const [cashAdjustmentDialogOpen, setCashAdjustmentDialogOpen] = useState(false)
   const [savingCashAdjustment, setSavingCashAdjustment] = useState(false)
+  const [cashMovementMode, setCashMovementMode] = useState<'ajuste' | 'traspaso'>('ajuste')
   const [cashAdjustmentCustodia, setCashAdjustmentCustodia] = useState('')
   const [cashAdjustmentDivisa, setCashAdjustmentDivisa] = useState('EUR')
   const [cashAdjustmentTarget, setCashAdjustmentTarget] = useState('')
   const [cashAdjustmentDate, setCashAdjustmentDate] = useState('')
   const [cashAdjustmentDescription, setCashAdjustmentDescription] = useState('')
+  const [cashTransferSourceCustodia, setCashTransferSourceCustodia] = useState('')
+  const [cashTransferSourceDivisa, setCashTransferSourceDivisa] = useState('EUR')
+  const [cashTransferSourceAmount, setCashTransferSourceAmount] = useState('')
+  const [cashTransferDestinationCustodia, setCashTransferDestinationCustodia] = useState('')
+  const [cashTransferDestinationDivisa, setCashTransferDestinationDivisa] = useState('EUR')
+  const [cashTransferDestinationAmount, setCashTransferDestinationAmount] = useState('')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [activityFilter, setActivityFilter] = useState<ActivityFilter>('all')
@@ -671,6 +688,7 @@ function InvestmentPortfolioContent() {
   const [comision, setComision] = useState('')
   const [impuesto, setImpuesto] = useState('')
   const [operationCurrency, setOperationCurrency] = useState('EUR')
+  const [operationExchangeRate, setOperationExchangeRate] = useState('1')
   const [detailPositionId, setDetailPositionId] = useState<number | null>(null)
   const activeTab: InvestmentTab = ['buscador', 'seguimiento'].includes(searchParams.get('tab') || '') ? 'seguimiento' : 'portfolio'
 
@@ -813,7 +831,9 @@ function InvestmentPortfolioContent() {
   const cashSummary = cash?.balances.map((balance) => `${balance.custodia}: ${formatCashAmount(balance.saldo, balance.divisa)}`).join(' · ')
   const cashCustodyOptions = useMemo(() => [...new Set(cash?.balances.map((balance) => balance.custodia) ?? [])], [cash?.balances])
   const cashCurrencyOptions = useMemo(() => [...new Set(['EUR', ...(cash?.balances.map((balance) => balance.divisa) ?? [])])], [cash?.balances])
+  const operationCurrencyOptions = useMemo(() => [...new Set(['EUR', 'USD', ...cashCurrencyOptions, operationCurrency])], [cashCurrencyOptions, operationCurrency])
   const cashAdjustmentCurrentBalance = cash?.balances.find((balance) => balance.custodia === cashAdjustmentCustodia.trim() && balance.divisa === cashAdjustmentDivisa.trim().toUpperCase())?.saldo ?? 0
+  const cashTransferSourceBalance = cash?.balances.find((balance) => balance.custodia === cashTransferSourceCustodia.trim() && balance.divisa === cashTransferSourceDivisa.trim().toUpperCase())?.saldo ?? 0
   const detailPosition = positions.find((position) => position.id === detailPositionId) ?? null
   const detailAnalytics = analytics?.positionAnalytics.find((item) => item.positionId === detailPositionId) ?? null
   const positionAnalyticsById = useMemo(
@@ -1004,11 +1024,79 @@ function InvestmentPortfolioContent() {
     setCashAdjustmentTarget(String(defaultBalance?.saldo ?? 0))
     setCashAdjustmentDate(new Date().toISOString().slice(0, 10))
     setCashAdjustmentDescription('')
+    setCashMovementMode('ajuste')
+    setCashTransferSourceCustodia(defaultBalance?.custodia ?? '')
+    setCashTransferSourceDivisa(defaultBalance?.divisa ?? 'EUR')
+    setCashTransferSourceAmount(String(defaultBalance?.saldo ?? 0))
+    setCashTransferDestinationCustodia('')
+    setCashTransferDestinationDivisa(defaultBalance?.divisa ?? 'EUR')
+    setCashTransferDestinationAmount(String(defaultBalance?.saldo ?? 0))
     setCashAdjustmentDialogOpen(true)
   }
 
   async function guardarAjusteEfectivo() {
     if (isDemoPortfolio) return
+
+    if (cashMovementMode === 'traspaso') {
+      const sourceCustody = cashTransferSourceCustodia.trim()
+      const sourceCurrency = cashTransferSourceDivisa.trim().toUpperCase()
+      const sourceAmount = Number(cashTransferSourceAmount)
+      const destinationCustody = cashTransferDestinationCustodia.trim()
+      const destinationCurrency = cashTransferDestinationDivisa.trim().toUpperCase()
+      const destinationAmount = Number(cashTransferDestinationAmount)
+
+      if (!sourceCustody || !destinationCustody || !/^[A-Z]{3}$/.test(sourceCurrency) || !/^[A-Z]{3}$/.test(destinationCurrency)) {
+        toast.error('Indica las dos cuentas y divisas con códigos de tres letras')
+        return
+      }
+      if (sourceCustody === destinationCustody && sourceCurrency === destinationCurrency) {
+        toast.error('La cuenta de destino debe ser distinta o usar otra divisa')
+        return
+      }
+      if (!Number.isFinite(sourceAmount) || sourceAmount <= 0 || !Number.isFinite(destinationAmount) || destinationAmount <= 0) {
+        toast.error('Indica importes de origen y destino mayores que cero')
+        return
+      }
+      if (!cashTransferSourceBalance || sourceAmount > cashTransferSourceBalance + 1e-7) {
+        toast.error(`Saldo insuficiente: hay ${formatCashAmount(cashTransferSourceBalance, sourceCurrency)} disponibles en ${sourceCustody}`)
+        return
+      }
+      if (!cashAdjustmentDate) {
+        toast.error('Indica la fecha del movimiento')
+        return
+      }
+
+      setSavingCashAdjustment(true)
+      try {
+        const response = await fetch('/api/inversiones/efectivo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'transfer',
+            custodia_origen: sourceCustody,
+            divisa_origen: sourceCurrency,
+            importe_origen: sourceAmount,
+            custodia_destino: destinationCustody,
+            divisa_destino: destinationCurrency,
+            importe_destino: destinationAmount,
+            fecha: cashAdjustmentDate,
+            descripcion: cashAdjustmentDescription.trim() || undefined,
+          }),
+        })
+        const payload = await response.json().catch(() => null)
+        if (!response.ok) throw new Error(getErrorMessage(payload, 'No se pudo mover el efectivo'))
+        if (!hasCashAdjustmentPayload(payload) && (!payload || typeof payload !== 'object' || !('cash' in payload))) throw new Error(invalidApiResponseMessage(response))
+
+        setData((current) => current ? { ...current, cash: (payload as { cash: InvestmentCashSnapshot }).cash } : current)
+        setCashAdjustmentDialogOpen(false)
+        toast.success(`Efectivo movido: ${formatCashAmount(sourceAmount, sourceCurrency)} → ${formatCashAmount(destinationAmount, destinationCurrency)}`)
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'No se pudo mover el efectivo')
+      } finally {
+        setSavingCashAdjustment(false)
+      }
+      return
+    }
 
     const selectedCustodia = cashAdjustmentCustodia.trim()
     const selectedDivisa = cashAdjustmentDivisa.trim().toUpperCase()
@@ -1137,6 +1225,7 @@ function InvestmentPortfolioContent() {
     setComision('')
     setImpuesto('')
     setOperationCurrency('EUR')
+    setOperationExchangeRate('1')
   }
 
   function seleccionarPosicion(value: string) {
@@ -1154,6 +1243,7 @@ function InvestmentPortfolioContent() {
       setCantidad('')
       setPrecio('')
       setOperationCurrency('EUR')
+      setOperationExchangeRate('1')
       return
     }
     const position = positions.find((item) => String(item.id) === value)
@@ -1169,7 +1259,16 @@ function InvestmentPortfolioContent() {
     setTipoActivo(position.tipo as typeof tipoActivo)
     setCustodia(position.custodia)
     setPrecio(position.precio_actual?.toString() ?? '')
-    setOperationCurrency(position.divisa || 'EUR')
+    const lastPositionOperation = operations
+      .filter((operation) => operation.activo === position.activo && operation.custodia === position.custodia)
+      .toSorted((left, right) => operationTimestamp(right) - operationTimestamp(left))[0]
+    const positionCurrency = (lastPositionOperation?.divisa || position.divisa || 'EUR').toUpperCase()
+    setOperationCurrency(positionCurrency)
+    setOperationExchangeRate(lastPositionOperation?.tipo_cambio_eur
+      ? String(lastPositionOperation.tipo_cambio_eur)
+      : position.divisa_nativa && position.precio_actual_nativo && position.precio_actual
+        ? String(position.precio_actual / position.precio_actual_nativo)
+        : '1')
   }
 
   function handleOperationAssetChange(value: string) {
@@ -1182,6 +1281,7 @@ function InvestmentPortfolioContent() {
     setOperationCryptoId(null)
     setOperationIsin('')
     setOperationCurrency('EUR')
+    setOperationExchangeRate('1')
   }
 
   function chooseOperationAsset(result: OperationAssetSearchResult) {
@@ -1196,7 +1296,11 @@ function InvestmentPortfolioContent() {
     setOperationCryptoId(result.crypto_id)
     setOperationIsin(result.isin || '')
     setTipoActivo(result.tipo_activo)
-    setOperationCurrency((result.divisa || 'EUR').toUpperCase())
+    const resultCurrency = (result.divisa || 'EUR').toUpperCase()
+    setOperationCurrency(resultCurrency)
+    setOperationExchangeRate(resultCurrency === 'EUR' || !result.precio_actual || !result.precio_actual_eur
+      ? '1'
+      : String(result.precio_actual_eur / result.precio_actual))
   }
 
   function handleOperationType(value: OperationType) {
@@ -1212,8 +1316,13 @@ function InvestmentPortfolioContent() {
     const unitPrice = Number(precio)
     const fee = comision === '' ? 0 : Number(comision)
     const tax = impuesto === '' ? 0 : Number(impuesto)
+    const exchangeRate = operationCurrency === 'EUR' ? 1 : Number(operationExchangeRate)
     if (!fecha || !activo || !ticker || !custodia || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0 || !Number.isFinite(fee) || fee < 0 || !Number.isFinite(tax) || tax < 0) {
       toast.error('Completa activo, custodia, cantidad y precio')
+      return
+    }
+    if (!Number.isFinite(exchangeRate) || exchangeRate <= 0) {
+      toast.error(`Indica el cambio de ${operationCurrency} a EUR`)
       return
     }
 
@@ -1239,8 +1348,12 @@ function InvestmentPortfolioContent() {
         cantidad: quantity,
         precio_unitario: unitPrice,
         importe: quantity * unitPrice,
+        importe_eur: quantity * unitPrice * exchangeRate,
         comision: fee,
+        comision_eur: fee * exchangeRate,
         impuesto: tax,
+        impuesto_eur: tax * exchangeRate,
+        tipo_cambio_eur: exchangeRate,
         divisa: operationCurrency,
         fuente: 'Escenario local',
         external_id: null,
@@ -1255,7 +1368,7 @@ function InvestmentPortfolioContent() {
         const averageCost = currentQuantity > 0 ? currentCost / currentQuantity : unitPrice
         const nextQuantity = operationType === 'Compra' ? currentQuantity + quantity : currentQuantity - quantity
         const nextCost = operationType === 'Compra'
-          ? currentCost + quantity * unitPrice + fee + tax
+          ? currentCost + (quantity * unitPrice + fee + tax) * exchangeRate
           : Math.max(0, currentCost - quantity * averageCost)
         const nextValue = (position.precio_actual ?? unitPrice) * nextQuantity
         const nextPnl = nextValue - nextCost
@@ -1273,8 +1386,8 @@ function InvestmentPortfolioContent() {
       })
 
       if (!selectedScenarioPosition && operationType === 'Compra') {
-        const currentPrice = unitPrice
-        const positionCost = quantity * unitPrice + fee + tax
+        const currentPrice = selectedOperationAsset?.precio_actual_eur ?? (quantity * unitPrice * exchangeRate) / quantity
+        const positionCost = (quantity * unitPrice + fee + tax) * exchangeRate
         const currentValue = quantity * currentPrice
         const inferredIsin = operationIsin || selectedOperationAsset?.isin || inferIsin(ticker, operationPriceTicker, operationMarketSymbol)
         nextPositions = [...nextPositions, {
@@ -1289,7 +1402,7 @@ function InvestmentPortfolioContent() {
           price_ticker: operationPriceTicker || ticker,
           crypto_id: operationCryptoId,
           cantidad: quantity,
-          precio_compra: unitPrice,
+          precio_compra: positionCost / quantity,
           coste: positionCost,
           objetivo_peso_pct: null,
           precio_actual: currentPrice,
@@ -1311,7 +1424,7 @@ function InvestmentPortfolioContent() {
           hoja_origen: activeDemoPortfolio?.name ?? 'Escenario local',
           fila_origen: null,
           incluido_resumen: true,
-          divisa: operationCurrency,
+          divisa: 'EUR',
           sector: null,
           pais: null,
           objetivo_precio: null,
@@ -1353,6 +1466,10 @@ function InvestmentPortfolioContent() {
           comision: fee,
           impuesto: tax,
           divisa: operationCurrency,
+          tipo_cambio_eur: exchangeRate,
+          precio_actual_eur: selectedOperationAsset?.precio_actual_eur ?? undefined,
+          precio_actual_nativo: selectedOperationAsset?.precio_actual ?? undefined,
+          divisa_nativa: selectedOperationAsset?.divisa ?? undefined,
           notas: notas || undefined,
           price_ticker: operationPriceTicker || ticker,
           market_symbol: operationMarketSymbol || undefined,
@@ -1560,7 +1677,7 @@ function InvestmentPortfolioContent() {
               </Shine>
             </TiltContent>
           </Tilt>
-          <div className="h-full rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_16px_34px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-500"><span>Efectivo disponible</span><div className="flex items-center gap-2">{!isDemoPortfolio && <Button type="button" variant="outline" size="sm" className="h-7 border-slate-300 bg-transparent px-2 text-[10px] text-slate-700 hover:bg-slate-100" onClick={abrirAjusteEfectivo} aria-haspopup="dialog">Ajustar saldo</Button>}<Wallet className="h-4 w-4" /></div></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{isDemoPortfolio ? '—' : <AnimatedEuro value={cash?.totalEur ?? 0} />}</p><p className="mt-4 text-[10px] leading-relaxed text-slate-400">{isDemoPortfolio ? 'Escenario local · sin ledger persistido' : cashSummary || 'Sin movimientos de efectivo registrados'}</p></div>
+          <div className="h-full rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_16px_34px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-500"><span>Efectivo disponible</span><div className="flex items-center gap-2">{!isDemoPortfolio && <Button type="button" variant="outline" size="sm" className="h-7 border-slate-300 bg-transparent px-2 text-[10px] text-slate-700 hover:bg-slate-100" onClick={abrirAjusteEfectivo} aria-haspopup="dialog">Gestionar efectivo</Button>}<Wallet className="h-4 w-4" /></div></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{isDemoPortfolio ? '—' : <AnimatedEuro value={cash?.totalEur ?? 0} />}</p><p className="mt-1 text-[9px] text-slate-400">Total en EUR · las demás divisas se muestran debajo</p><div className="mt-3 grid gap-1.5">{isDemoPortfolio ? <p className="text-[10px] leading-relaxed text-slate-400">Escenario local · sin ledger persistido</p> : cash?.balances.length ? cash.balances.map((balance) => <div key={`${balance.custodia}-${balance.divisa}`} className="flex items-center justify-between gap-2 text-[10px] text-slate-500"><span className="truncate">{balance.custodia} · {balance.divisa}</span><strong className="shrink-0 tabular-nums text-slate-700">{formatCashAmount(balance.saldo, balance.divisa)}</strong></div>) : <p className="text-[10px] leading-relaxed text-slate-400">Sin movimientos de efectivo registrados</p>}</div></div>
           <Tilt maxTilt={6} perspective={1000} className="h-full">
             <TiltContent className="h-full">
               <Shine asChild enableOnHover enableOnTap color="#c8f56a" opacity={0.25} className="h-full rounded-xl">
@@ -1799,7 +1916,7 @@ function InvestmentPortfolioContent() {
                     <td className="max-w-[240px] truncate px-3 py-3 font-medium text-slate-900">{operation.activo}</td>
                     <td className="px-3 py-3 text-slate-500">{operation.custodia}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-slate-700">{formatQuantity(operation.cantidad)}</td>
-                    <td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-900">{formatEuro(operation.importe)}</td>
+                    <td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-900">{formatOperationAmount(operation.importe, operation.divisa)}</td>
                     <td className={`px-3 py-3 text-right tabular-nums ${operation.tipo === 'Venta' ? 'font-semibold text-emerald-700' : 'text-slate-500'}`}>{metric?.netCash === null || metric?.netCash === undefined ? '—' : formatEuro(metric.netCash)}</td>
                     <td className="px-3 py-3 text-right tabular-nums text-slate-500">{operation.tipo === 'Venta' && metric?.assignedCost !== null && metric?.assignedCost !== undefined ? formatEuro(metric.assignedCost) : '—'}</td>
                     <td className={`px-3 py-3 text-right font-semibold tabular-nums ${result === null || result === undefined ? 'text-slate-400' : result >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{result === null || result === undefined ? '—' : formatEuro(result)}</td>
@@ -1829,22 +1946,44 @@ function InvestmentPortfolioContent() {
       {!isDemoPortfolio && <Dialog open={cashAdjustmentDialogOpen} onOpenChange={setCashAdjustmentDialogOpen}>
         <DialogContent className="border-slate-200 bg-[#f7f5ef] text-slate-900 sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="tracking-[-0.04em]">Ajustar saldo de efectivo</DialogTitle>
+            <DialogTitle className="tracking-[-0.04em]">Gestionar efectivo</DialogTitle>
             <DialogDescription>
-              Reconcilia el saldo de una custodia y divisa sin crear ni modificar operaciones de inversión.
+              Añade o reconcilia saldo, o mueve efectivo entre cuentas y divisas sin crear operaciones de inversión.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={(event) => { event.preventDefault(); void guardarAjusteEfectivo() }} className="grid gap-4">
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-[#eeece5] p-1 text-xs">
+            <button type="button" className={`rounded-md px-3 py-2 font-semibold transition ${cashMovementMode === 'ajuste' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`} onClick={() => setCashMovementMode('ajuste')}>Ajustar saldo</button>
+            <button type="button" className={`rounded-md px-3 py-2 font-semibold transition ${cashMovementMode === 'traspaso' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`} onClick={() => setCashMovementMode('traspaso')}>Mover / convertir</button>
+          </div>
+          <datalist id="cash-adjustment-custody-options">{cashCustodyOptions.map((option) => <option key={option} value={option} />)}<option value="Trade Republic" /><option value="Interactive Brokers" /><option value="XTB" /><option value="Cold wallet" /></datalist>
+          <datalist id="cash-adjustment-currency-options">{cashCurrencyOptions.map((option) => <option key={option} value={option} />)}<option value="USD" /></datalist>
+          {cashMovementMode === 'traspaso' ? <div className="grid gap-4">
+            <div className="rounded-lg border border-[#c7dda7] bg-[#e7f2d4] px-3 py-2.5 text-[10px] leading-relaxed text-[#31531d]">Ejemplo: mueve 250 EUR de Trade Republic a Interactive Brokers o convierte EUR a USD en la misma cuenta. La salida y la entrada quedan registradas juntas.</div>
+            <div className="grid gap-3 rounded-lg border border-slate-200 bg-white/70 p-3 sm:grid-cols-2">
+              <div className="grid gap-2"><Label htmlFor="cash-transfer-source-custody">Cuenta de origen</Label><Input id="cash-transfer-source-custody" list="cash-adjustment-custody-options" value={cashTransferSourceCustodia} onChange={(event) => setCashTransferSourceCustodia(event.target.value)} placeholder="Trade Republic" required /></div>
+              <div className="grid gap-2"><Label htmlFor="cash-transfer-source-currency">Divisa de origen</Label><Input id="cash-transfer-source-currency" list="cash-adjustment-currency-options" value={cashTransferSourceDivisa} onChange={(event) => setCashTransferSourceDivisa(event.target.value.toUpperCase())} maxLength={3} placeholder="EUR" required /></div>
+              <div className="grid gap-2 sm:col-span-2"><Label htmlFor="cash-transfer-source-amount">Importe que sale</Label><Input id="cash-transfer-source-amount" type="number" min="0.01" step="any" value={cashTransferSourceAmount} onChange={(event) => setCashTransferSourceAmount(event.target.value)} placeholder="250,00" required /><p className="text-[9px] text-slate-400">Disponible: {formatCashAmount(cashTransferSourceBalance, cashTransferSourceDivisa)}</p></div>
+            </div>
+            <div className="grid gap-3 rounded-lg border border-slate-200 bg-white/70 p-3 sm:grid-cols-2">
+              <div className="grid gap-2"><Label htmlFor="cash-transfer-destination-custody">Cuenta de destino</Label><Input id="cash-transfer-destination-custody" list="cash-adjustment-custody-options" value={cashTransferDestinationCustodia} onChange={(event) => setCashTransferDestinationCustodia(event.target.value)} placeholder="Interactive Brokers" required /></div>
+              <div className="grid gap-2"><Label htmlFor="cash-transfer-destination-currency">Divisa de destino</Label><Input id="cash-transfer-destination-currency" list="cash-adjustment-currency-options" value={cashTransferDestinationDivisa} onChange={(event) => setCashTransferDestinationDivisa(event.target.value.toUpperCase())} maxLength={3} placeholder="USD" required /></div>
+              <div className="grid gap-2 sm:col-span-2"><Label htmlFor="cash-transfer-destination-amount">Importe que entra</Label><Input id="cash-transfer-destination-amount" type="number" min="0.01" step="any" value={cashTransferDestinationAmount} onChange={(event) => setCashTransferDestinationAmount(event.target.value)} placeholder="270,00" required /><p className="text-[9px] text-slate-400">En una conversión puedes indicar el resultado exacto recibido tras el cambio.</p></div>
+            </div>
             <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2"><Label htmlFor="cash-transfer-date">Fecha</Label><Input id="cash-transfer-date" type="date" value={cashAdjustmentDate} onChange={(event) => setCashAdjustmentDate(event.target.value)} required /></div>
+              <div className="grid gap-2"><Label htmlFor="cash-transfer-description">Nota <span className="font-normal text-slate-400">(opcional)</span></Label><Input id="cash-transfer-description" value={cashAdjustmentDescription} onChange={(event) => setCashAdjustmentDescription(event.target.value)} maxLength={500} placeholder="Transferencia o cambio de divisa" /></div>
+            </div>
+          </div> : null}
+          {cashMovementMode === 'ajuste' ? <>
+          <div className="grid gap-3 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="cash-adjustment-custody">Custodia</Label>
                 <Input id="cash-adjustment-custody" list="cash-adjustment-custody-options" value={cashAdjustmentCustodia} onChange={(event) => setCashAdjustmentCustodia(event.target.value)} placeholder="Trade Republic, XTB…" required />
-                <datalist id="cash-adjustment-custody-options">{cashCustodyOptions.map((option) => <option key={option} value={option} />)}</datalist>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="cash-adjustment-currency">Divisa</Label>
                 <Input id="cash-adjustment-currency" list="cash-adjustment-currency-options" value={cashAdjustmentDivisa} onChange={(event) => setCashAdjustmentDivisa(event.target.value.toUpperCase())} placeholder="EUR" maxLength={3} required />
-                <datalist id="cash-adjustment-currency-options">{cashCurrencyOptions.map((option) => <option key={option} value={option} />)}</datalist>
               </div>
             </div>
             <div className="flex items-center justify-between gap-3 rounded-lg bg-[#eeece5] px-3 py-2.5 text-[10px] text-slate-500">
@@ -1864,9 +2003,10 @@ function InvestmentPortfolioContent() {
               <textarea id="cash-adjustment-description" value={cashAdjustmentDescription} onChange={(event) => setCashAdjustmentDescription(event.target.value)} maxLength={500} rows={3} placeholder="Motivo de la conciliación…" className="resize-y rounded-md border border-slate-200 bg-white px-3 py-2 text-sm outline-none placeholder:text-slate-400 focus:border-slate-500" />
             </div>
             <div className="flex gap-2 rounded-md bg-[#eeece5] px-3 py-2.5 text-[10px] leading-relaxed text-slate-500"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>Solo se registra la diferencia necesaria en el libro de efectivo. Si no hay diferencia relevante, no se crea ningún movimiento.</span></div>
+          </> : null}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCashAdjustmentDialogOpen(false)}>Cancelar</Button>
-              <Button type="submit" className="bg-slate-900 text-white hover:bg-slate-700" disabled={savingCashAdjustment}>{savingCashAdjustment ? 'Guardando…' : 'Guardar ajuste'}</Button>
+              <Button type="submit" className="bg-slate-900 text-white hover:bg-slate-700" disabled={savingCashAdjustment}>{savingCashAdjustment ? 'Guardando…' : cashMovementMode === 'traspaso' ? 'Guardar movimiento' : 'Guardar ajuste'}</Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -1956,8 +2096,9 @@ function InvestmentPortfolioContent() {
                 </div>
                 <div className="grid min-w-0 gap-2"><Label htmlFor="operation-ticker">Ticker {selectedOperationAsset ? <span className="font-normal text-slate-400">(automático)</span> : null}</Label><Input id="operation-ticker" value={ticker} onChange={(event) => { setTicker(event.target.value.toUpperCase()); setSelectedOperationAsset(null); setOperationPriceTicker(''); setOperationMarketSymbol(null); setOperationCryptoId(null); setOperationIsin('') }} placeholder="BTC, SXR8…" readOnly={Boolean(selectedOperationAsset)} className="h-10 w-full min-w-0 text-base sm:text-sm" required /><p className="text-[9px] leading-relaxed text-slate-400">{selectedOperationAsset ? 'Se conservará el símbolo del mercado elegido.' : 'Puedes escribirlo manualmente si no aparece ninguna coincidencia.'}</p></div>
               </div>
-              <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-type-asset">Tipo de activo</Label><select id="operation-type-asset" value={tipoActivo} onChange={(event) => setTipoActivo(event.target.value)} className="h-10 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-slate-500 sm:text-sm"><option value="Crypto">Crypto</option><option value="Crypto / Staking">Crypto / Staking</option><option value="ETF">ETF</option><option value="Acción">Acción</option><option value="Fondo">Fondo</option><option value="Otro">Otro</option></select></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-custody">Custodia / broker</Label><Input id="operation-custody" list="broker-suggestions" value={custodia} onChange={(event) => setCustodia(event.target.value)} placeholder="Trade Republic, XTB…" className="h-10 text-base sm:text-sm" required /><datalist id="broker-suggestions"><option value="Trade Republic" /><option value="XTB" /><option value="Cold wallet" /><option value="Otro" /></datalist><p className="text-[9px] leading-relaxed text-slate-400">Indica dónde está custodiada; la cotización se actualiza por proveedor de mercado.</p></div></div>
-              <div className="grid min-w-0 gap-2"><Label>Divisa de liquidación</Label><div className="flex h-10 items-center rounded-md border border-slate-200 bg-[#eeece5] px-3 text-sm font-semibold text-slate-700">{operationCurrency}</div><p className="text-[9px] leading-relaxed text-slate-400">El efectivo se registra separado por custodia y divisa.</p></div>
+              <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-type-asset">Tipo de activo</Label><select id="operation-type-asset" value={tipoActivo} onChange={(event) => setTipoActivo(event.target.value)} className="h-10 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-base outline-none focus:border-slate-500 sm:text-sm"><option value="Crypto">Crypto</option><option value="Crypto / Staking">Crypto / Staking</option><option value="ETF">ETF</option><option value="Acción">Acción</option><option value="Fondo">Fondo</option><option value="Otro">Otro</option></select></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-custody">Cuenta / broker</Label><Input id="operation-custody" list="broker-suggestions" value={custodia} onChange={(event) => setCustodia(event.target.value)} placeholder="Trade Republic, Interactive Brokers…" className="h-10 text-base sm:text-sm" required /><datalist id="broker-suggestions"><option value="Trade Republic" /><option value="Interactive Brokers" /><option value="XTB" /><option value="Cold wallet" /><option value="Otro" />{cashCustodyOptions.map((option) => <option key={option} value={option} />)}</datalist><p className="text-[9px] leading-relaxed text-slate-400">La cuenta identifica dónde está el activo y su efectivo disponible.</p></div></div>
+              <div className="grid min-w-0 gap-2"><Label htmlFor="operation-currency">Divisa de liquidación</Label><select id="operation-currency" value={operationCurrency} onChange={(event) => { const value = event.target.value; setOperationCurrency(value); if (value === 'EUR') setOperationExchangeRate('1') }} className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none focus:border-slate-500 sm:text-sm">{operationCurrencyOptions.map((currency) => <option key={currency} value={currency}>{currency}</option>)}</select><p className="text-[9px] leading-relaxed text-slate-400">El efectivo se descuenta o ingresa en esa divisa dentro de la cuenta indicada.</p></div>
+              {operationCurrency !== 'EUR' ? <div className="grid min-w-0 gap-2"><Label htmlFor="operation-exchange-rate">Cambio de liquidación: 1 {operationCurrency} = EUR</Label><Input id="operation-exchange-rate" type="number" min="0.000001" step="any" value={operationExchangeRate} onChange={(event) => setOperationExchangeRate(event.target.value)} placeholder="Ej. 0,92" required /><p className="text-[9px] leading-relaxed text-slate-400">Se usa para calcular coste y resultado en EUR. El movimiento de efectivo permanece en {operationCurrency}.</p></div> : null}
               {operationType === 'Compra' ? <fieldset className="grid gap-2 rounded-lg border border-slate-200 bg-white/70 p-3"><legend className="px-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">Origen de fondos</legend><label className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 ${fundingSource === 'saldo_existente' ? 'border-[#90b85f] bg-[#e7f2d4]' : 'border-slate-200'}`}><input type="radio" name="investment-funding-source" value="saldo_existente" checked={fundingSource === 'saldo_existente'} onChange={() => setFundingSource('saldo_existente')} className="mt-0.5" /><span className="min-w-0"><span className="block text-xs font-semibold text-slate-800">Usar efectivo disponible</span><span className="mt-0.5 block text-[10px] leading-relaxed text-slate-500">{custodia ? `${formatCashAmount(availableCashForOperation, operationCurrency)} disponibles en ${custodia}` : 'Indica la custodia para consultar el saldo disponible.'}</span><span className="mt-0.5 block text-[10px] text-slate-400">Se descontará el coste total, incluida comisión e impuesto.</span></span></label><label className={`flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 ${fundingSource === 'capital_nuevo' ? 'border-[#e7a35e] bg-[#fff3df]' : 'border-slate-200'}`}><input type="radio" name="investment-funding-source" value="capital_nuevo" checked={fundingSource === 'capital_nuevo'} onChange={() => setFundingSource('capital_nuevo')} className="mt-0.5" /><span className="min-w-0"><span className="block text-xs font-semibold text-slate-800">Registrar capital nuevo</span><span className="mt-0.5 block text-[10px] leading-relaxed text-slate-500">Crea una entrada de capital por el coste total y después registra el débito de la compra.</span></span></label></fieldset> : null}
               <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-quantity">Cantidad</Label><Input id="operation-quantity" type="number" min="0" step="any" value={cantidad} onChange={(event) => setCantidad(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" required /></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-price">Precio unitario ({operationCurrency})</Label><Input id="operation-price" type="number" min="0" step="any" value={precio} onChange={(event) => setPrecio(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" required /></div></div>
               <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div className="grid min-w-0 gap-2"><Label htmlFor="operation-fee">Comisión ({operationCurrency}) <span className="font-normal text-slate-400">(opcional)</span></Label><Input id="operation-fee" type="number" min="0" step="any" value={comision} onChange={(event) => setComision(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" /></div><div className="grid min-w-0 gap-2"><Label htmlFor="operation-tax">Impuesto / retención ({operationCurrency}) <span className="font-normal text-slate-400">(opcional)</span></Label><Input id="operation-tax" type="number" min="0" step="any" value={impuesto} onChange={(event) => setImpuesto(event.target.value)} placeholder="0,00" className="h-10 text-base sm:text-sm" /></div></div>
