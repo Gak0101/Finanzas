@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { and, asc, eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { inversiones_movimientos_efectivo } from '@/lib/db/schema'
+import { inversiones_movimientos_efectivo, inversiones_operaciones } from '@/lib/db/schema'
 
 export const tiposMovimientoEfectivoInversion = [
   'APERTURA_LEGACY',
@@ -27,6 +27,8 @@ export type InvestmentCashBalance = {
 export type InvestmentCashSnapshot = {
   balances: InvestmentCashBalance[]
   totalEur: number
+  totalUsd: number | null
+  usdToEur: number | null
 }
 
 const CASH_ADJUSTMENT_EPSILON = 1e-7
@@ -82,6 +84,18 @@ export type InvestmentCashAdjustmentResult = {
 }
 
 export function getInvestmentCashSnapshot(userId: number): InvestmentCashSnapshot {
+  const movements = db
+    .select({
+      id: inversiones_movimientos_efectivo.id,
+      importe: inversiones_movimientos_efectivo.importe,
+      divisa: inversiones_movimientos_efectivo.divisa,
+      tipo: inversiones_movimientos_efectivo.tipo,
+      referencia: inversiones_movimientos_efectivo.referencia,
+    })
+    .from(inversiones_movimientos_efectivo)
+    .where(eq(inversiones_movimientos_efectivo.usuario_id, userId))
+    .all()
+
   const rows = db
     .select({
       custodia: inversiones_movimientos_efectivo.custodia,
@@ -100,11 +114,64 @@ export function getInvestmentCashSnapshot(userId: number): InvestmentCashSnapsho
     saldo: Number(row.saldo ?? 0),
   }))
 
+  // Las conversiones de efectivo se guardan como dos movimientos con la misma
+  // referencia. De ahí se obtiene la tasa realmente usada por el usuario.
+  const transfers = new Map<string, { salida?: typeof movements[number]; entrada?: typeof movements[number] }>()
+  for (const movement of movements) {
+    const match = movement.referencia.match(/^traspaso:([^:]+):(salida|entrada)$/)
+    if (!match) continue
+    const current = transfers.get(match[1]) ?? {}
+    if (match[2] === 'salida') current.salida = movement
+    else current.entrada = movement
+    transfers.set(match[1], current)
+  }
+
+  let usdToEur: number | null = null
+  let latestTransferId = -1
+  for (const transfer of transfers.values()) {
+    if (!transfer.salida || !transfer.entrada || transfer.salida.id <= latestTransferId) continue
+    const source = transfer.salida
+    const destination = transfer.entrada
+    const sourceAmount = Math.abs(Number(source.importe))
+    const destinationAmount = Number(destination.importe)
+    if (sourceAmount <= 0 || destinationAmount <= 0) continue
+    if (source.divisa === 'EUR' && destination.divisa === 'USD') {
+      usdToEur = sourceAmount / destinationAmount
+      latestTransferId = source.id
+    } else if (source.divisa === 'USD' && destination.divisa === 'EUR') {
+      usdToEur = destinationAmount / sourceAmount
+      latestTransferId = source.id
+    }
+  }
+
+  // Para saldos USD registrados como parte de una operación, usa el último
+  // tipo de cambio guardado como respaldo si aún no existe una conversión.
+  if (usdToEur === null) {
+    const latestUsdOperation = db
+      .select({ id: inversiones_operaciones.id, tipoCambioEur: inversiones_operaciones.tipo_cambio_eur })
+      .from(inversiones_operaciones)
+      .where(and(
+        eq(inversiones_operaciones.usuario_id, userId),
+        eq(inversiones_operaciones.divisa, 'USD'),
+      ))
+      .all()
+      .toSorted((left, right) => right.id - left.id)
+      .find((operation) => typeof operation.tipoCambioEur === 'number' && operation.tipoCambioEur > 0)
+    usdToEur = latestUsdOperation?.tipoCambioEur ?? null
+  }
+
+  const eurBalance = balances
+    .filter((balance) => balance.divisa === 'EUR')
+    .reduce((total, balance) => total + balance.saldo, 0)
+  const usdBalance = balances
+    .filter((balance) => balance.divisa === 'USD')
+    .reduce((total, balance) => total + balance.saldo, 0)
+
   return {
     balances,
-    totalEur: balances
-      .filter((balance) => balance.divisa === 'EUR')
-      .reduce((total, balance) => total + balance.saldo, 0),
+    totalEur: eurBalance + (usdToEur === null ? 0 : usdBalance * usdToEur),
+    totalUsd: usdToEur === null ? null : usdBalance + eurBalance / usdToEur,
+    usdToEur,
   }
 }
 
