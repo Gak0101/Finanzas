@@ -853,8 +853,14 @@ function InvestmentPortfolioContent() {
   const cash = isDemoPortfolio ? null : data?.cash ?? null
   const availableCashForOperation = cash?.balances.find((balance) => balance.custodia === custodia && balance.divisa === operationCurrency)?.saldo ?? 0
   const cashSummary = cash?.balances.map((balance) => `${balance.custodia}: ${formatCashAmount(balance.saldo, balance.divisa)}`).join(' · ')
-  const cashCustodyOptions = useMemo(() => [...new Set(cash?.balances.map((balance) => balance.custodia) ?? [])], [cash?.balances])
-  const cashCurrencyOptions = useMemo(() => [...new Set(['EUR', ...(cash?.balances.map((balance) => balance.divisa) ?? [])])], [cash?.balances])
+  const cashCustodyOptions = useMemo(() => {
+    const options = ['Trade Republic', 'Interactive Brokers', 'XTB', 'Cold wallet', ...(cash?.balances.map((balance) => balance.custodia) ?? [])]
+    return [...new Map(options.map((option) => [option.trim().toLocaleLowerCase(), option.trim()])).values()]
+  }, [cash?.balances])
+  const cashCurrencyOptions = useMemo(() => {
+    const options = ['EUR', 'USD', ...(cash?.balances.map((balance) => balance.divisa) ?? [])]
+    return [...new Set(options.map((option) => option.trim().toUpperCase()))]
+  }, [cash?.balances])
   const operationCurrencyOptions = useMemo(() => [...new Set(['EUR', 'USD', ...cashCurrencyOptions, operationCurrency])], [cashCurrencyOptions, operationCurrency])
   const cashAdjustmentCurrentBalance = cash?.balances.find((balance) => balance.custodia === cashAdjustmentCustodia.trim() && balance.divisa === cashAdjustmentDivisa.trim().toUpperCase())?.saldo ?? 0
   const cashTransferSourceBalance = cash?.balances.find((balance) => balance.custodia === cashTransferSourceCustodia.trim() && balance.divisa === cashTransferSourceDivisa.trim().toUpperCase())?.saldo ?? 0
@@ -2036,18 +2042,18 @@ function InvestmentPortfolioContent() {
             <button type="button" className={`rounded-md px-3 py-2 font-semibold transition ${cashMovementMode === 'ajuste' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`} onClick={() => setCashMovementMode('ajuste')}>Ajustar saldo</button>
             <button type="button" className={`rounded-md px-3 py-2 font-semibold transition ${cashMovementMode === 'traspaso' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`} onClick={() => setCashMovementMode('traspaso')}>Mover / convertir</button>
           </div>
-          <datalist id="cash-adjustment-custody-options">{cashCustodyOptions.map((option) => <option key={option} value={option} />)}<option value="Trade Republic" /><option value="Interactive Brokers" /><option value="XTB" /><option value="Cold wallet" /></datalist>
-          <datalist id="cash-adjustment-currency-options">{cashCurrencyOptions.map((option) => <option key={option} value={option} />)}<option value="USD" /></datalist>
+          <datalist id="cash-adjustment-custody-options">{cashCustodyOptions.map((option) => <option key={option} value={option} />)}</datalist>
+          <datalist id="cash-adjustment-currency-options">{cashCurrencyOptions.map((option) => <option key={option} value={option} />)}</datalist>
           {cashMovementMode === 'traspaso' ? <div className="grid gap-4">
             <div className="rounded-lg border border-[#c7dda7] bg-[#e7f2d4] px-3 py-2.5 text-[10px] leading-relaxed text-[#31531d]">Ejemplo: mueve 250 EUR de Trade Republic a Interactive Brokers o convierte EUR a USD en la misma cuenta. La salida y la entrada quedan registradas juntas.</div>
-            <div className="grid gap-3 rounded-lg border border-slate-200 bg-white/70 p-3 sm:grid-cols-2">
-              <div className="grid gap-2"><Label htmlFor="cash-transfer-source-custody">Cuenta de origen</Label><Input id="cash-transfer-source-custody" list="cash-adjustment-custody-options" value={cashTransferSourceCustodia} onChange={(event) => setCashTransferSourceCustodia(event.target.value)} placeholder="Trade Republic" required /></div>
-              <div className="grid gap-2"><Label htmlFor="cash-transfer-source-currency">Divisa de origen</Label><Input id="cash-transfer-source-currency" list="cash-adjustment-currency-options" value={cashTransferSourceDivisa} onChange={(event) => setCashTransferSourceDivisa(event.target.value.toUpperCase())} maxLength={3} placeholder="EUR" required /></div>
+              <div className="grid gap-3 rounded-lg border border-slate-200 bg-white/70 p-3 sm:grid-cols-2">
+              <div className="grid gap-2"><Label htmlFor="cash-transfer-source-custody">Cuenta de origen</Label><select id="cash-transfer-source-custody" value={cashTransferSourceCustodia} onChange={(event) => setCashTransferSourceCustodia(event.target.value)} className="h-10 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none focus:border-slate-500 sm:text-sm" required><option value="">Selecciona una cuenta</option>{cashCustodyOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
+              <div className="grid gap-2"><Label htmlFor="cash-transfer-source-currency">Divisa de origen</Label><select id="cash-transfer-source-currency" value={cashTransferSourceDivisa} onChange={(event) => setCashTransferSourceDivisa(event.target.value)} className="h-10 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none focus:border-slate-500 sm:text-sm" required>{cashCurrencyOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
               <div className="grid gap-2 sm:col-span-2"><Label htmlFor="cash-transfer-source-amount">Importe que sale</Label><Input id="cash-transfer-source-amount" type="number" min="0.01" step="any" value={cashTransferSourceAmount} onChange={(event) => setCashTransferSourceAmount(event.target.value)} placeholder="250,00" required /><p className="text-[9px] text-slate-400">Disponible: {formatCashAmount(cashTransferSourceBalance, cashTransferSourceDivisa)}</p></div>
             </div>
-            <div className="grid gap-3 rounded-lg border border-slate-200 bg-white/70 p-3 sm:grid-cols-2">
-              <div className="grid gap-2"><Label htmlFor="cash-transfer-destination-custody">Cuenta de destino</Label><Input id="cash-transfer-destination-custody" list="cash-adjustment-custody-options" value={cashTransferDestinationCustodia} onChange={(event) => setCashTransferDestinationCustodia(event.target.value)} placeholder="Interactive Brokers" required /></div>
-              <div className="grid gap-2"><Label htmlFor="cash-transfer-destination-currency">Divisa de destino</Label><Input id="cash-transfer-destination-currency" list="cash-adjustment-currency-options" value={cashTransferDestinationDivisa} onChange={(event) => setCashTransferDestinationDivisa(event.target.value.toUpperCase())} maxLength={3} placeholder="USD" required /></div>
+              <div className="grid gap-3 rounded-lg border border-slate-200 bg-white/70 p-3 sm:grid-cols-2">
+              <div className="grid gap-2"><Label htmlFor="cash-transfer-destination-custody">Cuenta de destino</Label><select id="cash-transfer-destination-custody" value={cashTransferDestinationCustodia} onChange={(event) => setCashTransferDestinationCustodia(event.target.value)} className="h-10 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none focus:border-slate-500 sm:text-sm" required><option value="">Selecciona una cuenta</option>{cashCustodyOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
+              <div className="grid gap-2"><Label htmlFor="cash-transfer-destination-currency">Divisa de destino</Label><select id="cash-transfer-destination-currency" value={cashTransferDestinationDivisa} onChange={(event) => setCashTransferDestinationDivisa(event.target.value)} className="h-10 w-full min-w-0 rounded-md border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none focus:border-slate-500 sm:text-sm" required>{cashCurrencyOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></div>
               <div className="grid gap-2 sm:col-span-2"><Label htmlFor="cash-transfer-destination-amount">Importe que entra</Label><Input id="cash-transfer-destination-amount" type="number" min="0.01" step="any" value={cashTransferDestinationAmount} onChange={(event) => setCashTransferDestinationAmount(event.target.value)} placeholder="270,00" required /><p className="text-[9px] text-slate-400">En una conversión puedes indicar el resultado exacto recibido tras el cambio.</p></div>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
