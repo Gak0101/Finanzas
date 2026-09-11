@@ -376,6 +376,10 @@ function formatOperationAmount(value: number, currency: string) {
   }).format(value)
 }
 
+function operationSettlementAmount(operation: InversionOperacion) {
+  return operation.importe + operation.comision + operation.impuesto
+}
+
 function formatPct(value: number | null | undefined) {
   if (value === null || value === undefined || Number.isNaN(value)) return '—'
   return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`
@@ -436,6 +440,23 @@ type CashAdjustmentPayload = {
     saldoObjetivo: number
     importe: number
   }
+}
+
+type OperationFundingPayload = {
+  operation: InversionOperacion
+  cash: InvestmentCashSnapshot
+}
+
+function hasOperationFundingPayload(payload: unknown): payload is OperationFundingPayload {
+  if (!payload || typeof payload !== 'object') return false
+  const candidate = payload as Partial<OperationFundingPayload>
+  return Boolean(
+    candidate.operation
+    && typeof candidate.operation.id === 'number'
+    && candidate.cash
+    && typeof candidate.cash.totalEur === 'number'
+    && Array.isArray(candidate.cash.balances),
+  )
 }
 
 function hasCashAdjustmentPayload(payload: unknown): payload is CashAdjustmentPayload {
@@ -645,6 +666,9 @@ function InvestmentPortfolioContent() {
   const [updatingPrices, setUpdatingPrices] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [savingOperation, setSavingOperation] = useState(false)
+  const [fundingOperation, setFundingOperation] = useState<InversionOperacion | null>(null)
+  const [fundingOperationSource, setFundingOperationSource] = useState<InvestmentFundingSource>('saldo_existente')
+  const [savingFundingOperation, setSavingFundingOperation] = useState(false)
   const [cashAdjustmentDialogOpen, setCashAdjustmentDialogOpen] = useState(false)
   const [savingCashAdjustment, setSavingCashAdjustment] = useState(false)
   const [cashMovementMode, setCashMovementMode] = useState<'ajuste' | 'traspaso'>('ajuste')
@@ -1150,6 +1174,48 @@ function InvestmentPortfolioContent() {
     }
   }
 
+  function abrirEdicionFinanciacion(operation: InversionOperacion) {
+    if (isDemoPortfolio || operation.tipo !== 'Compra' || !operation.origen_fondos) return
+    setFundingOperation(operation)
+    setFundingOperationSource(operation.origen_fondos === 'capital_nuevo' ? 'capital_nuevo' : 'saldo_existente')
+  }
+
+  async function guardarEdicionFinanciacion() {
+    if (!fundingOperation || isDemoPortfolio) return
+    if (fundingOperationSource === fundingOperation.origen_fondos) {
+      setFundingOperation(null)
+      return
+    }
+
+    setSavingFundingOperation(true)
+    try {
+      const response = await fetch(`/api/inversiones/operaciones/${fundingOperation.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ origen_fondos: fundingOperationSource }),
+      })
+      const payload = await response.json().catch(() => null)
+      if (!response.ok) throw new Error(getErrorMessage(payload, 'No se pudo corregir el origen de fondos'))
+      if (!hasOperationFundingPayload(payload)) throw new Error(invalidApiResponseMessage(response))
+
+      setData((current) => current
+        ? {
+            ...current,
+            operations: current.operations.map((operation) => operation.id === payload.operation.id ? payload.operation : operation),
+            cash: payload.cash,
+          }
+        : current)
+      setFundingOperation(null)
+      toast.success(fundingOperationSource === 'saldo_existente'
+        ? 'Compra corregida: se descontará del efectivo disponible'
+        : 'Compra corregida: se ha restaurado el capital nuevo asociado')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'No se pudo corregir el origen de fondos')
+    } finally {
+      setSavingFundingOperation(false)
+    }
+  }
+
   function abrirDialog() {
     setFecha(new Date().toISOString().slice(0, 10))
     setDialogOpen(true)
@@ -1642,6 +1708,14 @@ function InvestmentPortfolioContent() {
     )
   }
 
+  const fundingOperationBalance = fundingOperation
+    ? cash?.balances.find((balance) => balance.custodia === fundingOperation.custodia && balance.divisa === fundingOperation.divisa)?.saldo ?? 0
+    : 0
+  const fundingOperationCost = fundingOperation ? operationSettlementAmount(fundingOperation) : 0
+  const fundingOperationAvailable = fundingOperation
+    ? fundingOperationBalance - (fundingOperation.origen_fondos === 'capital_nuevo' ? fundingOperationCost : 0)
+    : 0
+
   return (
     <InvestmentFrame activeTab={activeTab} onChange={cambiarPestana} statusLabel={isDemoPortfolio ? 'Escenario local' : 'Cartera guardada en la app'}>
         <PortfolioSwitcher
@@ -1905,7 +1979,7 @@ function InvestmentPortfolioContent() {
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1160px] border-collapse text-left">
-              <thead><tr className="border-b border-slate-200 text-[9px] uppercase tracking-[0.1em] text-slate-400"><th className="px-5 py-3 font-bold sm:px-6">Fecha</th><th className="px-3 py-3 font-bold">Tipo</th><th className="px-3 py-3 font-bold">Activo</th><th className="px-3 py-3 font-bold">Custodia</th><th className="px-3 py-3 text-right font-bold">Cantidad</th><th className="px-3 py-3 text-right font-bold">Importe operación</th><th className="px-3 py-3 text-right font-bold">Flujo neto</th><th className="px-3 py-3 text-right font-bold">Coste vendido</th><th className="px-3 py-3 text-right font-bold">Resultado neto</th><th className="px-3 py-3 text-right font-bold">Rentabilidad</th><th className="px-3 py-3 pr-5 font-bold sm:pr-6">Nota</th></tr></thead>
+              <thead><tr className="border-b border-slate-200 text-[9px] uppercase tracking-[0.1em] text-slate-400"><th className="px-5 py-3 font-bold sm:px-6">Fecha</th><th className="px-3 py-3 font-bold">Tipo</th><th className="px-3 py-3 font-bold">Activo</th><th className="px-3 py-3 font-bold">Custodia</th><th className="px-3 py-3 font-bold">Fondos</th><th className="px-3 py-3 text-right font-bold">Cantidad</th><th className="px-3 py-3 text-right font-bold">Importe operación</th><th className="px-3 py-3 text-right font-bold">Flujo neto</th><th className="px-3 py-3 text-right font-bold">Coste vendido</th><th className="px-3 py-3 text-right font-bold">Resultado neto</th><th className="px-3 py-3 text-right font-bold">Rentabilidad</th><th className="px-3 py-3 pr-5 font-bold sm:pr-6">Nota</th></tr></thead>
               <tbody>
                 {visibleOperations.map((operation) => {
                   const metric = operationMetricsById.get(operation.id)
@@ -1915,6 +1989,12 @@ function InvestmentPortfolioContent() {
                     <td className="px-3 py-3"><span className={`font-semibold ${operation.tipo === 'Compra' ? 'text-emerald-700' : operation.tipo === 'Venta' ? 'text-red-600' : 'text-slate-500'}`}>{operation.tipo}</span></td>
                     <td className="max-w-[240px] truncate px-3 py-3 font-medium text-slate-900">{operation.activo}</td>
                     <td className="px-3 py-3 text-slate-500">{operation.custodia}</td>
+                    <td className="px-3 py-3">
+                      {operation.tipo === 'Compra' && operation.origen_fondos ? <div className="grid gap-1.5">
+                        <span className="whitespace-nowrap text-[10px] text-slate-500">{operation.origen_fondos === 'capital_nuevo' ? 'Capital nuevo' : 'Saldo disponible'} · {operation.divisa}</span>
+                        {!isDemoPortfolio ? <button type="button" className="w-fit text-[10px] font-semibold text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-slate-950" onClick={() => abrirEdicionFinanciacion(operation)}>Editar fondos</button> : null}
+                      </div> : <span className="text-slate-400">—</span>}
+                    </td>
                     <td className="px-3 py-3 text-right tabular-nums text-slate-700">{formatQuantity(operation.cantidad)}</td>
                     <td className="px-3 py-3 text-right tabular-nums font-semibold text-slate-900">{formatOperationAmount(operation.importe, operation.divisa)}</td>
                     <td className={`px-3 py-3 text-right tabular-nums ${operation.tipo === 'Venta' ? 'font-semibold text-emerald-700' : 'text-slate-500'}`}>{metric?.netCash === null || metric?.netCash === undefined ? '—' : formatEuro(metric.netCash)}</td>
@@ -2009,6 +2089,44 @@ function InvestmentPortfolioContent() {
               <Button type="submit" className="bg-slate-900 text-white hover:bg-slate-700" disabled={savingCashAdjustment}>{savingCashAdjustment ? 'Guardando…' : cashMovementMode === 'traspaso' ? 'Guardar movimiento' : 'Guardar ajuste'}</Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>}
+
+      {!isDemoPortfolio && <Dialog open={fundingOperation !== null} onOpenChange={(open) => { if (!open) setFundingOperation(null) }}>
+        <DialogContent className="max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-lg grid-rows-[auto_minmax(0,1fr)] overflow-hidden border-slate-200 bg-[#f7f5ef] p-4 text-slate-900 sm:max-h-[90vh] sm:w-full sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="tracking-[-0.04em]">Corregir origen de fondos</DialogTitle>
+            <DialogDescription>
+              Cambia cómo se financió esta compra sin crear otra operación ni modificar sus acciones o su precio.
+            </DialogDescription>
+          </DialogHeader>
+          {fundingOperation ? <form onSubmit={(event) => { event.preventDefault(); void guardarEdicionFinanciacion() }} className="min-h-0 overflow-y-auto overscroll-contain pr-1 sm:pr-2">
+            <div className="grid gap-3">
+              <div className="rounded-lg border border-slate-200 bg-white/70 p-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Compra registrada</p>
+                <div className="mt-2 flex items-start justify-between gap-3">
+                  <div className="min-w-0"><p className="truncate text-sm font-semibold text-slate-900">{fundingOperation.activo}</p><p className="mt-1 text-[10px] text-slate-500">{formatQuantity(fundingOperation.cantidad)} acciones · {fundingOperation.custodia}</p></div>
+                  <strong className="shrink-0 text-sm tabular-nums text-slate-900">{formatOperationAmount(fundingOperationCost, fundingOperation.divisa)}</strong>
+                </div>
+              </div>
+              <fieldset className="grid gap-2">
+                <legend className="text-xs font-semibold text-slate-800">¿De dónde salió el dinero?</legend>
+                <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${fundingOperationSource === 'saldo_existente' ? 'border-[#90b85f] bg-[#e7f2d4]' : 'border-slate-200 bg-white/70 hover:border-slate-300'}`}>
+                  <input type="radio" name="edit-operation-funding-source" value="saldo_existente" checked={fundingOperationSource === 'saldo_existente'} onChange={() => setFundingOperationSource('saldo_existente')} className="mt-0.5" />
+                  <span className="min-w-0"><span className="block text-xs font-semibold text-slate-800">Usar efectivo disponible</span><span className="mt-0.5 block text-[10px] leading-relaxed text-slate-500">Anula el capital nuevo de esta compra y descuenta {formatOperationAmount(fundingOperationCost, fundingOperation.divisa)} de {fundingOperation.custodia} · {fundingOperation.divisa}.</span><span className={`mt-1 block text-[10px] font-semibold ${fundingOperationAvailable >= fundingOperationCost ? 'text-emerald-700' : 'text-amber-700'}`}>Disponible tras corregir: {formatOperationAmount(fundingOperationAvailable, fundingOperation.divisa)}</span></span>
+                </label>
+                <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition ${fundingOperationSource === 'capital_nuevo' ? 'border-[#e7a35e] bg-[#fff3df]' : 'border-slate-200 bg-white/70 hover:border-slate-300'}`}>
+                  <input type="radio" name="edit-operation-funding-source" value="capital_nuevo" checked={fundingOperationSource === 'capital_nuevo'} onChange={() => setFundingOperationSource('capital_nuevo')} className="mt-0.5" />
+                  <span className="min-w-0"><span className="block text-xs font-semibold text-slate-800">Registrar capital nuevo</span><span className="mt-0.5 block text-[10px] leading-relaxed text-slate-500">Mantiene la aportación de {formatOperationAmount(fundingOperationCost, fundingOperation.divisa)} asociada a esta compra.</span></span>
+                </label>
+              </fieldset>
+              <div className="flex gap-2 rounded-lg bg-[#eeece5] px-3 py-2.5 text-[10px] leading-relaxed text-slate-500"><Info className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>Para tu caso: primero registra la conversión EUR → USD en Gestionar efectivo y después selecciona “Usar efectivo disponible” aquí.</span></div>
+            </div>
+            <DialogFooter className="sticky bottom-0 z-10 -mx-1 mt-4 border-t border-slate-200 bg-[#f7f5ef] px-1 pt-3 sm:static sm:mx-0 sm:mt-4 sm:border-0 sm:bg-transparent sm:px-0 sm:pt-0">
+              <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setFundingOperation(null)}>Cancelar</Button>
+              <Button type="submit" className="w-full bg-slate-900 text-white hover:bg-slate-700 sm:w-auto" disabled={savingFundingOperation}>{savingFundingOperation ? 'Guardando…' : 'Guardar corrección'}</Button>
+            </DialogFooter>
+          </form> : null}
         </DialogContent>
       </Dialog>}
 
