@@ -3,7 +3,7 @@ import { db } from '@/lib/db'
 import { inversiones_alertas, inversiones_posiciones, type InversionAlerta, type InversionPosicion } from '@/lib/db/schema'
 import { fetchAssetPrice, refreshInvestmentPrices, type RefreshPricesResult } from '@/lib/inversiones/marketData'
 import { normalizeTargetCurrency } from '@/lib/inversiones/alertTarget'
-import { getInvestmentCashSnapshot } from '@/lib/inversiones/cash'
+import { getInvestmentCashSnapshotWithMarketRates } from '@/lib/inversiones/cash'
 
 export type AlertSignal = 'normal' | 'subida' | 'caida'
 export type AlertTriggerReason = 'porcentaje' | 'precio_objetivo' | 'fecha_objetivo'
@@ -349,7 +349,7 @@ async function evaluateRule(
 
 export async function checkInvestmentAlerts(userId: number): Promise<InvestmentAlertCheckResult> {
   const refresh = await refreshInvestmentPrices(userId)
-  const cash = getInvestmentCashSnapshot(userId)
+  const cash = await getInvestmentCashSnapshotWithMarketRates(userId)
   const [positions, rules] = await Promise.all([
     db.query.inversiones_posiciones.findMany({
       where: and(

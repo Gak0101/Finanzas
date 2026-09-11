@@ -15,7 +15,7 @@ import { priceIdentifiers } from '@/lib/inversiones/priceIdentifiers'
 import { inferIsin } from '@/lib/inversiones/instrumentIdentity'
 import { calculateInvestmentAnalytics } from '@/lib/inversiones/analytics'
 import { persistDailyInvestmentSnapshots } from '@/lib/inversiones/snapshots'
-import { getInvestmentCashSnapshot, operationCashAmount } from '@/lib/inversiones/cash'
+import { getInvestmentCashSnapshotWithMarketRates, operationCashAmount } from '@/lib/inversiones/cash'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -57,7 +57,7 @@ async function getPortfolio(userId: number, captureToday = false) {
     notificationAlerts,
     closedPositions: calculateClosedInvestmentPositions(operations, identityPositions),
     analytics: calculateInvestmentAnalytics(positions, operations, snapshots, identityPositions),
-    cash: getInvestmentCashSnapshot(userId),
+    cash: await getInvestmentCashSnapshotWithMarketRates(userId),
   }
 }
 

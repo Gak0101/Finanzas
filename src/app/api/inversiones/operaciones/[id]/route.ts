@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 import { db } from '@/lib/db'
 import { inversiones_movimientos_efectivo, inversiones_operaciones } from '@/lib/db/schema'
-import { getInvestmentCashSnapshot } from '@/lib/inversiones/cash'
+import { getInvestmentCashSnapshotWithMarketRates } from '@/lib/inversiones/cash'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -138,7 +138,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         .get()
     })
 
-    return NextResponse.json({ operation, cash: getInvestmentCashSnapshot(auth.userId) })
+    return NextResponse.json({ operation, cash: await getInvestmentCashSnapshotWithMarketRates(auth.userId) })
   } catch (error) {
     if (error instanceof OperationFundingError) {
       if (error.code === 'OPERATION_NOT_FOUND') return NextResponse.json({ error: 'Operación no encontrada' }, { status: 404 })

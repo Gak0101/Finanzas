@@ -5,6 +5,7 @@ import {
   investmentCashAdjustmentSchema,
   investmentCashTransferSchema,
   transferInvestmentCash,
+  getInvestmentCashSnapshotWithMarketRates,
 } from '@/lib/inversiones/cash'
 
 export const dynamic = 'force-dynamic'
@@ -35,7 +36,8 @@ export async function POST(req: Request) {
 
   if (transferParsed?.success) {
     try {
-      return NextResponse.json(transferInvestmentCash(auth.userId, transferParsed.data))
+      const result = transferInvestmentCash(auth.userId, transferParsed.data)
+      return NextResponse.json({ ...result, cash: await getInvestmentCashSnapshotWithMarketRates(auth.userId) })
     } catch (error) {
       if (error instanceof Error && error.message.startsWith('INSUFFICIENT_CASH:')) {
         const disponible = Number(error.message.slice('INSUFFICIENT_CASH:'.length))
@@ -48,5 +50,6 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json(adjustInvestmentCash(auth.userId, parsed!.data))
+  const result = adjustInvestmentCash(auth.userId, parsed!.data)
+  return NextResponse.json({ ...result, cash: await getInvestmentCashSnapshotWithMarketRates(auth.userId) })
 }

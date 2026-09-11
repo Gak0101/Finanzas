@@ -7,7 +7,7 @@ import { AlertTargetResolutionError, resolveAlertTarget, targetFromInput } from 
 import { fetchAssetPrice } from '@/lib/inversiones/marketData'
 import { inversionAlertaPatchSchema } from '@/lib/validations/inversionAlerta'
 import { normalizeIsin } from '@/lib/inversiones/instrumentIdentity'
-import { getInvestmentCashSnapshot } from '@/lib/inversiones/cash'
+import { getInvestmentCashSnapshotWithMarketRates } from '@/lib/inversiones/cash'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -107,7 +107,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         eq(inversiones_posiciones.incluido_resumen, true),
       ),
     })
-    values.precio_base_porcentaje = positions.reduce((sum, position) => sum + (position.valor_actual ?? 0), getInvestmentCashSnapshot(auth.userId).totalEur)
+    values.precio_base_porcentaje = positions.reduce((sum, position) => sum + (position.valor_actual ?? 0), (await getInvestmentCashSnapshotWithMarketRates(auth.userId)).totalEur)
   }
 
   const [updated] = await db.update(inversiones_alertas)

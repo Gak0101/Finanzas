@@ -29,6 +29,14 @@ export type InvestmentCashSnapshot = {
   totalEur: number
   totalUsd: number | null
   usdToEur: number | null
+  usdRateSource: string | null
+  usdRateDate: string | null
+}
+
+type InvestmentCashMarketRate = {
+  rate: number
+  date: string | null
+  source: string
 }
 
 const CASH_ADJUSTMENT_EPSILON = 1e-7
@@ -83,7 +91,7 @@ export type InvestmentCashAdjustmentResult = {
   }
 }
 
-export function getInvestmentCashSnapshot(userId: number): InvestmentCashSnapshot {
+export function getInvestmentCashSnapshot(userId: number, marketRate?: InvestmentCashMarketRate): InvestmentCashSnapshot {
   const movements = db
     .select({
       id: inversiones_movimientos_efectivo.id,
@@ -91,6 +99,7 @@ export function getInvestmentCashSnapshot(userId: number): InvestmentCashSnapsho
       divisa: inversiones_movimientos_efectivo.divisa,
       tipo: inversiones_movimientos_efectivo.tipo,
       referencia: inversiones_movimientos_efectivo.referencia,
+      fecha: inversiones_movimientos_efectivo.fecha,
     })
     .from(inversiones_movimientos_efectivo)
     .where(eq(inversiones_movimientos_efectivo.usuario_id, userId))
@@ -126,9 +135,11 @@ export function getInvestmentCashSnapshot(userId: number): InvestmentCashSnapsho
     transfers.set(match[1], current)
   }
 
-  let usdToEur: number | null = null
+  let usdToEur: number | null = marketRate?.rate ?? null
+  let usdRateSource: string | null = marketRate?.source ?? null
+  let usdRateDate: string | null = marketRate?.date ?? null
   let latestTransferId = -1
-  for (const transfer of transfers.values()) {
+  if (usdToEur === null) for (const transfer of transfers.values()) {
     if (!transfer.salida || !transfer.entrada || transfer.salida.id <= latestTransferId) continue
     const source = transfer.salida
     const destination = transfer.entrada
@@ -137,9 +148,13 @@ export function getInvestmentCashSnapshot(userId: number): InvestmentCashSnapsho
     if (sourceAmount <= 0 || destinationAmount <= 0) continue
     if (source.divisa === 'EUR' && destination.divisa === 'USD') {
       usdToEur = sourceAmount / destinationAmount
+      usdRateSource = 'Conversión registrada'
+      usdRateDate = source.fecha.slice(0, 10)
       latestTransferId = source.id
     } else if (source.divisa === 'USD' && destination.divisa === 'EUR') {
       usdToEur = destinationAmount / sourceAmount
+      usdRateSource = 'Conversión registrada'
+      usdRateDate = source.fecha.slice(0, 10)
       latestTransferId = source.id
     }
   }
@@ -158,6 +173,7 @@ export function getInvestmentCashSnapshot(userId: number): InvestmentCashSnapsho
       .toSorted((left, right) => right.id - left.id)
       .find((operation) => typeof operation.tipoCambioEur === 'number' && operation.tipoCambioEur > 0)
     usdToEur = latestUsdOperation?.tipoCambioEur ?? null
+    usdRateSource = usdToEur === null ? null : 'Última operación USD'
   }
 
   const eurBalance = balances
@@ -172,6 +188,29 @@ export function getInvestmentCashSnapshot(userId: number): InvestmentCashSnapsho
     totalEur: eurBalance + (usdToEur === null ? 0 : usdBalance * usdToEur),
     totalUsd: usdToEur === null ? null : usdBalance + eurBalance / usdToEur,
     usdToEur,
+    usdRateSource,
+    usdRateDate,
+  }
+}
+
+export async function getInvestmentCashSnapshotWithMarketRates(userId: number): Promise<InvestmentCashSnapshot> {
+  const fallback = getInvestmentCashSnapshot(userId)
+  try {
+    const response = await fetch('https://api.frankfurter.dev/v2/rate/usd/eur?providers=ecb', {
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!response.ok) throw new Error(`Frankfurter USD/EUR: HTTP ${response.status}`)
+    const payload = await response.json() as { rate?: unknown; date?: unknown }
+    const rate = typeof payload.rate === 'number' && Number.isFinite(payload.rate) && payload.rate > 0 ? payload.rate : null
+    if (rate === null) throw new Error('Frankfurter USD/EUR: tasa no válida')
+    return getInvestmentCashSnapshot(userId, {
+      rate,
+      date: typeof payload.date === 'string' ? payload.date : null,
+      source: 'Frankfurter · ECB',
+    })
+  } catch {
+    return fallback
   }
 }
 
