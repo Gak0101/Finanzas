@@ -81,12 +81,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
       if (requestedFunding === 'saldo_existente') {
         const capitalAmount = Number(capitalMovement?.importe ?? transactionCost)
-        const balanceWithoutCapital = currentBalance - capitalAmount
-        if (balanceWithoutCapital + CASH_EPSILON < transactionCost) {
+        // The current balance already includes the artificial capital movement
+        // and the purchase debit. Reconstruct the cash available immediately
+        // before this purchase before checking whether the funding can change.
+        const availableBeforePurchase = currentBalance - capitalAmount + transactionCost
+        if (availableBeforePurchase + CASH_EPSILON < transactionCost) {
           throw new OperationFundingError('INSUFFICIENT_CASH', {
             custodia: current.custodia,
             divisa: current.divisa,
-            disponible: balanceWithoutCapital,
+            disponible: availableBeforePurchase,
             necesario: transactionCost,
           })
         }
