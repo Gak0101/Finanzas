@@ -35,7 +35,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import type { InversionAlerta, InversionPosicion } from '@/lib/db/schema'
-import { exchangeLabelFromSymbol, inferIsin } from '@/lib/inversiones/instrumentIdentity'
+import { exchangeLabelFromSymbol, inferIsin, instrumentValuesMatch } from '@/lib/inversiones/instrumentIdentity'
 
 type AssetSearchResult = {
   key: string
@@ -258,6 +258,25 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
   const portfolioRule = useMemo(() => rules.find((rule) => rule.alcance === 'cartera') ?? null, [rules])
   const assetRules = useMemo(() => rules.filter((rule) => rule.alcance === 'activo'), [rules])
   const positionById = useMemo(() => new Map(positions.map((position) => [position.id, position])), [positions])
+  function findPositionForRule(rule: InversionAlerta) {
+    const directPosition = rule.posicion_id ? positionById.get(rule.posicion_id) : null
+    if (directPosition) return directPosition
+
+    return positions.find((position) => instrumentValuesMatch(
+      [rule.isin, rule.market_symbol, rule.price_ticker, rule.ticker],
+      [position.isin, position.market_symbol, position.price_ticker, position.ticker],
+    )) ?? null
+  }
+
+  function findPositionForAsset(asset: Pick<AssetSearchResult, 'posicion_id' | 'isin' | 'market_symbol' | 'price_ticker' | 'ticker'>) {
+    const directPosition = asset.posicion_id ? positionById.get(asset.posicion_id) : null
+    if (directPosition) return directPosition
+
+    return positions.find((position) => instrumentValuesMatch(
+      [asset.isin, asset.market_symbol, asset.price_ticker, asset.ticker],
+      [position.isin, position.market_symbol, position.price_ticker, position.ticker],
+    )) ?? null
+  }
   const portfolioCurrentValue = useMemo(
     () => positions.reduce((sum, position) => sum + (position.valor_actual ?? 0), portfolioCashEur),
     [portfolioCashEur, positions]
@@ -403,7 +422,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
     setScope('activo')
     setAssetIntent(intent)
     if (rule) {
-      const position = rule.posicion_id ? positionById.get(rule.posicion_id) : null
+      const position = findPositionForRule(rule)
       setAssetIntent(position ? 'position' : 'watchlist')
       setEditingRule(rule)
       setRise(percentInput(rule.umbral_subida_pct))
@@ -422,7 +441,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
       setIsin(rule.isin || position?.isin || inferIsin(position?.ticker, position?.market_symbol, rule.market_symbol) || '')
       const presentationQuote = selectPresentationQuote(position, rule)
       setSelectedAsset({
-        key: rule.posicion_id ? `position:${rule.posicion_id}` : `alert:${rule.id}`,
+        key: position ? `position:${position.id}` : `alert:${rule.id}`,
         activo: position?.activo || rule.activo || rule.ticker || 'Activo vigilado',
         ticker: position?.ticker || rule.ticker || rule.price_ticker || '',
         tipo_activo: position?.tipo || rule.tipo_activo || 'Acción',
@@ -436,7 +455,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
         divisa: presentationQuote.currency,
         precio_actual_as_of: position?.snapshot_at || rule.ultima_comprobacion_at,
         poseido: Boolean(position),
-        posicion_id: rule.posicion_id,
+        posicion_id: position?.id ?? rule.posicion_id,
       })
       void hydrateEditedAssetQuote(rule, position ?? null)
     }
@@ -451,7 +470,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
       const response = await fetch(`/api/inversiones/alertas/buscar-activo?q=${encodeURIComponent(query)}`, { cache: 'no-store' })
       const payload = await response.json().catch(() => null) as { results?: AssetSearchResult[] } | null
       if (!response.ok) return
-      const currentKey = rule.posicion_id ? `position:${rule.posicion_id}` : `alert:${rule.id}`
+      const currentKey = position ? `position:${position.id}` : `alert:${rule.id}`
       const result = (payload?.results ?? []).find((item) => item.key === currentKey || (item.market_symbol || '').toLocaleLowerCase('es') === query.toLocaleLowerCase('es'))
       if (!result) return
 
@@ -544,7 +563,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
 
       if (scenarioMode && onScenarioRulesChange) {
         const now = new Date().toISOString()
-        const selectedPosition = selectedAsset?.posicion_id ? positionById.get(selectedAsset.posicion_id) : null
+        const selectedPosition = selectedAsset ? findPositionForAsset(selectedAsset) : null
         const scenarioReferenceValue = scope === 'cartera'
           ? referenceValue
           : scope === 'activo' && !selectedAsset?.poseido && referencePrice.trim() !== ''
@@ -692,7 +711,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
     setRefreshingRuleId(rule.id)
     try {
       if (scenarioMode && onScenarioRulesChange) {
-        const position = rule.posicion_id ? positionById.get(rule.posicion_id) : null
+        const position = findPositionForRule(rule)
         const now = new Date().toISOString()
         let currentPrice = position?.precio_actual ?? rule.precio_actual
         let currentNativeQuote = selectNativePresentationQuote(position, rule)
@@ -831,7 +850,7 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
 
       {assetRules.length > 0 ? <div className="mt-4 grid items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3">
         {assetRules.map((rule, index) => {
-          const position = rule.posicion_id ? positionById.get(rule.posicion_id) : null
+          const position = findPositionForRule(rule)
           const name = position?.activo || rule.activo || rule.ticker || 'Activo vigilado'
           const ticker = position?.price_ticker || position?.ticker || rule.price_ticker || rule.ticker || '—'
           const presentationQuote = selectPresentationQuote(position, rule)

@@ -5,6 +5,7 @@ import { inversiones_alertas, inversiones_posiciones } from '@/lib/db/schema'
 import { getAuthenticatedUserId, isNextResponse } from '@/lib/api-utils'
 import { fetchAssetPrice, refreshInvestmentPrices } from '@/lib/inversiones/marketData'
 import { percentageFromBase } from '@/lib/inversiones/alertRules'
+import { instrumentValuesMatch } from '@/lib/inversiones/instrumentIdentity'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -25,32 +26,44 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   const checkedAt = new Date().toISOString()
 
   try {
-    if (rule.posicion_id !== null) {
+    const positions = await db.query.inversiones_posiciones.findMany({
+      where: and(
+        eq(inversiones_posiciones.usuario_id, auth.userId),
+        eq(inversiones_posiciones.incluido_resumen, true),
+      ),
+    })
+    const position = (rule.posicion_id === null ? undefined : positions.find((item) => item.id === rule.posicion_id))
+      ?? positions.find((item) => instrumentValuesMatch(
+        [rule.isin, rule.market_symbol, rule.price_ticker, rule.ticker],
+        [item.isin, item.market_symbol, item.price_ticker, item.ticker],
+      ))
+
+    if (position) {
       await refreshInvestmentPrices(auth.userId)
-      const position = await db.query.inversiones_posiciones.findFirst({
-        where: and(eq(inversiones_posiciones.id, rule.posicion_id), eq(inversiones_posiciones.usuario_id, auth.userId)),
+      const refreshedPosition = await db.query.inversiones_posiciones.findFirst({
+        where: and(eq(inversiones_posiciones.id, position.id), eq(inversiones_posiciones.usuario_id, auth.userId)),
       })
-      if (!position?.precio_actual || position.precio_actual <= 0) {
+      if (!refreshedPosition?.precio_actual || refreshedPosition.precio_actual <= 0) {
         return NextResponse.json({ error: 'La posición no tiene un precio actual disponible' }, { status: 422 })
       }
 
-      const referencePrice = rule.precio_referencia ?? (position.coste !== null && position.cantidad > 0 ? position.coste / position.cantidad : position.precio_actual)
-      const percentageBasePrice = rule.precio_base_porcentaje ?? position.precio_actual
-      const percentageBaseNativePrice = rule.precio_base_porcentaje_nativo ?? position.precio_actual_nativo
-      const percentageBaseCurrency = rule.divisa_base_porcentaje ?? position.divisa_nativa
+      const referencePrice = rule.precio_referencia ?? (refreshedPosition.coste !== null && refreshedPosition.cantidad > 0 ? refreshedPosition.coste / refreshedPosition.cantidad : refreshedPosition.precio_actual)
+      const percentageBasePrice = rule.precio_base_porcentaje ?? refreshedPosition.precio_actual
+      const percentageBaseNativePrice = rule.precio_base_porcentaje_nativo ?? refreshedPosition.precio_actual_nativo
+      const percentageBaseCurrency = rule.divisa_base_porcentaje ?? refreshedPosition.divisa_nativa
       const rendimientoPct = percentageFromBase(
-        position.precio_actual,
-        position.precio_actual_nativo,
-        position.divisa_nativa,
+        refreshedPosition.precio_actual,
+        refreshedPosition.precio_actual_nativo,
+        refreshedPosition.divisa_nativa,
         percentageBasePrice,
         percentageBaseNativePrice,
         percentageBaseCurrency,
       )
       const [updated] = await db.update(inversiones_alertas).set({
         precio_referencia: rule.precio_referencia ?? referencePrice,
-        precio_actual: position.precio_actual,
-        precio_actual_nativo: position.precio_actual_nativo,
-        divisa_nativa: position.divisa_nativa,
+        precio_actual: refreshedPosition.precio_actual,
+        precio_actual_nativo: refreshedPosition.precio_actual_nativo,
+        divisa_nativa: refreshedPosition.divisa_nativa,
         precio_base_porcentaje: percentageBasePrice,
         precio_base_porcentaje_nativo: percentageBaseNativePrice,
         divisa_base_porcentaje: percentageBaseCurrency,

@@ -27,12 +27,20 @@ export function normalizeIsin(value: string | null | undefined) {
   return normalized && ISIN_PATTERN.test(normalized) ? normalized : null
 }
 
-function instrumentLookupKeys(value: string | null | undefined) {
+export function instrumentLookupKeys(value: string | null | undefined) {
   const normalized = value?.trim().toUpperCase().replace(/\s+/g, '')
   if (!normalized) return []
   const withoutVendorPrefix = normalized.replace(/^(?:OTCMKTS|NYSE|NASDAQ|BIT):/, '')
   const baseSymbol = withoutVendorPrefix.split(':').at(-1) ?? withoutVendorPrefix
   return [...new Set([normalized, withoutVendorPrefix, baseSymbol])]
+}
+
+export function instrumentValuesMatch(
+  left: Array<string | null | undefined>,
+  right: Array<string | null | undefined>,
+) {
+  const rightKeys = new Set(right.flatMap(instrumentLookupKeys))
+  return left.flatMap(instrumentLookupKeys).some((key) => rightKeys.has(key))
 }
 
 export function inferIsin(...values: Array<string | null | undefined>) {

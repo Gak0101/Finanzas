@@ -4,6 +4,7 @@ import { inversiones_alertas, inversiones_posiciones, type InversionAlerta, type
 import { fetchAssetPrice, refreshInvestmentPrices, type RefreshPricesResult } from '@/lib/inversiones/marketData'
 import { normalizeTargetCurrency } from '@/lib/inversiones/alertTarget'
 import { getInvestmentCashSnapshotWithMarketRates } from '@/lib/inversiones/cash'
+import { instrumentValuesMatch } from '@/lib/inversiones/instrumentIdentity'
 
 export type AlertSignal = 'normal' | 'subida' | 'caida'
 export type AlertTriggerReason = 'porcentaje' | 'precio_objetivo' | 'fecha_objetivo'
@@ -197,7 +198,11 @@ async function evaluateRule(
   cashEur: number,
   checkedAt: string
 ) {
-  const position = rule.posicion_id === null ? undefined : positions.find((item) => item.id === rule.posicion_id)
+  const position = (rule.posicion_id === null ? undefined : positions.find((item) => item.id === rule.posicion_id))
+    ?? positions.find((item) => instrumentValuesMatch(
+      [rule.isin, rule.market_symbol, rule.price_ticker, rule.ticker],
+      [item.isin, item.market_symbol, item.price_ticker, item.ticker],
+    ))
   let currentPct: number | null = null
   let currentPrice: number | null = null
   let currentNativePrice: number | null = null
