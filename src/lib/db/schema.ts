@@ -386,6 +386,23 @@ export const inversiones_seguimiento_estado = sqliteTable('inversiones_seguimien
   updated_at: text('updated_at').notNull().default(''),
 })
 
+// Permisos globales para los avisos de inversión. Las alertas conservan sus
+// canales individuales; estos campos actúan como un interruptor maestro para
+// poder pausar un canal o una clase de aviso sin editar una a una.
+export const inversiones_notificaciones_config = sqliteTable('inversiones_notificaciones_config', {
+  usuario_id: integer('usuario_id').primaryKey().references(() => usuarios.id),
+  enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  canal_telegram: integer('canal_telegram', { mode: 'boolean' }).notNull().default(true),
+  canal_email: integer('canal_email', { mode: 'boolean' }).notNull().default(true),
+  canal_whatsapp: integer('canal_whatsapp', { mode: 'boolean' }).notNull().default(true),
+  alertas_porcentaje: integer('alertas_porcentaje', { mode: 'boolean' }).notNull().default(true),
+  alertas_precio: integer('alertas_precio', { mode: 'boolean' }).notNull().default(true),
+  alertas_fecha: integer('alertas_fecha', { mode: 'boolean' }).notNull().default(true),
+  alertas_cartera: integer('alertas_cartera', { mode: 'boolean' }).notNull().default(true),
+  seguimiento_lynch: integer('seguimiento_lynch', { mode: 'boolean' }).notNull().default(true),
+  updated_at: text('updated_at').notNull().default(''),
+})
+
 export const usuariosRelations = relations(usuarios, ({ many, one }) => ({
   categorias: many(categorias),
   registros_mensuales: many(registros_mensuales),
@@ -397,6 +414,7 @@ export const usuariosRelations = relations(usuarios, ({ many, one }) => ({
   inversiones_operaciones: many(inversiones_operaciones),
   inversiones_movimientos_efectivo: many(inversiones_movimientos_efectivo),
   inversiones_excel_filas: many(inversiones_excel_filas),
+  inversiones_notificaciones_config: one(inversiones_notificaciones_config),
   configuracion_ia: one(configuraciones_ia),
   configuracion_fuentes_inversion: one(configuraciones_fuentes_inversion),
 }))

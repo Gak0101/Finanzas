@@ -47,6 +47,7 @@ import { InvestmentFollowup } from '@/components/inversiones/InvestmentFollowup'
 import { InvestmentAnalyticsPanel } from '@/components/inversiones/InvestmentAnalyticsPanel'
 import { MarketHoursPanel } from '@/components/inversiones/MarketHoursPanel'
 import { InvestmentNotificationAlerts } from '@/components/inversiones/InvestmentNotificationAlerts'
+import { InvestmentNotificationControls } from '@/components/inversiones/InvestmentNotificationControls'
 import { PositionDetailDialog, type PositionMetadataChanges } from '@/components/inversiones/PositionDetailDialog'
 import { InvestmentPrivacyProvider, useInvestmentPrivacy } from '@/components/inversiones/InvestmentPrivacy'
 import { Slide } from '@/components/animate-ui/primitives/effects/slide'
@@ -1773,6 +1774,8 @@ function InvestmentPortfolioContent() {
             </TiltContent>
           </Tilt>
         </Fade>
+
+        {!isDemoPortfolio && <InvestmentNotificationControls />}
 
         <InvestmentNotificationAlerts
           rules={notificationAlerts}

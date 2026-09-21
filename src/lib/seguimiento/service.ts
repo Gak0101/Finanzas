@@ -14,6 +14,7 @@ import { getAiCredentials } from '@/lib/ai/provider-config'
 import { buildOpenRouterModelChain, normalizeOpenRouterFreeModel } from '@/lib/ai/model-routing'
 import { getLynchBookContext } from '@/lib/buscador-acciones/lynchBook'
 import { sendWhatsAppMessage, WhatsAppDeliveryError } from '@/lib/inversiones/whatsappDelivery'
+import { getInvestmentNotificationConfig, shouldRunLynchFollowup } from '@/lib/inversiones/notificationConfig'
 import { safeUrl, triage, configuredSlot, madridSlot } from '@/lib/seguimiento/policy'
 import type { Candidate, FollowupItem, FollowupReport, FollowupScheduleConfig, Source } from '@/lib/seguimiento/types'
 
@@ -465,7 +466,11 @@ export async function executeRun(runId: number, userId: number) {
   try {
     const report = await buildReport(userId)
     const config = await getFollowupConfig(userId)
-    if (followupWhatsAppEnabled() && config.canalWhatsapp) {
+    const notificationConfig = await getInvestmentNotificationConfig(userId)
+    if (!shouldRunLynchFollowup(notificationConfig)) {
+      report.whatsapp = { enabled: false, status: 'skipped', warning: 'El seguimiento está desactivado en los controles globales de notificaciones.' }
+      report.warnings.push('Seguimiento Lynch desactivado en los controles globales de notificaciones.')
+    } else if (followupWhatsAppEnabled() && config.canalWhatsapp && notificationConfig.canalWhatsapp) {
       try {
         const delivery = await sendWhatsAppMessage(userId, followupWhatsAppText(report))
         report.whatsapp = { enabled: true, status: 'sent', messageId: delivery.messageId, warning: delivery.warning }
@@ -476,9 +481,9 @@ export async function executeRun(runId: number, userId: number) {
         report.warnings.push(`WhatsApp no enviado: ${message}`)
       }
     } else {
-      report.whatsapp = { enabled: false, status: 'skipped', warning: followupWhatsAppEnabled() ? 'WhatsApp desactivado en la configuración del seguimiento.' : 'Avisos de seguimiento por WhatsApp desactivados en el entorno.' }
+      report.whatsapp = { enabled: false, status: 'skipped', warning: followupWhatsAppEnabled() ? 'WhatsApp desactivado en la configuración del seguimiento o en los controles globales.' : 'Avisos de seguimiento por WhatsApp desactivados en el entorno.' }
     }
-    if (config.canalTelegram) {
+    if (shouldRunLynchFollowup(notificationConfig) && config.canalTelegram && notificationConfig.canalTelegram) {
       report.warnings.push('Telegram está seleccionado, pero el envío de este resumen sigue delegado al workflow de n8n; el selector no crea una conexión nueva.')
     }
     await db.update(inversiones_seguimiento_runs).set({ status: report.warnings.some(warning => /no disponible|no accesible|No hay/i.test(warning)) ? 'partial' : 'complete', finished_at: new Date().toISOString(), report: JSON.stringify(report), error: null }).where(and(eq(inversiones_seguimiento_runs.id, runId), eq(inversiones_seguimiento_runs.usuario_id, userId)))
@@ -550,7 +555,8 @@ export async function heartbeat(userId: number) {
   const now = new Date().toISOString()
   await db.insert(inversiones_seguimiento_estado).values({ usuario_id: userId, heartbeat_at: now }).onConflictDoUpdate({ target: inversiones_seguimiento_estado.usuario_id, set: { heartbeat_at: now } })
   const config = await getFollowupConfig(userId)
-  if (process.env.SEGUIMIENTO_ENABLED !== 'true' || !config.enabled) return { triggered: false, slot: null, disabled: true }
+  const notificationConfig = await getInvestmentNotificationConfig(userId)
+  if (process.env.SEGUIMIENTO_ENABLED !== 'true' || !config.enabled || !shouldRunLynchFollowup(notificationConfig)) return { triggered: false, slot: null, disabled: true }
   const slot = configuredSlot(new Date(), config)
   if (!slot) return { triggered: false, slot: null }
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: config.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
