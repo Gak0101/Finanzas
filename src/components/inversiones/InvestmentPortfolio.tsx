@@ -50,13 +50,8 @@ import { InvestmentNotificationAlerts } from '@/components/inversiones/Investmen
 import { InvestmentNotificationControls } from '@/components/inversiones/InvestmentNotificationControls'
 import { PositionDetailDialog, type PositionMetadataChanges } from '@/components/inversiones/PositionDetailDialog'
 import { InvestmentPrivacyProvider, useInvestmentPrivacy } from '@/components/inversiones/InvestmentPrivacy'
-import { Slide } from '@/components/animate-ui/primitives/effects/slide'
-import { Fade } from '@/components/animate-ui/primitives/effects/fade'
-import { RippleButton, RippleButtonRipples } from '@/components/animate-ui/components/buttons/ripple'
-import { Magnetic } from '@/components/animate-ui/primitives/effects/magnetic'
 import { SlidingNumber } from '@/components/animate-ui/primitives/texts/sliding-number'
 import { Shine } from '@/components/animate-ui/primitives/effects/shine'
-import { Tilt, TiltContent } from '@/components/animate-ui/primitives/effects/tilt'
 import { inferIsin } from '@/lib/inversiones/instrumentIdentity'
 import {
   buildDemoPortfolioData,
@@ -1733,47 +1728,47 @@ function InvestmentPortfolioContent() {
           onCreate={() => setPortfolioDialogOpen(true)}
           onRemove={activeDemoPortfolio && activeDemoPortfolio.id !== DEFAULT_DEMO_PORTFOLIO.id ? eliminarDemoPortfolio : null}
         />
-        <section className="flex flex-col gap-7 py-8 lg:flex-row lg:items-end lg:justify-between" id="inversiones">
+        <section className="flex flex-col gap-5 py-6 lg:flex-row lg:items-end lg:justify-between" id="inversiones">
           <div>
-            <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Portfolio / visión general</p>
-            <h1 className="max-w-2xl text-4xl font-medium leading-[0.98] tracking-[-0.06em] text-slate-50 sm:text-5xl lg:text-6xl">Tu cartera de inversión<br /><span className="text-[#c8f56a]">en movimiento.</span></h1>
-            <p className="mt-4 max-w-xl text-sm text-slate-400">Valor actual, resultado de la cartera abierta, histórico y trazabilidad de cada posición.</p>
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Inversiones</p>
+            <h1 className="text-3xl font-semibold leading-tight tracking-[-0.04em] text-slate-50 sm:text-4xl">Cartera de inversión</h1>
+            <p className="mt-2 max-w-xl text-xs text-slate-400">Valor, resultados y evolución de tus posiciones.</p>
           </div>
-          <div className="flex flex-col gap-4 lg:items-end">
-              <div className="text-left lg:text-right"><p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Última actualización</p><p className="mt-1 text-xs font-medium text-slate-200">{formatDateTime(isDemoPortfolio ? portfolioLastUpdated : lastPriceUpdate ?? portfolioLastUpdated)}</p><p className="mt-1 text-[10px] text-slate-500">{isDemoPortfolio ? 'Precios de referencia: Yahoo Finance · último cierre disponible' : lastPriceUpdate ? 'CoinGecko + Yahoo/Xetra' : 'Precios y posiciones guardados en la app'}</p>{lastPriceUpdate && !isDemoPortfolio && <p className="mt-1 text-[10px] text-slate-500">ETFs: último cierre de mercado como referencia gratuita.</p>}</div>
+          <div className="flex flex-wrap items-end justify-between gap-4 lg:flex-col lg:items-end">
+            <div className="text-left lg:text-right"><p className="text-[9px] font-medium uppercase tracking-[0.1em] text-slate-500">Última actualización</p><p className="mt-1 text-[11px] font-medium text-slate-200">{formatDateTime(isDemoPortfolio ? portfolioLastUpdated : lastPriceUpdate ?? portfolioLastUpdated)}</p><p className="mt-1 text-[9px] text-slate-500">{isDemoPortfolio ? 'Precios de referencia: Yahoo Finance · último cierre disponible' : lastPriceUpdate ? 'CoinGecko + Yahoo/Xetra' : 'Precios y posiciones guardados en la app'}</p>{lastPriceUpdate && !isDemoPortfolio && <p className="mt-1 text-[9px] text-slate-500">ETFs: último cierre de mercado como referencia gratuita.</p>}</div>
             <div className="flex flex-wrap gap-2">
-              <Magnetic onlyOnHover strength={0.14} range={90}><RippleButton variant="outline" size="sm" className="border-white/20 bg-transparent text-slate-100 hover:bg-white/10 hover:text-white" onClick={() => void actualizarPrecios()} disabled={updatingPrices}><RefreshCw className={updatingPrices ? 'animate-spin' : ''} />{updatingPrices ? 'Actualizando…' : 'Actualizar precios'}<RippleButtonRipples color="#c8f56a" /></RippleButton></Magnetic>
-              <Magnetic onlyOnHover strength={0.14} range={90}><RippleButton size="sm" className="bg-[#c8f56a] text-[#172016] hover:bg-[#d8fb83]" onClick={abrirDialog}><Plus />Registrar operación<RippleButtonRipples color="#172016" /></RippleButton></Magnetic>
+              <Button variant="outline" size="sm" className="h-8 border-white/15 bg-transparent px-3 text-[11px] text-slate-200 hover:bg-white/5 hover:text-white" onClick={() => void actualizarPrecios()} disabled={updatingPrices}><RefreshCw className={`h-3.5 w-3.5 ${updatingPrices ? 'animate-spin' : ''}`} />{updatingPrices ? 'Actualizando…' : 'Actualizar precios'}</Button>
+              <Button size="sm" className="h-8 bg-[#d3d7d0] px-3 text-[11px] text-slate-900 hover:bg-white" onClick={abrirDialog}><Plus className="h-3.5 w-3.5" />Registrar operación</Button>
             </div>
           </div>
         </section>
 
         <MarketHoursPanel positions={positions} compact />
 
-        <Fade inView inViewOnce className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" aria-label="Resumen del portfolio">
-          <Tilt maxTilt={6} perspective={1000} className="h-full">
-            <TiltContent className="h-full">
-              <Shine asChild enableOnHover enableOnTap color="#ffffff" opacity={0.3} className="h-full rounded-xl">
-                <div className="h-full rounded-xl bg-[#c8f56a] p-5 text-[#172016] shadow-[0_16px_34px_rgba(0,0,0,.18)] md:col-span-2 xl:col-span-1"><div className="flex items-center justify-between text-xs font-semibold text-[#536a38]"><span>Valor actual</span><CircleDollarSign className="h-5 w-5" /></div><p className="mt-5 text-4xl font-semibold tracking-[-0.06em] tabular-nums"><AnimatedEuro value={analytics?.performance.totalValue ?? summary.totalValue} /></p><p className="mt-4 text-[10px] text-[#617946]">{positions.length} posiciones · valoración en EUR</p></div>
-              </Shine>
-            </TiltContent>
-          </Tilt>
-          <div className="h-full rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_16px_34px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-500"><span>Efectivo disponible</span><div className="flex items-center gap-2">{!isDemoPortfolio && <Button type="button" variant="outline" size="sm" className="h-7 border-slate-300 bg-transparent px-2 text-[10px] text-slate-700 hover:bg-slate-100" onClick={abrirAjusteEfectivo} aria-haspopup="dialog">Gestionar efectivo</Button>}<Wallet className="h-4 w-4" /></div></div><p className="mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums">{isDemoPortfolio ? '—' : <AnimatedEuro value={cash?.totalEur ?? 0} />}</p><p className="mt-1 text-[9px] text-slate-400">Total equivalente en EUR · incluye EUR y USD convertidos</p>{!isDemoPortfolio && cash?.totalUsd !== null && cash?.totalUsd !== undefined ? <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-[#eeece5] px-3 py-2.5"><div><p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-400">Equivalente en USD</p><p className="mt-0.5 text-sm font-semibold tabular-nums text-slate-800">{formatCashAmount(cash.totalUsd, 'USD')}</p></div><span className="text-right text-[9px] leading-relaxed text-slate-400">1 USD = {formatCashAmount(cash.usdToEur ?? 0, 'EUR')}</span></div> : null}<div className="mt-3 grid gap-1.5">{isDemoPortfolio ? <p className="text-[10px] leading-relaxed text-slate-400">Escenario local · sin ledger persistido</p> : cash?.balances.length ? cash.balances.map((balance) => <div key={`${balance.custodia}-${balance.divisa}`} className="flex items-center justify-between gap-2 text-[10px] text-slate-500"><span className="truncate">{balance.custodia} · {balance.divisa}</span><strong className="shrink-0 tabular-nums text-slate-700">{formatCashAmount(balance.saldo, balance.divisa)}</strong></div>) : <p className="text-[10px] leading-relaxed text-slate-400">Sin movimientos de efectivo registrados</p>}</div></div>
-          <Tilt maxTilt={6} perspective={1000} className="h-full">
-            <TiltContent className="h-full">
-              <Shine asChild enableOnHover enableOnTap color="#c8f56a" opacity={0.25} className="h-full rounded-xl">
-                <div className="h-full rounded-xl bg-[#e5edde] p-5 text-slate-900 shadow-[0_16px_34px_rgba(15,23,42,0.16)]"><div className="flex items-center justify-between text-xs font-semibold text-slate-500"><span>Resultado cartera abierta</span><span className={(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}><AnimatedEuro value={analytics?.performance.unrealisedPnl ?? summary.knownPnl} /></p><p className="mt-4 text-[10px] text-slate-500">Solo posiciones actuales · {formatPct(analytics?.performance.currentReturnPct ?? summary.knownReturn)}</p></div>
-              </Shine>
-            </TiltContent>
-          </Tilt>
-          <Tilt maxTilt={6} perspective={1000} className="h-full">
-            <TiltContent className="h-full">
-              <Shine asChild enableOnHover enableOnTap color="#c8f56a" opacity={0.25} className="h-full rounded-xl">
-                <div className="h-full rounded-xl bg-[#f7f5ef] p-5 text-slate-900 shadow-[0_16px_34px_rgba(0,0,0,.14)]"><div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-500"><span>Resultado realizado</span><span className={(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}>{(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'ganancia' : 'pérdida'}</span></div><p className={`mt-5 text-3xl font-semibold tracking-[-0.06em] tabular-nums ${(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}><AnimatedEuro value={analytics?.performance.historicalNetResult ?? 0} /></p><p className="mt-4 text-[10px] text-slate-400">Ventas realizadas + ingresos − comisiones e impuestos</p></div>
-              </Shine>
-            </TiltContent>
-          </Tilt>
-        </Fade>
+        <section className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4" aria-label="Resumen del portfolio">
+          <div className="min-w-0 rounded-lg border border-white/10 bg-[#151b25] p-4 text-slate-100">
+            <div className="flex items-center justify-between text-[11px] font-medium text-slate-400"><span>Valor actual</span><CircleDollarSign className="h-4 w-4 text-slate-500" /></div>
+            <p className="mt-3 text-2xl font-semibold tracking-[-0.04em] tabular-nums"><AnimatedEuro value={analytics?.performance.totalValue ?? summary.totalValue} /></p>
+            <p className="mt-2 text-[10px] text-slate-500">{positions.length} posiciones · EUR</p>
+          </div>
+          <div className="min-w-0 rounded-lg border border-white/10 bg-[#151b25] p-4 text-slate-100">
+            <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-slate-400"><span>Efectivo disponible</span><div className="flex items-center gap-2">{!isDemoPortfolio && <Button type="button" variant="outline" size="sm" className="h-6 border-white/15 bg-transparent px-2 text-[9px] text-slate-300 hover:bg-white/5" onClick={abrirAjusteEfectivo} aria-haspopup="dialog">Gestionar</Button>}<Wallet className="h-4 w-4 text-slate-500" /></div></div>
+            <p className="mt-3 text-2xl font-semibold tracking-[-0.04em] tabular-nums">{isDemoPortfolio ? '—' : <AnimatedEuro value={cash?.totalEur ?? 0} />}</p>
+            <p className="mt-1 text-[9px] text-slate-500">Total equivalente en EUR · incluye EUR y USD</p>
+            {!isDemoPortfolio && cash?.totalUsd !== null && cash?.totalUsd !== undefined ? <div className="mt-2 flex items-center justify-between gap-3 border-t border-white/10 pt-2"><span className="text-[9px] text-slate-500">Equivalente USD</span><strong className="text-xs font-medium tabular-nums text-slate-300">{formatCashAmount(cash.totalUsd, 'USD')}</strong></div> : null}
+            <div className="mt-2 grid gap-1">{isDemoPortfolio ? <p className="text-[9px] text-slate-500">Escenario local · sin ledger persistido</p> : cash?.balances.length ? cash.balances.map((balance) => <div key={`${balance.custodia}-${balance.divisa}`} className="flex items-center justify-between gap-2 text-[9px] text-slate-500"><span className="truncate">{balance.custodia} · {balance.divisa}</span><strong className="shrink-0 tabular-nums text-slate-300">{formatCashAmount(balance.saldo, balance.divisa)}</strong></div>) : <p className="text-[9px] text-slate-500">Sin movimientos de efectivo registrados</p>}</div>
+          </div>
+          <div className="min-w-0 rounded-lg border border-white/10 bg-[#151b25] p-4 text-slate-100">
+            <div className="flex items-center justify-between text-[11px] font-medium text-slate-400"><span>Resultado abierto</span><span className={(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'Ganancia' : 'Pérdida'}</span></div>
+            <p className={`mt-3 text-2xl font-semibold tracking-[-0.04em] tabular-nums ${(analytics?.performance.unrealisedPnl ?? summary.knownPnl) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}><AnimatedEuro value={analytics?.performance.unrealisedPnl ?? summary.knownPnl} /></p>
+            <p className="mt-2 text-[10px] text-slate-500">Posiciones actuales · {formatPct(analytics?.performance.currentReturnPct ?? summary.knownReturn)}</p>
+          </div>
+          <div className="min-w-0 rounded-lg border border-white/10 bg-[#151b25] p-4 text-slate-100">
+            <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-slate-400"><span>Resultado realizado</span><span className={(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'Ganancia' : 'Pérdida'}</span></div>
+            <p className={`mt-3 text-2xl font-semibold tracking-[-0.04em] tabular-nums ${(analytics?.performance.historicalNetResult ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}><AnimatedEuro value={analytics?.performance.historicalNetResult ?? 0} /></p>
+            <p className="mt-2 text-[10px] leading-relaxed text-slate-500">Ventas realizadas + ingresos − comisiones e impuestos</p>
+          </div>
+        </section>
 
         {!isDemoPortfolio && <InvestmentNotificationControls />}
 
@@ -1791,12 +1786,12 @@ function InvestmentPortfolioContent() {
         />
 
         <section className="mt-3 grid gap-3">
-          <div className="min-w-0 overflow-hidden rounded-xl bg-[#f7f5ef] text-slate-900 shadow-[0_12px_30px_rgba(0,0,0,.14)]" id="positions-panel">
-            <div className="flex flex-col gap-4 border-b border-slate-200 p-5 sm:p-6 xl:flex-row xl:items-end xl:justify-between">
+          <div className="min-w-0 overflow-hidden rounded-lg border border-slate-200/80 bg-[#f7f5ef] text-slate-900" id="positions-panel">
+            <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-end sm:justify-between sm:px-5">
               <div>
-                <p className="mb-2 text-[9px] font-bold uppercase tracking-[0.16em] text-slate-400">Posiciones / {positions.length} activos</p>
-                <h2 className="text-lg font-semibold tracking-[-0.04em]">Tu cartera</h2>
-                <p className="mt-1 text-[10px] text-slate-400">Ordena y compara valor, beneficio y rentabilidad temporal.</p>
+                <p className="mb-1.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-slate-400">Posiciones / {positions.length} activos</p>
+                <h2 className="text-base font-semibold tracking-[-0.03em]">Tu cartera</h2>
+                <p className="mt-1 text-[10px] text-slate-500">Valor, ganancia o pérdida y rentabilidad.</p>
               </div>
               <div className="flex flex-wrap gap-2">
                 <label className="flex h-8 flex-1 items-center gap-2 rounded-md border border-slate-200 bg-[#eeece5] px-2.5 text-slate-400 sm:flex-none">
@@ -1820,23 +1815,20 @@ function InvestmentPortfolioContent() {
                 </div>
               </div>
             </div>
-            <div className="grid gap-2 p-4 lg:hidden">
-              {filteredPositions.map((position, index) => {
+            <div className="grid gap-1.5 p-3 lg:hidden">
+              {filteredPositions.map((position) => {
                 const isin = positionIsin(position)
                 const positionAnalytics = positionAnalyticsById.get(position.id)
-                return <Slide key={position.id} inView inViewOnce delay={Math.min(index * 45, 360)} className="w-full">
-                  <Tilt maxTilt={4} perspective={900} className="w-full">
-                    <Shine asChild enableOnHover enableOnTap color="#c8f56a" opacity={0.22} className="rounded-2xl">
+                return <div key={position.id} className="w-full">
                       <div
                         role="button"
                         tabIndex={0}
                         aria-label={`Abrir detalle de ${assetLabel(position)}`}
                         onClick={() => abrirDetallePosition(position.id)}
                         onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); abrirDetallePosition(position.id) } }}
-                        className="relative cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-[#eeece5] p-4 text-left shadow-[0_8px_24px_rgba(15,23,42,0.07)] transition duration-300 hover:-translate-y-0.5 hover:border-[#90b85f] hover:shadow-[0_14px_30px_rgba(15,23,42,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#90b85f]"
+                        className="cursor-pointer overflow-hidden rounded-lg border border-slate-200/80 bg-white/70 p-3 text-left transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400"
                       >
-                        <span className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: TYPE_COLORS[position.tipo] ?? TYPE_COLORS.Otro }} />
-                        <div className="flex items-start justify-between gap-3 pl-1">
+                        <div className="flex items-start justify-between gap-3">
                           <span className="min-w-0">
                             <span className="block truncate text-sm font-semibold tracking-[-0.02em] text-slate-900">{assetLabel(position)}</span>
                             <span className="mt-1 block truncate text-[11px] text-slate-500">{position.price_ticker || position.ticker} · {position.tipo} · {position.custodia}</span>
@@ -1844,15 +1836,23 @@ function InvestmentPortfolioContent() {
                           </span>
                           <span className="shrink-0 text-right"><span className="block text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Valor actual</span><strong className="mt-1 block text-base tabular-nums text-slate-900">{formatEuro(position.valor_actual)}</strong></span>
                         </div>
-                        <div className="mt-4 grid grid-cols-2 gap-2 border-y border-slate-200/80 py-3 pl-1">
-                          <span className="min-w-0"><span className="block text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Precio actual</span><span className="mt-1 block truncate text-[11px] font-semibold tabular-nums text-slate-700">{formatEuro(position.precio_actual)}</span></span>
-                          <span className="min-w-0 text-right"><span className="block text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Resultado total</span><span className={`mt-1 block truncate text-[11px] font-semibold tabular-nums ${positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'text-slate-400' : positionAnalytics.totalNetResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'Pendiente' : `${formatEuro(positionAnalytics.totalNetResult)} · ${formatPct(positionAnalytics.totalReturnPct)}`}</span></span>
+                        <div className="mt-3 grid grid-cols-2 gap-2 border-y border-slate-200/80 py-2.5">
+                          <span className="min-w-0 self-center"><span className="block text-[9px] font-bold uppercase tracking-[0.1em] text-slate-400">Precio actual</span><span className="mt-1 block truncate text-xs font-semibold tabular-nums text-slate-700">{formatEuro(position.precio_actual)}</span></span>
+                          <span className={`min-w-0 rounded-md px-2 py-1.5 text-right ${position.pnl === null ? 'bg-slate-100' : position.pnl >= 0 ? 'bg-emerald-50/70' : 'bg-rose-50/70'}`}>
+                            <span className={`flex items-center justify-end gap-1 text-[9px] font-semibold uppercase tracking-[0.04em] ${position.pnl === null ? 'text-slate-500' : position.pnl >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
+                              {position.pnl !== null ? position.pnl >= 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" /> : null}
+                              {position.pnl === null ? 'Resultado abierto' : position.pnl >= 0 ? 'Ganancia abierta' : 'Pérdida abierta'}
+                            </span>
+                            <span className={`mt-0.5 block truncate text-[13px] font-semibold tabular-nums ${position.pnl === null ? 'text-slate-500' : position.pnl >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>{position.pnl === null ? 'Pendiente' : `${position.pnl >= 0 ? '+' : ''}${formatEuro(position.pnl)}`}</span>
+                            <span className={`mt-0.5 block text-[10px] font-medium tabular-nums ${position.pnl_pct === null ? 'text-slate-500' : position.pnl_pct >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{formatPct(position.pnl_pct)}</span>
+                          </span>
                         </div>
-                        <div className="flex items-end justify-between gap-3 pl-1 pt-3"><span className="text-[10px] text-slate-400">{position.fecha_apertura ? `Desde ${formatDate(position.fecha_apertura)}` : 'Fecha de compra pendiente'}</span><span className={`text-right text-[10px] tabular-nums ${position.pnl === null ? 'text-slate-400' : position.pnl >= 0 ? 'text-emerald-700/80' : 'text-red-600/80'}`}>{position.pnl === null ? 'Resultado abierto pendiente' : `Resultado abierto: ${formatEuro(position.pnl)} · ${formatPct(position.pnl_pct)}`}</span></div>
+                        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 pt-2">
+                          <span className="text-[10px] text-slate-400">{position.fecha_apertura ? `Desde ${formatDate(position.fecha_apertura)}` : 'Fecha de compra pendiente'}</span>
+                          <span className={`text-[10px] font-medium tabular-nums ${positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'text-slate-400' : positionAnalytics.totalNetResult >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'Total histórico pendiente' : `Total histórico: ${positionAnalytics.totalNetResult >= 0 ? '+' : ''}${formatEuro(positionAnalytics.totalNetResult)} · ${formatPct(positionAnalytics.totalReturnPct)}`}</span>
+                        </div>
                       </div>
-                    </Shine>
-                  </Tilt>
-                </Slide>
+                </div>
               })}
               {filteredPositions.length === 0 ? (
                 <div className="rounded-lg border border-dashed border-slate-300 p-5 text-center text-[11px] text-slate-500">
@@ -1861,7 +1861,7 @@ function InvestmentPortfolioContent() {
               ) : null}
             </div>
             <div className="hidden overflow-x-auto lg:block">
-              <table className="w-full min-w-[1160px] border-collapse text-left">
+              <table className="w-full min-w-[1080px] border-collapse text-left">
                 <thead>
                   <tr className="border-b border-slate-200 text-[9px] uppercase tracking-[0.1em] text-slate-400">
                     <SortableTableHeader label="Activo" current={positionSort} ascending="name_asc" descending="name_desc" firstDirection="asc" onSort={setPositionSort} className="pl-5 sm:pl-6" />
@@ -1904,10 +1904,18 @@ function InvestmentPortfolioContent() {
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums font-semibold text-slate-900">{formatEuro(position.precio_actual)}</td>
                         <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums font-semibold text-slate-900">{formatEuro(position.valor_actual)}</td>
-                        <td className="whitespace-nowrap px-3 py-3 text-right tabular-nums">
-                          <p className={`font-semibold ${positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'text-slate-400' : positionAnalytics.totalNetResult >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? '—' : `${positionAnalytics.totalNetResult >= 0 ? '+' : ''}${formatEuro(positionAnalytics.totalNetResult)}`}</p>
-                          <p className={`mt-0.5 text-[9px] font-semibold ${positionAnalytics?.totalReturnPct === null || positionAnalytics?.totalReturnPct === undefined ? 'text-slate-400' : positionAnalytics.totalReturnPct >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>Total histórico {formatPct(positionAnalytics?.totalReturnPct)}</p>
-                          <p className={`mt-0.5 text-[9px] font-normal ${position.pnl === null ? 'text-slate-400' : position.pnl >= 0 ? 'text-emerald-700/80' : 'text-red-600/80'}`}>Abierta {position.pnl === null ? '—' : `${position.pnl >= 0 ? '+' : ''}${formatEuro(position.pnl)} · ${formatPct(position.pnl_pct)}`}</p>
+                        <td className="min-w-[176px] px-3 py-2.5 text-right tabular-nums">
+                          <div>
+                            <p className={`flex items-center justify-end gap-1 text-[8px] font-medium uppercase tracking-[0.08em] ${position.pnl === null ? 'text-slate-500' : position.pnl >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                              {position.pnl !== null ? position.pnl >= 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" /> : null}
+                              {position.pnl === null ? 'Resultado abierto' : position.pnl >= 0 ? 'Ganancia abierta' : 'Pérdida abierta'}
+                            </p>
+                            <div className="mt-1 flex items-baseline justify-end gap-2">
+                              <span className={`text-[13px] font-semibold ${position.pnl === null ? 'text-slate-500' : position.pnl >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>{position.pnl === null ? 'Pendiente' : `${position.pnl >= 0 ? '+' : ''}${formatEuro(position.pnl)}`}</span>
+                              <span className={`text-[10px] font-medium ${position.pnl_pct === null ? 'text-slate-500' : position.pnl_pct >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{formatPct(position.pnl_pct)}</span>
+                            </div>
+                          </div>
+                          <p className={`mt-1 text-[9px] font-normal ${positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'text-slate-400' : 'text-slate-500'}`}>{positionAnalytics?.totalNetResult === null || positionAnalytics?.totalNetResult === undefined ? 'Total histórico pendiente' : `Histórico ${positionAnalytics.totalNetResult >= 0 ? '+' : ''}${formatEuro(positionAnalytics.totalNetResult)} · ${formatPct(positionAnalytics.totalReturnPct)}`}</p>
                         </td>
                         <td className="px-3 py-3">
                           {position.fecha_apertura && metrics ? (

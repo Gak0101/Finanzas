@@ -11,6 +11,12 @@ const authMiddleware = NextAuth(authConfig).auth as unknown as (
 ) => Response | undefined | Promise<Response | undefined>
 
 export default function middleware(request: NextRequest, event: NextFetchEvent) {
+  // Vista previa visual con datos ficticios, solo disponible en desarrollo.
+  // No omite la autenticación de la cartera real ni de las API.
+  if (process.env.NODE_ENV === 'development' && request.nextUrl.pathname === '/preview/inversiones') {
+    return NextResponse.next()
+  }
+
   // n8n no tiene sesión de navegador: el endpoint de automatización valida
   // exclusivamente AUTOMATION_SECRET en su propia capa Node.js.
   const automationPaths = [
