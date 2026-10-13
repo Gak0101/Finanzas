@@ -24,7 +24,10 @@ export async function POST() {
   ].join('\n')
 
   try {
-    const result = await sendWhatsAppMessage(auth.userId, text, undefined, { allowTextFallback: false })
+    // El test debe seguir el mismo comportamiento que las alertas: intentar
+    // la plantilla y, si Meta la rechaza, probar texto directo dentro de la
+    // ventana de 24 horas. Fuera de esa ventana Meta devolverá el error real.
+    const result = await sendWhatsAppMessage(auth.userId, text)
     return NextResponse.json({ ok: true, ...result })
   } catch (error) {
     if (error instanceof WhatsAppDeliveryError) {

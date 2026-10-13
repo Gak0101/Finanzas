@@ -803,9 +803,9 @@ export function InvestmentNotificationAlerts({ rules, positions, portfolioReturn
     setTestingWhatsApp(true)
     try {
       const response = await fetch('/api/configuracion/whatsapp/test', { method: 'POST' })
-      const payload = await response.json().catch(() => null) as { ok?: boolean; warning?: string; error?: string } | null
+      const payload = await response.json().catch(() => null) as { ok?: boolean; mode?: 'template' | 'text_fallback'; warning?: string; error?: string } | null
       if (!response.ok || !payload?.ok) throw new Error(payload?.error || 'No se pudo enviar la prueba de WhatsApp')
-      toast.success('Prueba aceptada por Meta', {
+      toast.success(payload.mode === 'text_fallback' ? 'Prueba enviada como texto temporal' : 'Prueba aceptada por Meta', {
         description: payload.warning || 'Revisa el teléfono configurado para confirmar que ha llegado.',
       })
     } catch (error) {

@@ -757,7 +757,7 @@ export default function ConfiguracionPage() {
                 <div className="grid gap-2">
                   <Label htmlFor="whatsapp-template-name">Nombre de plantilla aprobada</Label>
                   <Input id="whatsapp-template-name" value={whatsappTemplateName} onChange={(event) => setWhatsappTemplateName(event.target.value)} placeholder="finanzas_alerta" spellCheck={false} />
-                  <p className="text-[11px] leading-5 text-muted-foreground">Debe coincidir exactamente con la plantilla aprobada en Meta.</p>
+                  <p className="text-[11px] leading-5 text-muted-foreground">Debe coincidir exactamente con Meta. La plantilla necesita un único parámetro de texto en el cuerpo: {'{{1}}'}.</p>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="whatsapp-template-language">Idioma de la plantilla</Label>
@@ -767,7 +767,7 @@ export default function ConfiguracionPage() {
               </div>
 
               <div className="flex flex-col gap-2 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-[10px] leading-4 text-muted-foreground">Necesitas una plantilla aprobada en Meta con un parámetro de texto para recibir el contenido de la alerta.</p>
+                <p className="text-[10px] leading-4 text-muted-foreground">Para enviar alertas fuera de las 24 horas, Meta exige una plantilla aprobada con un único parámetro de texto en el cuerpo ({'{{1}}'}).</p>
                 <Button type="button" onClick={saveWhatsappSettings} disabled={savingWhatsapp || loadingWhatsapp}>
                   {savingWhatsapp ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
                   {savingWhatsapp ? 'Guardando…' : 'Guardar WhatsApp'}
