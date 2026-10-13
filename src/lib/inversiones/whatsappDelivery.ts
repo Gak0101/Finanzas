@@ -5,7 +5,14 @@ import { decryptSecret } from '@/lib/ai/secret-crypto'
 
 type GraphPayload = {
   messages?: Array<{ id?: string }>
-  error?: { message?: string }
+  error?: {
+    message?: string
+    code?: number
+    error_subcode?: number
+    error_user_title?: string
+    error_user_msg?: string
+    error_data?: { details?: string }
+  }
 }
 
 export type WhatsAppDeliveryResult = {
@@ -23,6 +30,20 @@ export class WhatsAppDeliveryError extends Error {
     super(message)
     this.name = 'WhatsAppDeliveryError'
   }
+}
+
+function describeGraphError(payload: GraphPayload | null) {
+  const error = payload?.error
+  if (!error) return 'WhatsApp Cloud rechazó la plantilla'
+
+  const code = typeof error.code === 'number'
+    ? `(#${error.code}${typeof error.error_subcode === 'number' ? `/${error.error_subcode}` : ''})`
+    : ''
+  const details = [error.message, error.error_user_title, error.error_user_msg, error.error_data?.details]
+    .filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
+    .join(' — ')
+
+  return [code, details].filter(Boolean).join(' ').slice(0, 1200) || 'WhatsApp Cloud rechazó la plantilla'
 }
 
 async function saveWhatsAppError(userId: number, alertaId: number | undefined, message: string) {
@@ -143,7 +164,7 @@ export async function sendWhatsAppMessage(
     return { messageId, mode: 'template' }
   }
 
-  const templateError = templateResult.payload?.error?.message || 'WhatsApp Cloud rechazó la plantilla'
+  const templateError = describeGraphError(templateResult.payload)
   if (options.allowTextFallback === false) {
     return failDelivery(
       userId,
@@ -165,7 +186,7 @@ export async function sendWhatsAppMessage(
   }
 
   if (!textResult.response.ok) {
-    const textError = textResult.payload?.error?.message || 'WhatsApp Cloud rechazó el texto directo'
+    const textError = describeGraphError(textResult.payload) || 'WhatsApp Cloud rechazó el texto directo'
     return failDelivery(userId, alertaId, `No se pudo enviar WhatsApp. Plantilla: ${templateError}. Texto directo: ${textError}`)
   }
 
